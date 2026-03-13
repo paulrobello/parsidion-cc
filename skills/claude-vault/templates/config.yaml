@@ -1,0 +1,35 @@
+# Claude Vault Configuration
+#
+# Place at ~/ClaudeVault/config.yaml
+# Values here override script defaults. CLI arguments override these values.
+# Precedence: defaults → config.yaml → CLI args
+
+# Session start hook (session_start_hook.py)
+session_start_hook:
+  ai_model: null           # Model for AI note selection (null = disabled)
+  max_chars: 4000          # Max context injection characters
+  ai_timeout: 25           # AI call timeout in seconds
+  recent_days: 3           # Days to look back for recent notes
+  debug: false             # Append injected context to debug log in system temp dir
+
+# Session stop hook (session_stop_hook.py)
+session_stop_hook:
+  ai_model: null           # Model for AI classification (null = disabled)
+  ai_timeout: 25           # AI call timeout in seconds
+  auto_summarize: true     # Auto-launch summarizer when pending entries exist
+
+# Pre-compact hook (pre_compact_hook.py)
+pre_compact_hook:
+  lines: 200               # Transcript lines to analyse
+
+# Session summarizer (summarize_sessions.py)
+summarizer:
+  model: claude-sonnet-4-6
+  max_parallel: 5          # Concurrent summarization tasks
+  transcript_tail_lines: 400
+  max_cleaned_chars: 12000
+  persist: false           # SDK session persistence (for debugging)
+
+# Git integration
+git:
+  auto_commit: true        # Auto-commit vault changes after writes

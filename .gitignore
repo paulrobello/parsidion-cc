@@ -1,0 +1,12 @@
+.idea
+.venv
+__pycache__
+*.pyc
+skills/**/.env
+*-mcp.json
+.gemini-clipboard
+claude_scratch/
+settings.local.json
+CLAUDE.local.md
+*.local
+*.local.*
