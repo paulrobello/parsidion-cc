@@ -55,6 +55,19 @@ rather than shell commands.
 | Cross-project | Search `Projects/` subfolder only |
 | By note type | `type: debugging` or `type: pattern` in frontmatter |
 
+## Vault Organization
+
+**Subfolder rule**: when 3 or more notes share a common subject prefix, move them
+into a named subfolder (e.g. `Research/fastapi-middleware/basics.md` instead of
+`Research/fastapi-middleware-basics.md`). Drop the redundant prefix from filenames
+inside the subfolder, update all wikilinks, and rebuild the index. Only one level
+of subfolder is allowed — never nest subfolders within subfolders.
+
+After any note reorganization (create, rename, move, delete) rebuild the index:
+```bash
+uv run ~/.claude/skills/claude-vault/scripts/update_index.py
+```
+
 ## Saving Solutions
 
 After solving a non-obvious problem or implementing a reusable pattern, save it:
