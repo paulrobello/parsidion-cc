@@ -42,49 +42,37 @@ The vault is your **first stop** — not your last resort. Before web search, be
 When you encounter an error, exception, or unexpected behavior:
 
 1. **Extract the key signal**: the exception type, package name, or the most distinctive phrase from the error message
-2. **Search `Debugging/`** first:
-   ```bash
-   # Use the Grep tool with path ~/ClaudeVault and glob **/*.md, e.g.:
-   grep -r "ImportError" ~/ClaudeVault/Debugging/ --include="*.md" -l
-   grep -r "sqlalchemy" ~/ClaudeVault/Debugging/ --include="*.md" -l
-   ```
-3. **Widen the search** to `Frameworks/`, `Languages/`, and `Projects/` — the fix may live there
-4. **If you find a match**: apply the documented solution; update the note if you discover new nuance
-5. **If no match**: diagnose, solve, then save the solution so future sessions benefit
+2. **Dispatch the `vault-explorer` agent** with the signal as the query.
+3. **Answer returned?** Apply the documented solution; update the note if you learn something new about the problem. `Read` specific files from the Sources section only if you need more depth.
+4. **"No relevant vault notes found"?** Diagnose, solve, then save the solution so future sessions benefit.
 
 ### Implementation: Check for Prior Art
 
 When implementing any feature, pattern, or integration:
 
-1. **Search `Patterns/`** for design patterns relevant to the feature
-2. **Search `Frameworks/` and `Languages/`** for the specific stack
-3. **Search `Projects/`** for implementations in other projects:
-   ```bash
-   grep -r "websocket" ~/ClaudeVault/Projects/ --include="*.md" -l
-   grep -r "authentication" ~/ClaudeVault/ --include="*.md" -l
-   ```
-4. **Examine `sources`** in matched notes for code references and file paths
-5. **Reuse and adapt** — a proven implementation beats a fresh one every time
+1. **Dispatch the `vault-explorer` agent** with the feature keyword as the query.
+2. **Answer returned?** Reuse and adapt — a proven implementation beats a fresh one every time. `Read` specific files from the Sources section for details; check the `sources` frontmatter field for code references.
+3. **"No relevant vault notes found"?** Implement it, then save the pattern so future sessions benefit.
 
 ### Efficient Vault Search
 
-| Goal | Approach |
-|---|---|
-| Find by error type | Grep for exception class name across all vault folders |
-| Find by library/framework | Grep for the package name in `Frameworks/` or `Languages/` |
-| Find by tag | Check vault `CLAUDE.md` index for tag listings |
-| Find cross-project patterns | Search `Projects/`, follow `related` wikilinks |
-| Find by note type | Grep for `type: debugging` or `type: pattern` in frontmatter |
+Dispatch the **`vault-explorer` agent** with a natural language query. The agent
+searches all relevant vault folders using the appropriate Grep strategy, ranks
+matches, reads the top files, and returns:
 
-Prefer the `Grep` tool with `path: ~/ClaudeVault` and `glob: **/*.md` over shell commands.
+- **`## Answer`** — synthesized answer ready to use
+- **`## Sources`** — absolute paths for targeted `Read` calls if deeper context is needed
+
+**No results?** Dispatch the `research-documentation-agent` to research externally
+and save findings to the vault.
 
 ### The Vault-First Loop
 
 ```
 Error or implementation question
-  → Search vault
+  → Dispatch vault-explorer agent
     → Found? Apply / adapt solution → Update note with new learnings
-    → Not found? Solve it → Save to vault → Rebuild index
+    → Not found? Solve it → Dispatch research-documentation-agent to save
 ```
 
 Saving after a successful solve is as important as searching before. Every unsaved solution is a missed opportunity for every future session.
@@ -401,9 +389,10 @@ If `config.yaml` is missing or unreadable, all `get_config()` calls return the d
 
 ### Searching the Vault
 
-- Use `vault_common.py` functions for programmatic search.
-- Use Obsidian's built-in search for interactive exploration.
-- Use `Grep` or `Glob` tools to search vault files directly.
+- Dispatch the **`vault-explorer` agent** for natural language queries — it searches priority folders, ranks matches, and returns a synthesized answer with source paths.
+- Use `vault_common.py` functions for programmatic search from scripts.
+- Use Obsidian's built-in search for interactive visual exploration.
+- Use `Grep` or `Glob` tools only for targeted investigation when you know the specific file or exact pattern you need.
 
 ### Linking Notes
 
