@@ -81,10 +81,12 @@ AGENT_SRCS: list[Path] = [
 SCRIPTS_SRC: Path = REPO_ROOT / "scripts"
 CLAUDE_VAULT_MD_SRC: Path = REPO_ROOT / "CLAUDE-VAULT.md"
 
-# Hook script filenames installed inside the skill
+# Hook script filenames installed inside the skill.
+# SessionEnd uses a shell wrapper that outputs {} immediately and runs the
+# real hook detached — prevents "Hook cancelled" when Claude Code exits fast.
 _HOOK_SCRIPTS: dict[str, str] = {
     "SessionStart": "session_start_hook.py",
-    "SessionEnd": "session_stop_hook.py",
+    "SessionEnd": "session_stop_wrapper.sh",
     "PreCompact": "pre_compact_hook.py",
 }
 
@@ -311,6 +313,8 @@ def install_skill(
         if sys.platform != "win32":
             for script in (dest / "scripts").glob("*.py"):
                 script.chmod(script.stat().st_mode | 0o755)
+            for script in (dest / "scripts").glob("*.sh"):
+                script.chmod(script.stat().st_mode | 0o755)
 
     templates_dir = claude_dir / "skills" / "claude-vault" / "templates"
     patch_vault_common(
@@ -433,6 +437,8 @@ def _hook_command(claude_dir: Path, event: str) -> str:
     """Return the hook command string for a given event.
 
     Uses ~ notation so the path is portable across user accounts.
+    Shell scripts (.sh) are invoked directly; Python scripts are run via
+    ``uv run --no-project`` to ensure the correct Python interpreter.
     """
     script = _HOOK_SCRIPTS[event]
     script_path = claude_dir / "skills" / "claude-vault" / "scripts" / script
@@ -440,9 +446,13 @@ def _hook_command(claude_dir: Path, event: str) -> str:
     # command works on both Unix and Windows (Claude Code and uv handle ~ expansion).
     try:
         rel = script_path.relative_to(Path.home())
-        return f"uv run --no-project ~/{rel.as_posix()}"
+        rel_str = f"~/{rel.as_posix()}"
     except ValueError:
-        return f"uv run --no-project {script_path.as_posix()}"
+        rel_str = script_path.as_posix()
+
+    if script.endswith(".sh"):
+        return rel_str
+    return f"uv run --no-project {rel_str}"
 
 
 def _hook_already_registered(hooks_list: list[dict], command: str) -> bool:
