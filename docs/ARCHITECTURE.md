@@ -10,11 +10,14 @@ A Claude Code customization toolkit that replaces built-in auto memory with an O
   - [Claude Vault Skill](#claude-vault-skill)
   - [Hook Scripts](#hook-scripts)
   - [Session Summarizer](#session-summarizer)
+  - [Vault Doctor](#vault-doctor)
   - [Graph Coverage Checker](#graph-coverage-checker)
   - [Research Agent](#research-agent)
+  - [Vault Explorer Agent](#vault-explorer-agent)
   - [Vault Common Library](#vault-common-library)
   - [Index Generator](#index-generator)
   - [Trigger Evaluation](#trigger-evaluation)
+  - [Context Preview Script](#context-preview-script)
   - [Obsidian Integration](#obsidian-integration)
 - [Configuration](#configuration)
 - [Data Flow](#data-flow)
@@ -56,6 +59,7 @@ graph TB
         CVG[CLAUDE-VAULT.md]
         Skill[Claude Vault Skill]
         Agent[Research Agent]
+        VE[Vault Explorer Agent]
         VC[vault_common.py]
         SSH[session_start_hook.py]
         STH[session_stop_hook.py]
@@ -87,6 +91,7 @@ graph TB
     Hooks -->|SessionEnd| STH
     Hooks -->|PreCompact| PCH
     CC -->|invokes| Agent
+    CC -->|invokes| VE
 
     SSH -->|reads| VC
     STH -->|reads| VC
@@ -95,6 +100,11 @@ graph TB
     SUM -->|reads| VC
     VC -->|loads| Config
     Agent -->|saves to| Research
+    VE -->|searches| Daily
+    VE -->|searches| Projects
+    VE -->|searches| Debugging
+    VE -->|searches| Patterns
+    VE -->|searches| Research
 
     SSH -->|loads context from| Daily
     SSH -->|loads context from| Projects
@@ -120,6 +130,7 @@ graph TB
     style Hooks fill:#e65100,stroke:#ff9800,stroke-width:2px,color:#ffffff
     style Skill fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
     style Agent fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
+    style VE fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
     style VC fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#ffffff
     style SSH fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#ffffff
     style STH fill:#880e4f,stroke:#c2185b,stroke-width:2px,color:#ffffff
@@ -380,6 +391,35 @@ A Claude Code agent definition (runs on Sonnet) that conducts technical research
 5. Runs `update_index.py` after saving notes
 6. Provides a summary report of findings and gaps
 
+### Vault Explorer Agent
+
+**Location:** `agents/vault-explorer.md`
+
+A read-only Claude Code agent (runs on Haiku) that searches the vault for relevant notes and returns a synthesized answer. It is the preferred way to query the vault programmatically — callers dispatch it with a natural language query and receive a structured response with a prose answer and source file paths.
+
+**Trigger phrases:** "search the vault for X", "check the vault", "have we seen this before", "find vault notes about X", "check for prior art on X", "what do we know about X".
+
+**Scope:** Read-only. Does not write files, create notes, or run `update_index.py`.
+
+**Workflow:**
+1. Reads `~/ClaudeVault/CLAUDE.md` (the vault index) to orient on available content
+2. Extracts key signals from the query (exception class, package name, feature keyword)
+3. Searches folders in priority order by query type:
+
+   | Query type | Folders, in priority order |
+   |---|---|
+   | Error / exception / bug | `Debugging/` → `Frameworks/` → `Languages/` |
+   | Feature / pattern / integration | `Patterns/` → `Frameworks/` → `Projects/` |
+   | Cross-project / prior art | `Projects/` → `Patterns/` |
+   | Library / tool / CLI | `Tools/` → `Frameworks/` |
+   | Research / concepts | `Research/` → all folders |
+
+4. Ranks candidate files by folder priority, then by signal frequency within each file
+5. Reads the top 5 ranked files and synthesizes a direct answer
+6. Returns exactly two sections: `## Answer` (3–7 sentences) and `## Sources` (absolute paths with one-line relevance notes)
+
+**Relationship to other agents:** When the vault has no relevant information, the agent recommends dispatching `research-documentation-agent` to research the topic externally and save findings to the vault.
+
 ### Vault Common Library
 
 **Location:** `skills/claude-vault/scripts/vault_common.py`
@@ -591,7 +631,8 @@ parsidion-cc/
 │   ├── ARCHITECTURE.md              # This document
 │   └── DOCUMENTATION_STYLE_GUIDE.md
 ├── agents/
-│   └── research-documentation-agent.md
+│   ├── research-documentation-agent.md
+│   └── vault-explorer.md                # Read-only vault search agent (Haiku)
 ├── tests/
 │   └── test_vault_common.py
 └── skills/claude-vault/
@@ -630,7 +671,8 @@ parsidion-cc/
 ├── CLAUDE-VAULT.md                  # Always-on vault-first guidance
 ├── settings.json                    # Hook registrations
 ├── agents/
-│   └── research-documentation-agent.md
+│   ├── research-documentation-agent.md
+│   └── vault-explorer.md                # Read-only vault search agent (Haiku)
 └── skills/claude-vault/
     ├── SKILL.md
     ├── eval_results.json            # Trigger eval results
