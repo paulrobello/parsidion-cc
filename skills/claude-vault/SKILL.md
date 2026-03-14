@@ -291,8 +291,11 @@ Daily notes (`type: daily` or path under `Daily/`) are exempt from `confidence`,
 # Scan and report only (no writes)
 uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --dry-run
 
-# Scan and repair repairable issues via Claude haiku
+# Scan and repair repairable issues via Claude haiku (3 parallel workers by default)
 env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --fix
+
+# Repair with more parallelism (e.g. 5 workers)
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --fix --jobs 5
 
 # Repair up to 20 notes at a time
 env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --fix --limit 20
@@ -300,6 +303,8 @@ env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/vaul
 # Errors only (skip warnings)
 uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --errors-only --dry-run
 ```
+
+Repairs run in parallel (`--jobs N`, default 3). Each `claude -p` subprocess is independent so parallelism is safe; state updates and console output are guarded by a lock so lines are never interleaved.
 
 Repairable codes (Claude can fix): `MISSING_FRONTMATTER`, `MISSING_FIELD`, `INVALID_TYPE`, `INVALID_DATE`, `ORPHAN_NOTE`.
 Not auto-repairable (require manual fix): `BROKEN_WIKILINK`, `FLAT_DAILY`.
