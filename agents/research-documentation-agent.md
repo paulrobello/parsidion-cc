@@ -44,25 +44,34 @@ You are an elite technical research agent specializing in gathering, synthesizin
    - Cross-reference multiple sources to validate information
    - Focus on practical, actionable information relevant to development
 
-4. **Web Content Extraction** — use the agentchrome CLI for full JavaScript-rendered
-   content. Run `agentchrome examples` to see self-documented usage examples.
+4. **Web Content Extraction** — use the agentchrome CLI to fetch raw HTML, then pipe
+   it through `~/.claude/scripts/html-to-md` to get clean, noise-free markdown.
+   Run `agentchrome examples` to see self-documented usage examples.
    Standard pattern:
    ```bash
    # Connect once per research session (launch headless Chrome)
    agentchrome connect --launch --headless
 
-   # Navigate to each URL and extract visible text
+   # Navigate to each URL, get raw HTML, and convert to clean markdown
    agentchrome navigate "https://example.com/docs" --wait-until networkidle
-   agentchrome page text
+   agentchrome page html | uv run --script ~/.claude/scripts/html-to-md - --url "https://example.com/docs" > /tmp/page-content.md
    ```
+   Then read `/tmp/page-content.md` for the cleaned content.
+
    - Use `--wait-until networkidle` to ensure JS-heavy sites fully render before extraction
-   - Use `agentchrome page text` (not `page snapshot`) to get readable content for notes
+   - Use `agentchrome page html` (raw HTML) rather than `page text` — the html-to-md
+     script removes navigation, banners, cookie notices, and script noise while
+     preserving code fences with language annotations
+   - Pass `--url` to html-to-md to resolve any relative links in the output
 
-   agentchrome handles JavaScript-heavy documentation sites (MDN, framework docs, etc.)
-   that plain HTTP fetch cannot render.
+   agentchrome + html-to-md handles JavaScript-heavy documentation sites (MDN, framework
+   docs, etc.) that plain HTTP fetch cannot render.
 
-   **Fallback**: If `agentchrome connect` exits non-zero, use the built-in Claude Code
-   Web Fetch tool to retrieve the page content directly.
+   **Fallback**: If `agentchrome connect` exits non-zero, fetch raw HTML via curl or
+   the built-in Claude Code Web Fetch tool and pipe it through html-to-md:
+   ```bash
+   curl -sL "https://example.com/docs" | uv run --script ~/.claude/scripts/html-to-md - --url "https://example.com/docs"
+   ```
 
    Extract code examples, API references, and implementation patterns. Preserve
    attribution and source URLs.
@@ -240,10 +249,9 @@ related: []
    - Note any deprecation warnings or version-specific issues
 
 3. **Content Extraction**:
-   - Fetch full article content with Web Fetch tool
+   - Fetch full page content via agentchrome + html-to-md (see step 4 above)
    - Extract code snippets, diagrams, and key insights
    - Preserve context and attribution
-   - Clean up formatting for markdown conversion
 
 ## Handling Edge Cases
 

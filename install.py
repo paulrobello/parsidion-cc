@@ -78,6 +78,7 @@ AGENT_SRCS: list[Path] = [
     REPO_ROOT / "agents" / "research-documentation-agent.md",
     REPO_ROOT / "agents" / "vault-explorer.md",
 ]
+SCRIPTS_SRC: Path = REPO_ROOT / "scripts"
 CLAUDE_VAULT_MD_SRC: Path = REPO_ROOT / "CLAUDE-VAULT.md"
 
 # Hook script filenames installed inside the skill
@@ -335,6 +336,26 @@ def install_agents(
         _step(f"Install agent: {agent_src.name} → {agents_dir}/", dry_run=dry_run)
         if not dry_run:
             shutil.copy2(agent_src, dest)
+
+
+def install_scripts(
+    claude_dir: Path,
+    dry_run: bool = False,
+) -> None:
+    """Copy scripts/ to ~/.claude/scripts/, making each script executable."""
+    if not SCRIPTS_SRC.exists():
+        _warn(f"Scripts source not found: {SCRIPTS_SRC} — skipping")
+        return
+    scripts_dir = claude_dir / "scripts"
+    _step(f"Install scripts: {SCRIPTS_SRC} → {scripts_dir}/", dry_run=dry_run)
+    if not dry_run:
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+        for script in SCRIPTS_SRC.iterdir():
+            if script.is_file():
+                dest = scripts_dir / script.name
+                shutil.copy2(script, dest)
+                if sys.platform != "win32":
+                    dest.chmod(dest.stat().st_mode | 0o755)
 
 
 # ---------------------------------------------------------------------------
@@ -623,6 +644,16 @@ def uninstall(
         else:
             _warn(f"Agent not found: {agent_dest}")
 
+    scripts_dir = claude_dir / "scripts"
+    if SCRIPTS_SRC.exists() and scripts_dir.exists():
+        for script in SCRIPTS_SRC.iterdir():
+            if script.is_file():
+                script_dest = scripts_dir / script.name
+                if script_dest.exists():
+                    _step(f"Remove script: {script_dest}", dry_run=dry_run)
+                    if not dry_run:
+                        script_dest.unlink()
+
     # Remove hook registrations
     if settings_file.exists():
         try:
@@ -733,6 +764,7 @@ def install(args: argparse.Namespace) -> int:
             print(f"  {dim('Install agent:')} {claude_dir / 'agents' / agent_src.name}")
     if not args.skip_hooks:
         print(f"  {dim('Register hooks:')} SessionStart, SessionEnd, PreCompact")
+    print(f"  {dim('Install scripts:')} {claude_dir / 'scripts'}/")
     print(f"  {dim('Install guidance:')} {claude_dir / 'CLAUDE-VAULT.md'} (@import into CLAUDE.md)")
     if dry_run:
         print(f"\n  {yellow('[DRY RUN — no changes will be made]')}")
@@ -764,23 +796,26 @@ def install(args: argparse.Namespace) -> int:
     if not args.skip_agent:
         install_agents(claude_dir, dry_run=dry_run)
 
-    # 3. Create vault directories
+    # 3. Install scripts
+    install_scripts(claude_dir, dry_run=dry_run)
+
+    # 5. Create vault directories
     create_vault_dirs(vault_root, dry_run=dry_run)
 
-    # 4. Create Templates symlink
+    # 6. Create Templates symlink
     templates_src = claude_dir / "skills" / "claude-vault" / "templates"
     create_templates_symlink(
         vault_root, templates_src, dry_run=dry_run, verbose=verbose
     )
 
-    # 5. Register hooks
+    # 7. Register hooks
     if not args.skip_hooks:
         merge_hooks(claude_dir, settings_file, dry_run=dry_run, verbose=verbose)
 
-    # 6. Install CLAUDE-VAULT.md and wire @import into CLAUDE.md
+    # 8. Install CLAUDE-VAULT.md and wire @import into CLAUDE.md
     install_claude_vault_md(claude_dir, dry_run=dry_run, verbose=verbose)
 
-    # 7. Rebuild vault index
+    # 9. Rebuild vault index
     rebuild_index(claude_dir, dry_run=dry_run)
 
     print()
