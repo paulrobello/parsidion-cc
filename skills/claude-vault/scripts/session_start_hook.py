@@ -163,10 +163,71 @@ def _select_context_with_ai(
     return ""
 
 
+def build_compact_index(notes: list[Path], max_chars: int = 2000) -> str:
+    """Build a compact one-line-per-note index: title [tags] (folder).
+
+    Much smaller than build_context_block — use when vault is large or
+    token budget is tight. Full note content is available via the claude-vault skill.
+
+    Args:
+        notes: List of note paths to include.
+        max_chars: Maximum total characters before truncating with a count line.
+
+    Returns:
+        A compact index string, or empty string if notes is empty.
+    """
+    lines: list[str] = []
+    total = 0
+    for path in notes:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        fm = vault_common.parse_frontmatter(content)
+        # Extract title from first heading or filename
+        title = path.stem.replace("-", " ").title()
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("# ") and not stripped.startswith("## "):
+                title = stripped[2:].strip()
+                break
+        tags = fm.get("tags", [])
+        if isinstance(tags, str):
+            tags = [tags]
+        tag_str = " ".join(f"`{t}`" for t in tags) if tags else ""
+        folder = (
+            path.parent.name
+            if path.parent != vault_common.VAULT_ROOT
+            else "root"
+        )
+        entry = (
+            f"- [[{path.stem}]] ({folder})"
+            + (" — " + tag_str if tag_str else "")
+        )
+        total += len(entry) + 1
+        if total > max_chars:
+            lines.append(
+                f"- ... ({len(notes) - len(lines)} more notes, "
+                "use claude-vault skill to browse)"
+            )
+            break
+        lines.append(entry)
+
+    if not lines:
+        return ""
+
+    header = (
+        "**Available vault notes** (compact index — "
+        "use `claude-vault` skill to load full content):\n"
+    )
+    return header + "\n".join(lines)
+
+
 def build_session_context(
     cwd: str,
     ai_model: str | None = None,
     max_chars: int = _DEFAULT_MAX_CHARS,
+    compact_mode: bool = False,
 ) -> str:
     """Build a context string from vault notes relevant to the current session.
 
@@ -175,6 +236,9 @@ def build_session_context(
         ai_model: When set, use this claude model to select the most relevant
             notes. Falls back to standard behaviour on failure.
         max_chars: Maximum total characters for the context output (default: 4000).
+        compact_mode: When True, inject a compact one-line-per-note index instead
+            of full note summaries. Ignored when *ai_model* is set (AI mode is
+            always full summaries). Defaults to False.
 
     Returns:
         A formatted context string capped at *max_chars* with project and recent notes.
@@ -229,9 +293,12 @@ def build_session_context(
 
     # Build context block from collected notes, reserving space for the header
     max_body_chars: int = max_chars - len(header)
-    context_body: str = vault_common.build_context_block(
-        all_notes, max_chars=max_body_chars
-    )
+    if compact_mode:
+        context_body: str = build_compact_index(all_notes, max_chars=max_body_chars)
+    else:
+        context_body = vault_common.build_context_block(
+            all_notes, max_chars=max_body_chars
+        )
 
     if not context_body:
         return header + "_No relevant vault notes found._"
@@ -246,6 +313,7 @@ def _write_debug_log(
     ai_model: str | None,
     max_chars: int,
     elapsed_ms: float,
+    compact_mode: bool = False,
 ) -> None:
     """Append injection details to the debug log file for quality evaluation.
 
@@ -256,6 +324,7 @@ def _write_debug_log(
         ai_model: The AI model used for note selection, or None if standard mode.
         max_chars: The max_chars budget that was configured.
         elapsed_ms: Wall-clock time in milliseconds to build the context.
+        compact_mode: Whether compact index mode was used.
     """
     timestamp = datetime.now().isoformat(timespec="seconds")
     context_chars = len(context)
@@ -263,7 +332,12 @@ def _write_debug_log(
     # Count note sections (### headings) as a proxy for number of notes included
     note_count = context.count("\n### ") + (1 if context.startswith("### ") else 0)
     budget_pct = (context_chars / max_chars * 100) if max_chars > 0 else 0.0
-    mode = f"ai ({ai_model})" if ai_model else "standard"
+    if ai_model:
+        mode = f"ai ({ai_model})"
+    elif compact_mode:
+        mode = "compact"
+    else:
+        mode = "standard"
 
     separator = "=" * 80
     entry = (
@@ -323,6 +397,16 @@ def main() -> None:
         help=f"Maximum characters for injected context (default: {_DEFAULT_MAX_CHARS})",
     )
     parser.add_argument(
+        "--compact",
+        action="store_true",
+        default=False,
+        help=(
+            "Inject a compact one-line-per-note index instead of full note summaries. "
+            "Reduces token consumption significantly. Full content is available via "
+            "the claude-vault skill."
+        ),
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         default=None,
@@ -351,6 +435,9 @@ def main() -> None:
                 "session_start_hook", "max_chars", _DEFAULT_MAX_CHARS
             )
         )
+        compact_mode: bool = args.compact or vault_common.get_config(
+            "session_start_hook", "compact_mode", False
+        )
         debug: bool = (
             args.debug
             if args.debug is not None
@@ -359,7 +446,7 @@ def main() -> None:
 
         start_time = datetime.now()
         context: str = build_session_context(
-            cwd, ai_model=ai_model, max_chars=max_chars
+            cwd, ai_model=ai_model, max_chars=max_chars, compact_mode=compact_mode
         )
         elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
 
@@ -372,6 +459,7 @@ def main() -> None:
                 ai_model=ai_model,
                 max_chars=max_chars,
                 elapsed_ms=elapsed_ms,
+                compact_mode=compact_mode,
             )
 
         output: dict = {

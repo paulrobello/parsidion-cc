@@ -3,12 +3,14 @@
 
 Walks the vault tree, parses frontmatter from all notes, and generates a
 comprehensive index with tag cloud, recent activity, and per-folder listings.
+Also generates per-folder MANIFEST.md files for quick orientation.
 Uses only Python stdlib.
 """
 
 import atexit
 import json
 import os
+import re
 import sys
 from collections import Counter
 from datetime import datetime, timedelta
@@ -44,8 +46,12 @@ FOLDER_ORDER: list[str] = [
 RECENT_DAYS: int = 7
 RECENT_MAX: int = 20
 SUMMARY_MAX_CHARS: int = 80
+STALE_DAYS: int = 30
 
 PID_FILE: Path = VAULT_ROOT / "index.pid"
+
+# Regex to extract wikilink stems like [[note-stem]] from a string
+_WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 
 
 def _is_process_running(pid: int) -> bool:
@@ -142,26 +148,72 @@ def _wikilink(note_path: Path) -> str:
     return f"[[{note_path.stem}]]"
 
 
-def build_index() -> tuple[str, int, int]:
+def _extract_wikilink_stems(related: object) -> list[str]:
+    """Extract note stems from a ``related`` frontmatter field.
+
+    The field is expected to be a list of strings like ``["[[note-a]]", "[[note-b]]"]``,
+    but also handles bare wikilinks and plain strings.
+
+    Args:
+        related: The value of the ``related`` frontmatter field.
+
+    Returns:
+        A list of note stem strings (without brackets).
+    """
+    stems: list[str] = []
+    if not isinstance(related, list):
+        return stems
+    for item in related:
+        if not isinstance(item, str):
+            continue
+        # Extract all [[stem]] patterns from the item
+        found = _WIKILINK_RE.findall(item)
+        if found:
+            stems.extend(found)
+        else:
+            # Bare string (no brackets) — treat as a stem directly
+            stripped = item.strip()
+            if stripped:
+                stems.append(stripped)
+    return stems
+
+
+def build_index() -> tuple[str, int, int, dict[str, list[tuple[str, str, str, list[str], bool]]]]:
     """Build the full CLAUDE.md index content.
 
     Returns:
-        A tuple of (index_content, note_count, tag_count).
+        A tuple of (index_content, note_count, tag_count, folder_notes_extended).
+        folder_notes_extended maps folder name to a list of
+        (wikilink, title, summary, tags, is_stale) tuples.
     """
     ensure_vault_dirs()
-    notes: list[Path] = all_vault_notes()
+    # Filter out MANIFEST.md files — they are auto-generated and should not be
+    # indexed as vault notes.
+    notes: list[Path] = [
+        p for p in all_vault_notes() if p.name != "MANIFEST.md"
+    ]
 
-    now_str: str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    cutoff_ts: float = (datetime.now() - timedelta(days=RECENT_DAYS)).timestamp()
+    now: datetime = datetime.now()
+    now_str: str = now.strftime("%Y-%m-%d %H:%M")
+    cutoff_ts: float = (now - timedelta(days=RECENT_DAYS)).timestamp()
+    stale_cutoff_ts: float = (now - timedelta(days=STALE_DAYS)).timestamp()
 
     # Collected data per note
     tag_counter: Counter[str] = Counter()
     recent_notes: list[
         tuple[float, Path, str, str]
     ] = []  # (mtime, path, folder, summary)
-    folder_notes: dict[
-        str, list[tuple[str, str, str]]
-    ] = {}  # folder -> [(wikilink, title, summary)]
+
+    # Extended folder_notes: folder -> [(wikilink, title, summary, tags, is_stale)]
+    folder_notes: dict[str, list[tuple[str, str, str, list[str], bool]]] = {}
+
+    # Per-note data needed for staleness: stem -> (mtime, related_stems)
+    # We collect this in the first pass and compute link_count after.
+    per_note_data: dict[str, tuple[float, list[str]]] = {}  # stem -> (mtime, related_stems)
+
+    # First pass: read all notes, collect data
+    note_contents: dict[Path, tuple[str, dict, str, str, str, float, list[str]]] = {}
+    # path -> (content, fm, title, summary, folder, mtime, tags_list)
 
     for note_path in notes:
         try:
@@ -175,25 +227,48 @@ def build_index() -> tuple[str, int, int]:
         folder: str = _folder_name(note_path)
 
         # Collect tags
-        tags: object = fm.get("tags")
-        if isinstance(tags, list):
-            for tag in tags:
+        tags_raw: object = fm.get("tags")
+        tags_list: list[str] = []
+        if isinstance(tags_raw, list):
+            for tag in tags_raw:
                 if isinstance(tag, str) and tag:
                     tag_counter[tag] += 1
+                    tags_list.append(tag)
 
-        # Check recency
+        # Mtime
         try:
             mtime: float = note_path.stat().st_mtime
         except OSError:
             mtime = 0.0
 
+        # Collect wikilink stems from related field
+        related_stems: list[str] = _extract_wikilink_stems(fm.get("related"))
+
+        per_note_data[note_path.stem] = (mtime, related_stems)
+        note_contents[note_path] = (content, fm, title, summary, folder, mtime, tags_list)
+
         if mtime >= cutoff_ts:
             recent_notes.append((mtime, note_path, folder, summary))
 
-        # Group by folder
+    # Build reverse link count: stem -> number of incoming wikilinks
+    link_count: dict[str, int] = {stem: 0 for stem in per_note_data}
+    for _stem, (_, related_stems) in per_note_data.items():
+        for target_stem in related_stems:
+            if target_stem in link_count:
+                link_count[target_stem] += 1
+
+    # Second pass: group by folder, compute staleness
+    stale_count: int = 0
+    for note_path, (content, fm, title, summary, folder, mtime, tags_list) in note_contents.items():
+        stem: str = note_path.stem
+        incoming: int = link_count.get(stem, 0)
+        is_stale: bool = incoming == 0 and mtime < stale_cutoff_ts
+        if is_stale:
+            stale_count += 1
+
         if folder:
             folder_notes.setdefault(folder, []).append(
-                (_wikilink(note_path), title, summary)
+                (_wikilink(note_path), title, summary, tags_list, is_stale)
             )
 
     # Sort recent by mtime descending, limit
@@ -219,6 +294,7 @@ def build_index() -> tuple[str, int, int]:
     lines.append("## Quick Stats")
     lines.append(f"- **Total notes**: {total_notes}")
     lines.append(f"- **Last updated**: {now_str}")
+    lines.append(f"- Stale notes (no incoming links, >{STALE_DAYS} days): {stale_count}")
 
     # Doctor state summary
     state_file: Path = VAULT_ROOT / "doctor_state.json"
@@ -314,13 +390,14 @@ def build_index() -> tuple[str, int, int]:
     lines.append("")
 
     for folder_name_str in FOLDER_ORDER:
-        entries: list[tuple[str, str, str]] = folder_notes.get(folder_name_str, [])
+        entries: list[tuple[str, str, str, list[str], bool]] = folder_notes.get(folder_name_str, [])
         count: int = len(entries)
         lines.append(f"### {folder_name_str} ({count} notes)")
         if entries:
-            for wlink, title, summary in entries:
+            for wlink, title, summary, _tags, is_stale in entries:
                 summary_label = f" - {summary}" if summary else ""
-                lines.append(f"- {wlink}{summary_label}")
+                stale_marker = " [STALE?]" if is_stale else ""
+                lines.append(f"- {wlink}{summary_label}{stale_marker}")
         else:
             lines.append(f"_No notes in {folder_name_str}._")
         lines.append("")
@@ -331,22 +408,95 @@ def build_index() -> tuple[str, int, int]:
         entries = folder_notes[folder_name_str]
         count = len(entries)
         lines.append(f"### {folder_name_str} ({count} notes)")
-        for wlink, title, summary in entries:
+        for wlink, title, summary, _tags, is_stale in entries:
             summary_label = f" - {summary}" if summary else ""
-            lines.append(f"- {wlink}{summary_label}")
+            stale_marker = " [STALE?]" if is_stale else ""
+            lines.append(f"- {wlink}{summary_label}{stale_marker}")
         lines.append("")
 
-    return "\n".join(lines), total_notes, total_tags
+    return "\n".join(lines), total_notes, total_tags, folder_notes
+
+
+def build_manifests(
+    folder_notes: dict[str, list[tuple[str, str, str, list[str], bool]]],
+) -> list[Path]:
+    """Generate a MANIFEST.md file inside each non-empty vault subfolder.
+
+    Each manifest contains a Markdown table with one row per note, showing the
+    note stem as a wikilink, its tags, and a one-line summary. Stale notes are
+    marked with a warning emoji in the Note column.
+
+    Args:
+        folder_notes: Mapping from folder name to list of
+            (wikilink, title, summary, tags, is_stale) tuples, as returned by
+            ``build_index()``.
+
+    Returns:
+        A list of Path objects for all MANIFEST.md files written.
+    """
+    now_str: str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    written: list[Path] = []
+
+    for folder_name, entries in folder_notes.items():
+        if not entries:
+            continue
+
+        folder_dir: Path = VAULT_ROOT / folder_name
+        if not folder_dir.is_dir():
+            continue
+
+        note_count: int = len(entries)
+        lines: list[str] = []
+        lines.append(f"# {folder_name} — Vault Notes ({note_count} notes)")
+        lines.append(
+            f"<!-- Auto-generated by update_index.py on {now_str} — do not edit manually -->"
+        )
+        lines.append("")
+        lines.append("| Note | Tags | Summary |")
+        lines.append("|------|------|---------|")
+
+        for wlink, _title, summary, tags, is_stale in entries:
+            # wlink is like [[stem]] — extract stem for display
+            stem_match = _WIKILINK_RE.match(wlink)
+            stem: str = stem_match.group(1) if stem_match else wlink
+
+            stale_prefix: str = "⚠️ " if is_stale else ""
+            note_cell: str = f"{stale_prefix}[[{stem}]]"
+
+            tags_cell: str = " ".join(f"`{t}`" for t in tags) if tags else ""
+            # Escape pipe characters in summary to avoid breaking the table
+            summary_cell: str = summary.replace("|", "\\|") if summary else ""
+
+            lines.append(f"| {note_cell} | {tags_cell} | {summary_cell} |")
+
+        lines.append("")
+        content: str = "\n".join(lines)
+
+        manifest_path: Path = folder_dir / "MANIFEST.md"
+        manifest_path.write_text(content, encoding="utf-8")
+        written.append(manifest_path)
+
+    return written
 
 
 def main() -> None:
-    """Entry point: rebuild the index and write it to CLAUDE.md."""
+    """Entry point: rebuild the index, write CLAUDE.md, and generate MANIFEST.md files."""
     _singleton_guard()
-    content, note_count, tag_count = build_index()
+    content, note_count, tag_count, folder_notes = build_index()
     index_path: Path = VAULT_ROOT / "CLAUDE.md"
     index_path.write_text(content, encoding="utf-8")
-    git_commit_vault("chore(vault): rebuild index")
-    print(f"Updated CLAUDE.md: {note_count} notes indexed, {tag_count} tags")
+
+    manifest_paths: list[Path] = build_manifests(folder_notes)
+    manifest_count: int = len(manifest_paths)
+
+    # Commit CLAUDE.md + all MANIFEST.md files together
+    commit_paths: list[Path] = [index_path] + manifest_paths
+    git_commit_vault("chore(vault): rebuild index and manifests", paths=commit_paths)
+
+    print(
+        f"Updated CLAUDE.md: {note_count} notes indexed, {tag_count} tags; "
+        f"{manifest_count} MANIFEST.md file(s) generated"
+    )
 
 
 if __name__ == "__main__":

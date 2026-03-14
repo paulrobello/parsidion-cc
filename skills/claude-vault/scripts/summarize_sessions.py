@@ -37,6 +37,7 @@ _funlock = vault_common.funlock
 
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"
+_DEFAULT_CLUSTER_MODEL = "claude-haiku-4-5-20251001"
 _DEFAULT_MAX_PARALLEL = 5
 _DEFAULT_TRANSCRIPT_TAIL_LINES = 400
 _DEFAULT_MAX_CLEANED_CHARS = 12_000
@@ -258,6 +259,16 @@ Today's date: {today}
 Session transcript (cleaned):
 {cleaned_transcript}
 
+Before writing the note, evaluate: Will the insights from this session change behavior
+in future sessions? Is there something learnable, reusable, or architecturally significant?
+Or is this session purely transient — a failed experiment with no generalizable insight,
+a routine build/test run, a session that clarifies only session-specific context?
+
+If transient (skip), respond with ONLY this JSON (no other text):
+{{"decision": "skip", "reason": "<one sentence explaining why>"}}
+
+If learnable (save), write the full vault note as specified below.
+
 Write a complete markdown vault note. Requirements:
 - YAML frontmatter: date ({today}), type (debugging|research|pattern|tool|framework|language|project),
 {tags_instruction},
@@ -415,6 +426,246 @@ def write_note(note_content: str, dry_run: bool) -> Path | None:
         return None
 
 
+async def _summarize_chunk(
+    chunk_text: str,
+    chunk_num: int,
+    total_chunks: int,
+    model: str,
+    extra: dict[str, str | None],
+) -> str:
+    """Summarize one chunk of a long transcript using a cheaper model.
+
+    Args:
+        chunk_text: The transcript chunk to summarize.
+        chunk_num: 1-based index of this chunk.
+        total_chunks: Total number of chunks.
+        model: Model ID to use for summarization.
+        extra: Extra args to pass to ClaudeAgentOptions (e.g. no-session-persistence).
+
+    Returns:
+        A summary string (3-5 sentences). Falls back to a truncated version of
+        chunk_text on failure.
+    """
+    prompt = (
+        f"Summarize this portion ({chunk_num}/{total_chunks}) of a coding session "
+        "transcript in 3-5 sentences, capturing key decisions, errors encountered, "
+        "and solutions found. Focus on what would be useful to remember in future "
+        f"sessions.\n\nTranscript:\n{chunk_text}"
+    )
+    result_text = ""
+    try:
+        async for message in query(
+            prompt=prompt,
+            options=ClaudeAgentOptions(
+                allowed_tools=[],
+                permission_mode="default",
+                model=model,
+                extra_args=extra,
+            ),
+        ):
+            if isinstance(message, ResultMessage):
+                result_text = message.result
+    except Exception:
+        pass
+
+    if result_text:
+        return result_text
+    # Fallback: return truncated raw chunk
+    return chunk_text[:500]
+
+
+async def preprocess_transcript_hierarchical(
+    transcript_path_str: str,
+    tail_lines: int,
+    max_cleaned_chars: int,
+    cluster_model: str,
+    extra: dict[str, str | None],
+) -> str:
+    """Pre-process a transcript, using hierarchical summarization for long ones.
+
+    For transcripts within the character limit, returns the cleaned text
+    unchanged. For transcripts exceeding the limit, splits into chunks,
+    summarizes each chunk with a cheaper model, and returns the combined
+    chunk summaries.
+
+    Args:
+        transcript_path_str: String path to the transcript JSONL file.
+        tail_lines: Number of trailing transcript lines to read.
+        max_cleaned_chars: Maximum characters threshold.
+        cluster_model: Model ID to use for chunk summarization.
+        extra: Extra args forwarded to the Agent SDK.
+
+    Returns:
+        Cleaned dialogue string, or hierarchical summary string for long sessions.
+    """
+    cleaned = preprocess_transcript(transcript_path_str, tail_lines, max_cleaned_chars)
+    if len(cleaned) <= max_cleaned_chars:
+        return cleaned
+
+    # Split into chunks at newline boundaries
+    chunk_size = max_cleaned_chars // 3
+    chunks: list[str] = []
+    remaining = cleaned
+    while remaining:
+        if len(remaining) <= chunk_size:
+            chunks.append(remaining)
+            break
+        # Find a newline near the chunk boundary to avoid mid-sentence cuts
+        split_pos = remaining.rfind("\n", 0, chunk_size)
+        if split_pos == -1:
+            split_pos = chunk_size
+        chunks.append(remaining[:split_pos])
+        remaining = remaining[split_pos:].lstrip("\n")
+
+    total = len(chunks)
+    print(
+        f"  [hierarchical] Session too long ({len(cleaned)} chars), "
+        f"summarizing {total} chunks..."
+    )
+
+    summaries: list[str] = []
+    for i, chunk in enumerate(chunks):
+        summary = await _summarize_chunk(chunk, i + 1, total, cluster_model, extra)
+        summaries.append(summary)
+
+    header = f"[Hierarchical summary from {total} transcript segments]"
+    body = "\n\n".join(f"Segment {i + 1}:\n{s}" for i, s in enumerate(summaries))
+    return f"{header}\n\n{body}"
+
+
+def _find_related_by_tags(
+    new_note_path: Path,
+    new_tags: list[str],
+    max_links: int = 5,
+) -> list[str]:
+    """Find existing vault notes that share tags with a new note.
+
+    Args:
+        new_note_path: Path to the newly written note (excluded from results).
+        new_tags: Tags from the new note's frontmatter.
+        max_links: Maximum number of related note wikilinks to return.
+
+    Returns:
+        List of ``"[[stem]]"`` wikilink strings for the top matching notes,
+        sorted by tag-overlap score descending.
+    """
+    if not new_tags:
+        return []
+
+    new_tag_set = set(new_tags)
+    candidates: list[tuple[int, Path]] = []
+
+    for note_path in vault_common.all_vault_notes():
+        # Skip the note itself and daily notes
+        if note_path == new_note_path:
+            continue
+        if note_path.parts and "Daily" in note_path.parts:
+            continue
+
+        try:
+            content = note_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        fm = vault_common.parse_frontmatter(content)
+        existing_tags = fm.get("tags")
+        if not isinstance(existing_tags, list):
+            continue
+
+        overlap = len(new_tag_set & {str(t) for t in existing_tags})
+        if overlap >= 1:
+            candidates.append((overlap, note_path))
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return [f"[[{p.stem}]]" for _, p in candidates[:max_links]]
+
+
+def _inject_related_links(note_path: Path, new_links: list[str]) -> None:
+    """Merge new wikilinks into the ``related`` frontmatter field of a note.
+
+    Only modifies the ``related:`` line in frontmatter. Uses inline quoted
+    array format: ``related: ["[[a]]", "[[b]]"]``.
+
+    Args:
+        note_path: Path to the note to update.
+        new_links: Wikilinks to add (e.g. ``["[[note-a]]", "[[note-b]]"]``).
+    """
+    try:
+        content = note_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return
+
+    fm = vault_common.parse_frontmatter(content)
+    existing_related = fm.get("related") or []
+    if not isinstance(existing_related, list):
+        existing_related = []
+    # Normalise existing entries to strings
+    existing_strs: list[str] = [str(r) for r in existing_related]
+
+    merged = existing_strs + [lnk for lnk in new_links if lnk not in existing_strs]
+    if merged == existing_strs:
+        # Nothing new to add
+        return
+
+    # Build the replacement line using inline quoted array format
+    quoted_items = ", ".join(f'"{lnk}"' for lnk in merged)
+    new_related_line = f"related: [{quoted_items}]"
+
+    # Replace existing related: line, or insert before closing --- if absent
+    if re.search(r"^related:.*$", content, re.MULTILINE):
+        updated = re.sub(
+            r"^related:.*$", new_related_line, content, count=1, flags=re.MULTILINE
+        )
+    else:
+        # Insert before the closing --- of frontmatter
+        updated = content.replace("\n---\n", f"\n{new_related_line}\n---\n", 1)
+
+    try:
+        note_path.write_text(updated, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _add_backlinks_to_existing(
+    new_note_path: Path,
+    related_notes: list[str],
+) -> list[Path]:
+    """Add a backlink to ``new_note_path`` in each of the ``related_notes``.
+
+    For each wikilink in ``related_notes``, locates the corresponding note
+    file in the vault and calls ``_inject_related_links()`` to add a
+    back-reference to ``new_note_path``.
+
+    Args:
+        new_note_path: Path to the newly written note.
+        related_notes: List of ``"[[stem]]"`` wikilinks for existing notes.
+
+    Returns:
+        List of Paths that were modified.
+    """
+    new_link = f"[[{new_note_path.stem}]]"
+    modified: list[Path] = []
+
+    # Build a stem -> path index from all vault notes once
+    stem_index: dict[str, Path] = {}
+    for note_path in vault_common.all_vault_notes():
+        stem_index[note_path.stem] = note_path
+
+    for wikilink in related_notes:
+        # Extract stem from [[stem]]
+        stem_match = re.match(r"^\[\[(.+)\]\]$", wikilink)
+        if not stem_match:
+            continue
+        stem = stem_match.group(1)
+        target_path = stem_index.get(stem)
+        if target_path is None or target_path == new_note_path:
+            continue
+        _inject_related_links(target_path, [new_link])
+        modified.append(target_path)
+
+    return modified
+
+
 async def summarize_one(
     entry: dict[str, object],
     model: str,
@@ -424,6 +675,7 @@ async def summarize_one(
     persist: bool,
     tail_lines: int = _DEFAULT_TRANSCRIPT_TAIL_LINES,
     max_cleaned_chars: int = _DEFAULT_MAX_CLEANED_CHARS,
+    cluster_model: str = _DEFAULT_CLUSTER_MODEL,
 ) -> tuple[dict[str, object], Path | None]:
     """Summarize one pending session entry.
 
@@ -436,9 +688,11 @@ async def summarize_one(
         persist: If True, allow the SDK to persist the session to disk.
         tail_lines: Number of transcript lines to read.
         max_cleaned_chars: Maximum characters after cleaning.
+        cluster_model: Model ID for hierarchical chunk summarization.
 
     Returns:
-        Tuple of (entry, written_path). written_path is None on dry-run or error.
+        Tuple of (entry, written_path). written_path is None on dry-run,
+        skip decision, or error.
     """
     async with semaphore:
         transcript_path_str = str(entry.get("transcript_path", ""))
@@ -447,8 +701,12 @@ async def summarize_one(
         categories = [str(c) for c in (raw_cats if isinstance(raw_cats, list) else [])]
         session_id = str(entry.get("session_id") or Path(transcript_path_str).stem)
 
-        cleaned = preprocess_transcript(
-            transcript_path_str, tail_lines, max_cleaned_chars
+        extra: dict[str, str | None] = (
+            {} if persist else {"no-session-persistence": None}
+        )
+
+        cleaned = await preprocess_transcript_hierarchical(
+            transcript_path_str, tail_lines, max_cleaned_chars, cluster_model, extra
         )
         if not cleaned:
             print(
@@ -458,10 +716,6 @@ async def summarize_one(
             return entry, None
 
         prompt = build_prompt(project, categories, cleaned, existing_tags, session_id)
-
-        extra: dict[str, str | None] = (
-            {} if persist else {"no-session-persistence": None}
-        )
 
         result_text = ""
         try:
@@ -487,8 +741,43 @@ async def summarize_one(
             print(f"  No result from Claude for {transcript_path_str}", file=sys.stderr)
             return entry, None
 
+        # Write-gate: check if Claude decided this session is not worth saving
+        stripped_result = result_text.strip()
+        if stripped_result.startswith("{"):
+            try:
+                decision = json.loads(stripped_result)
+                if isinstance(decision, dict) and decision.get("decision") == "skip":
+                    reason = decision.get("reason", "no reason given")
+                    short_id = str(entry.get("session_id", "?"))[:8]
+                    print(f"  [write-gate] Skipping session {short_id}: {reason}")
+                    return entry, None
+            except (json.JSONDecodeError, ValueError):
+                pass  # Not a skip decision — treat as normal note
+
         result_text = inject_project_tag(result_text, project)
         written = write_note(result_text, dry_run)
+
+        # Automated backlink suggestion
+        if written is not None:
+            try:
+                new_fm = vault_common.parse_frontmatter(
+                    written.read_text(encoding="utf-8")
+                )
+                note_tags = new_fm.get("tags") or []
+                if not isinstance(note_tags, list):
+                    note_tags = []
+                tag_strs = [str(t) for t in note_tags]
+                related_links = _find_related_by_tags(written, tag_strs)
+                if related_links:
+                    _inject_related_links(written, related_links)
+                    _add_backlinks_to_existing(written, related_links)
+                    print(
+                        f"  [backlinks] Added {len(related_links)} related links "
+                        f"to {written.name}"
+                    )
+            except (OSError, UnicodeDecodeError):
+                pass  # Backlink step is best-effort; never fail the main flow
+
         return entry, written
 
 
@@ -500,6 +789,7 @@ async def run_all(
     max_parallel: int = _DEFAULT_MAX_PARALLEL,
     tail_lines: int = _DEFAULT_TRANSCRIPT_TAIL_LINES,
     max_cleaned_chars: int = _DEFAULT_MAX_CLEANED_CHARS,
+    cluster_model: str = _DEFAULT_CLUSTER_MODEL,
 ) -> list[tuple[dict[str, object], Path | None]]:
     """Run all summarization tasks in parallel.
 
@@ -511,6 +801,7 @@ async def run_all(
         max_parallel: Maximum concurrent summarization tasks.
         tail_lines: Transcript tail lines per entry.
         max_cleaned_chars: Max cleaned chars per entry.
+        cluster_model: Model ID for hierarchical chunk summarization.
 
     Returns:
         List of (entry, written_path) tuples.
@@ -533,6 +824,7 @@ async def run_all(
             persist,
             tail_lines,
             max_cleaned_chars,
+            cluster_model,
         )
         results.append(result)
 
@@ -683,6 +975,11 @@ def main() -> None:
         "max_cleaned_chars",
         _DEFAULT_MAX_CLEANED_CHARS,
     )
+    cluster_model: str = vault_common.get_config(
+        "summarizer",
+        "cluster_model",
+        _DEFAULT_CLUSTER_MODEL,
+    )
 
     # Determine source file
     if args.sessions:
@@ -711,16 +1008,26 @@ def main() -> None:
             max_parallel,
             tail_lines,
             max_cleaned_chars,
+            cluster_model,
         ),
     )
 
+    # Categorise results: written notes, write-gate skips, and hard failures.
+    # A None written_path covers both "skipped by write-gate" and "failed";
+    # the write-gate already prints its own message, so we just distinguish
+    # from any other None (no transcript, query error) to avoid double-printing.
     successful_entries: list[dict[str, object]] = []
+    failed_count = 0
     for entry, written_path in results:
         if written_path is not None:
             print(f"  Written: {written_path}")
             successful_entries.append(entry)
         elif not args.dry_run:
-            print(f"  Skipped: {entry.get('transcript_path', '?')}", file=sys.stderr)
+            # write-gate skips already printed their own "[write-gate]" line;
+            # count everything else as a failure for the summary line.
+            failed_count += 1
+
+    skipped_count = len(entries) - len(successful_entries) - failed_count
 
     if not args.dry_run:
         # Remove processed entries from pending file (only when using the default pending path)
@@ -736,7 +1043,14 @@ def main() -> None:
                 f"chore(vault): add session notes [{project_str}]"
             )
 
-    print(f"Done. {len(successful_entries)}/{len(entries)} session(s) processed.")
+    summary_parts = [f"{len(successful_entries)} written"]
+    if skipped_count:
+        summary_parts.append(f"{skipped_count} skipped by write-gate")
+    if failed_count:
+        summary_parts.append(f"{failed_count} failed")
+    print(
+        f"Done. {len(entries)} session(s) processed: {', '.join(summary_parts)}."
+    )
 
 
 if __name__ == "__main__":
