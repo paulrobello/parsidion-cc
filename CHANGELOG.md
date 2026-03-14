@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- PID singleton guard in `update_index.py` to prevent concurrent runs (mirrors `vault_doctor.py` pattern)
 - CONTRIBUTING.md with development setup and PR guidelines
 - CHANGELOG.md following Keep a Changelog format
 - Makefile with standard quality targets (`lint`, `fmt`, `typecheck`, `test`, `checkall`)

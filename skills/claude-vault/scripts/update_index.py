@@ -6,7 +6,9 @@ comprehensive index with tag cloud, recent activity, and per-folder listings.
 Uses only Python stdlib.
 """
 
+import atexit
 import json
+import os
 import sys
 from collections import Counter
 from datetime import datetime, timedelta
@@ -42,6 +44,53 @@ FOLDER_ORDER: list[str] = [
 RECENT_DAYS: int = 7
 RECENT_MAX: int = 20
 SUMMARY_MAX_CHARS: int = 80
+
+PID_FILE: Path = VAULT_ROOT / "index.pid"
+
+
+def _is_process_running(pid: int) -> bool:
+    """Return True if a process with *pid* is currently running."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # process exists; we lack permission to signal it
+
+
+def _write_pid() -> None:
+    """Write current PID to the PID file."""
+    tmp = PID_FILE.with_suffix(".pid.tmp")
+    tmp.write_text(str(os.getpid()), encoding="utf-8")
+    tmp.replace(PID_FILE)
+
+
+def _release_pid() -> None:
+    """Remove the PID file at process exit."""
+    try:
+        if PID_FILE.exists() and PID_FILE.read_text(encoding="utf-8").strip() == str(os.getpid()):
+            PID_FILE.unlink()
+    except Exception:
+        pass  # best-effort cleanup
+
+
+def _singleton_guard() -> None:
+    """Exit early if another update_index is already running."""
+    try:
+        existing_pid = int(PID_FILE.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        existing_pid = None
+
+    if existing_pid and existing_pid != os.getpid() and _is_process_running(existing_pid):
+        print(
+            f"update_index is already running (PID {existing_pid}). Exiting.",
+            file=sys.stderr,
+        )
+        sys.exit(0)
+
+    _write_pid()
+    atexit.register(_release_pid)
 
 
 def _extract_title(content: str, filename_stem: str) -> str:
@@ -292,6 +341,7 @@ def build_index() -> tuple[str, int, int]:
 
 def main() -> None:
     """Entry point: rebuild the index and write it to CLAUDE.md."""
+    _singleton_guard()
     content, note_count, tag_count = build_index()
     index_path: Path = VAULT_ROOT / "CLAUDE.md"
     index_path.write_text(content, encoding="utf-8")
