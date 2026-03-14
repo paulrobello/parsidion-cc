@@ -18,42 +18,38 @@ When you encounter an error, exception, or unexpected behavior:
 1. Extract the key signal — exception class name, package name, or the most
    distinctive phrase from the error message (e.g. `IntegrityError`, `pydantic_settings`,
    `query_one`).
-2. Search `~/ClaudeVault/Debugging/` first:
-   ```
-   Grep: path=~/ClaudeVault/Debugging, glob=**/*.md, pattern=<signal>
-   ```
-3. Widen to `Frameworks/`, `Languages/`, `Projects/` if nothing found in `Debugging/`.
-4. **Found a match?** Apply the documented fix. Update the note if you learn
-   something new about the problem.
-5. **No match?** Diagnose and solve it, then save the solution so future sessions
-   benefit (see "Saving Solutions" below).
+2. Dispatch the `vault-explorer` agent with the signal as the query.
+3. **Answer returned?** Apply the documented fix. Update the note if you learn
+   something new about the problem. `Read` specific source files from the Sources
+   section only if you need more depth.
+4. **"No relevant vault notes found"?** Diagnose and solve it, then dispatch the
+   `research-documentation-agent` to save the solution (see "Saving Solutions" below).
 
 ## Implementation: Check for Prior Art
 
 Before writing non-trivial code for any feature, integration, or pattern:
 
-1. Search `~/ClaudeVault/Patterns/` for relevant design patterns.
-2. Search `~/ClaudeVault/Frameworks/` and `Languages/` for the specific stack.
-3. Search `~/ClaudeVault/Projects/` for implementations in other projects:
-   ```
-   Grep: path=~/ClaudeVault/Projects, glob=**/*.md, pattern=<feature-keyword>
-   ```
-4. **Found prior art?** Read it. Reuse and adapt — a proven implementation from
-   another project beats a fresh one every time.
-5. Check the `sources` field of matched notes for relevant code paths and references.
+1. Dispatch the `vault-explorer` agent with the feature keyword as the query.
+2. **Answer returned?** Reuse and adapt — a proven implementation from another
+   project beats a fresh one every time. `Read` specific source files from the
+   Sources section for implementation details and the `sources` frontmatter field
+   for referenced code paths.
+3. **"No relevant vault notes found"?** Implement it, then dispatch the
+   `research-documentation-agent` to save the pattern (see "Saving Solutions" below).
 
 ## Efficient Vault Search
 
-Always use the **Grep tool** with `path: ~/ClaudeVault` and `glob: **/*.md`
-rather than shell commands.
+Dispatch the **`vault-explorer` agent** with a natural language query describing
+what you are looking for. The agent searches all relevant vault folders, ranks
+results, reads the top matches, and returns:
 
-| Goal | Pattern to search |
-|---|---|
-| Error by type | Exception class name (e.g. `IntegrityError`) |
-| Error by package | Package/library name (e.g. `sqlalchemy`, `pydantic`) |
-| Pattern by keyword | Feature keyword (e.g. `websocket`, `oauth2`, `retry`) |
-| Cross-project | Search `Projects/` subfolder only |
-| By note type | `type: debugging` or `type: pattern` in frontmatter |
+- **`## Answer`** — a synthesized answer you can use immediately
+- **`## Sources`** — absolute paths to matching notes for targeted deep-dives
+
+**If the answer is sufficient:** proceed without reading any source files.
+**If you need more depth:** `Read` specific files from the Sources section.
+**If "No relevant vault notes found":** dispatch the `research-documentation-agent`
+to research externally and save findings to the vault.
 
 ## Vault Organization
 
