@@ -41,7 +41,7 @@ REPAIRABLE_CODES = frozenset(
     {"MISSING_FRONTMATTER", "MISSING_FIELD", "INVALID_TYPE", "INVALID_DATE", "ORPHAN_NOTE"}
 )
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
-AI_TIMEOUT = 60  # seconds
+AI_TIMEOUT = 120  # seconds
 STATE_FILE = vault_common.VAULT_ROOT / "doctor_state.json"
 STATE_STALE_DAYS = 7  # re-check "ok" notes after this many days
 STALE_COMMIT_MINUTES = 15  # auto-commit uncommitted files older than this
@@ -355,7 +355,7 @@ def check_note(path: Path, note_map: dict[str, list[Path]]) -> list[Issue]:
 # ---------------------------------------------------------------------------
 
 
-def repair_note(path: Path, issues: list[Issue], model: str = DEFAULT_MODEL) -> tuple[str | None, str]:
+def repair_note(path: Path, issues: list[Issue], model: str = DEFAULT_MODEL, timeout: int = AI_TIMEOUT) -> tuple[str | None, str]:
     """Call Claude *model* to fix *issues* in *path*.
 
     Returns (fixed_content_or_None, status) where status is one of
@@ -395,7 +395,7 @@ Current note:
             ["claude", "-p", prompt, "--model", model],
             capture_output=True,
             text=True,
-            timeout=AI_TIMEOUT,
+            timeout=timeout,
             env=env,
         )
         if result.returncode == 0:
@@ -426,6 +426,7 @@ def _repair_one(
     state: dict,
     today_str: str,
     lock: threading.Lock,
+    timeout: int = AI_TIMEOUT,
 ) -> bool:
     """Repair one note, update state under *lock*, return True on success."""
     key = _rel(note_path)
@@ -435,7 +436,7 @@ def _repair_one(
     with lock:
         prev_status = state.get("notes", {}).get(key, {}).get("status", "")
 
-    fixed_content, repair_status = repair_note(note_path, repairable, model)
+    fixed_content, repair_status = repair_note(note_path, repairable, model, timeout)
 
     if fixed_content:
         note_path.write_text(fixed_content + "\n", encoding="utf-8")
@@ -511,6 +512,13 @@ def main() -> None:
         default=3,
         metavar="N",
         help="Number of parallel repair jobs (default: 3)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=AI_TIMEOUT,
+        metavar="SECS",
+        help=f"Seconds to wait for each Claude repair call (default: {AI_TIMEOUT})",
     )
     args = parser.parse_args()
 
@@ -658,12 +666,12 @@ def main() -> None:
     failed = 0
     lock = threading.Lock()
 
-    print(f"Repairing up to {limit} note(s) via {args.model} ({jobs} parallel job(s))…\n")
+    print(f"Repairing up to {limit} note(s) via {args.model} ({jobs} parallel job(s), {args.timeout}s timeout)…\n")
     batch = repair_candidates[:limit]
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
         futures = {
             executor.submit(
-                _repair_one, note_path, note_issues, args.model, state, today_str, lock
+                _repair_one, note_path, note_issues, args.model, state, today_str, lock, args.timeout
             ): note_path
             for note_path, note_issues in batch
         }
