@@ -17,7 +17,7 @@ Options:
     --verbose, -v       Show detailed output
     --force, -f         Overwrite existing skill files
     --skip-hooks        Do not modify settings.json
-    --skip-agent        Do not install the research agent
+    --skip-agent        Do not install any agents
     --uninstall         Remove installed skill, agent, and hooks
     --help, -h          Show this help message
 """
@@ -74,7 +74,10 @@ def dim(t: str) -> str:
 
 REPO_ROOT: Path = Path(__file__).parent.resolve()
 SKILL_SRC: Path = REPO_ROOT / "skills" / "claude-vault"
-AGENT_SRC: Path = REPO_ROOT / "agents" / "research-documentation-agent.md"
+AGENT_SRCS: list[Path] = [
+    REPO_ROOT / "agents" / "research-documentation-agent.md",
+    REPO_ROOT / "agents" / "vault-explorer.md",
+]
 CLAUDE_VAULT_MD_SRC: Path = REPO_ROOT / "CLAUDE-VAULT.md"
 
 # Hook script filenames installed inside the skill
@@ -316,19 +319,22 @@ def install_skill(
     return dest
 
 
-def install_agent(
+def install_agents(
     claude_dir: Path,
     dry_run: bool = False,
 ) -> None:
-    """Copy the research agent to ~/.claude/agents/."""
+    """Copy all agents to ~/.claude/agents/, skipping missing sources with a warning."""
     agents_dir = claude_dir / "agents"
-    dest = agents_dir / AGENT_SRC.name
-
-    _step(f"Install agent: {AGENT_SRC.name} → {agents_dir}/", dry_run=dry_run)
-
     if not dry_run:
         agents_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(AGENT_SRC, dest)
+    for agent_src in AGENT_SRCS:
+        if not agent_src.exists():
+            _warn(f"Agent source not found: {agent_src} — skipping")
+            continue
+        dest = agents_dir / agent_src.name
+        _step(f"Install agent: {agent_src.name} → {agents_dir}/", dry_run=dry_run)
+        if not dry_run:
+            shutil.copy2(agent_src, dest)
 
 
 # ---------------------------------------------------------------------------
@@ -600,7 +606,6 @@ def uninstall(
     print(bold("\nUninstalling Parsidion CC..."))
 
     skill_dir = claude_dir / "skills" / "claude-vault"
-    agent_dest = claude_dir / "agents" / AGENT_SRC.name
 
     if skill_dir.exists():
         _step(f"Remove skill directory: {skill_dir}", dry_run=dry_run)
@@ -609,12 +614,14 @@ def uninstall(
     else:
         _warn(f"Skill directory not found: {skill_dir}")
 
-    if agent_dest.exists():
-        _step(f"Remove agent: {agent_dest}", dry_run=dry_run)
-        if not dry_run:
-            agent_dest.unlink()
-    else:
-        _warn(f"Agent not found: {agent_dest}")
+    for agent_src in AGENT_SRCS:
+        agent_dest = claude_dir / "agents" / agent_src.name
+        if agent_dest.exists():
+            _step(f"Remove agent: {agent_dest}", dry_run=dry_run)
+            if not dry_run:
+                agent_dest.unlink()
+        else:
+            _warn(f"Agent not found: {agent_dest}")
 
     # Remove hook registrations
     if settings_file.exists():
@@ -722,7 +729,8 @@ def install(args: argparse.Namespace) -> int:
     print(f"  {dim('Settings     :')} {settings_file}")
     print(f"  {dim('Install skill:')} {claude_dir / 'skills' / 'claude-vault'}")
     if not args.skip_agent:
-        print(f"  {dim('Install agent:')} {claude_dir / 'agents' / AGENT_SRC.name}")
+        for agent_src in AGENT_SRCS:
+            print(f"  {dim('Install agent:')} {claude_dir / 'agents' / agent_src.name}")
     if not args.skip_hooks:
         print(f"  {dim('Register hooks:')} SessionStart, SessionEnd, PreCompact")
     print(f"  {dim('Install guidance:')} {claude_dir / 'CLAUDE-VAULT.md'} (@import into CLAUDE.md)")
@@ -752,12 +760,9 @@ def install(args: argparse.Namespace) -> int:
         verbose=verbose,
     )
 
-    # 2. Install agent
+    # 2. Install agents
     if not args.skip_agent:
-        if AGENT_SRC.exists():
-            install_agent(claude_dir, dry_run=dry_run)
-        else:
-            _warn(f"Agent source not found: {AGENT_SRC} — skipping")
+        install_agents(claude_dir, dry_run=dry_run)
 
     # 3. Create vault directories
     create_vault_dirs(vault_root, dry_run=dry_run)
@@ -850,12 +855,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-agent",
         action="store_true",
-        help="Do not install the research agent",
+        help="Do not install any agents",
     )
     parser.add_argument(
         "--uninstall",
         action="store_true",
-        help="Remove installed skill, agent, and hooks",
+        help="Remove installed skill, agents, and hooks",
     )
     parser.add_argument(
         "--help",
