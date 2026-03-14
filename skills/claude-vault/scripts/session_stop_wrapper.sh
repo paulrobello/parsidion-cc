@@ -25,6 +25,6 @@ printf '{}'
 (
   unset CLAUDECODE
   nohup uv run --no-project "$REAL_HOOK" < "$TMPFILE" \
-    >> /tmp/session_stop_hook.log 2>&1
+    > /dev/null 2>> /tmp/session_stop_hook.log
   rm -f "$TMPFILE"
 ) &

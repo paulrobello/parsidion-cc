@@ -454,14 +454,17 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        input_data: dict[str, object] = json.loads(sys.stdin.read())
+        raw_stdin = sys.stdin.read()
+        input_data: dict[str, object] = json.loads(raw_stdin)
     except (json.JSONDecodeError, ValueError):
+        print("[session_stop_hook] ERROR: failed to parse stdin JSON", file=sys.stderr)
         sys.stdout.write("{}")
         return
 
     try:
         # Prevent recursive hook invocation
         if os.environ.get("CLAUDE_VAULT_STOP_ACTIVE"):
+            print("[session_stop_hook] skipping: recursive invocation detected", file=sys.stderr)
             sys.stdout.write("{}")
             return
         os.environ["CLAUDE_VAULT_STOP_ACTIVE"] = "1"
@@ -470,11 +473,13 @@ def main() -> None:
         cwd = str(input_data.get("cwd", ""))
 
         if not transcript_path_str:
+            print("[session_stop_hook] skipping: no transcript_path in input", file=sys.stderr)
             sys.stdout.write("{}")
             return
 
         transcript_path = Path(transcript_path_str)
         if not transcript_path.is_file():
+            print(f"[session_stop_hook] skipping: transcript not found: {transcript_path}", file=sys.stderr)
             sys.stdout.write("{}")
             return
 
@@ -482,14 +487,18 @@ def main() -> None:
         vault_common.ensure_vault_dirs()
 
         project: str = vault_common.get_project_name(cwd) if cwd else "unknown"
+        print(f"[session_stop_hook] project={project} transcript={transcript_path.name}", file=sys.stderr)
 
         # Read and parse the last 200 lines of the transcript
         raw_lines: list[str] = read_last_n_lines(transcript_path, 200)
         assistant_texts: list[str] = parse_transcript_lines(raw_lines)
 
         if not assistant_texts:
+            print("[session_stop_hook] skipping: no assistant messages found in transcript tail", file=sys.stderr)
             sys.stdout.write("{}")
             return
+
+        print(f"[session_stop_hook] parsed {len(assistant_texts)} assistant message(s)", file=sys.stderr)
 
         # Resolve AI model: CLI → config → None (disabled)
         ai_model: str | None = args.ai
@@ -498,6 +507,7 @@ def main() -> None:
 
         # --- AI classification path ---
         if ai_model:
+            print(f"[session_stop_hook] classifying with AI model: {ai_model}", file=sys.stderr)
             ai_result = _classify_session_with_ai(assistant_texts, project, ai_model)
             if ai_result is not None:
                 raw_cats = ai_result.get("categories") or []
@@ -505,24 +515,38 @@ def main() -> None:
                     str(cat): [] for cat in (raw_cats if isinstance(raw_cats, list) else [])
                 }
                 ai_summary = str(ai_result.get("summary", ""))
+                should_queue = bool(ai_result.get("should_queue", False))
+                cats_str = ", ".join(ai_categories.keys()) or "none"
+                print(
+                    f"[session_stop_hook] AI result: should_queue={should_queue} "
+                    f"categories=[{cats_str}] summary={ai_summary[:100]!r}",
+                    file=sys.stderr,
+                )
                 first_summary_ai: str = ai_summary or (
                     assistant_texts[0][:500] if assistant_texts else ""
                 )
                 append_session_to_daily(project, ai_categories, first_summary_ai)
-                if ai_result["should_queue"] and ai_categories:
+                print("[session_stop_hook] daily note updated", file=sys.stderr)
+                if should_queue and ai_categories:
                     append_to_pending(
                         transcript_path, project, ai_categories, force=True
                     )
+                    print("[session_stop_hook] session queued for summarization", file=sys.stderr)
+                else:
+                    print("[session_stop_hook] session not queued (no significant categories or should_queue=false)", file=sys.stderr)
                 vault_common.git_commit_vault(
                     f"chore(vault): session notes [{project}]"
                 )
                 _launch_summarizer_if_pending()
                 sys.stdout.write("{}")
                 return
+            print("[session_stop_hook] AI classification failed, falling back to keyword heuristics", file=sys.stderr)
             # AI failed — fall through to keyword detection
 
         # --- Keyword heuristic path (default or AI fallback) ---
         categories: dict[str, list[str]] = detect_categories(assistant_texts)
+        cats_str = ", ".join(categories.keys()) or "none"
+        print(f"[session_stop_hook] keyword detection: categories=[{cats_str}]", file=sys.stderr)
 
         first_summary: str = ""
         for text in assistant_texts:
@@ -533,7 +557,13 @@ def main() -> None:
             first_summary = assistant_texts[0][:500]
 
         append_session_to_daily(project, categories, first_summary)
+        print("[session_stop_hook] daily note updated", file=sys.stderr)
         append_to_pending(transcript_path, project, categories)
+        significant = {"error_fix", "research", "pattern"}
+        if significant & set(categories.keys()):
+            print("[session_stop_hook] session queued for summarization", file=sys.stderr)
+        else:
+            print("[session_stop_hook] session not queued (no significant categories)", file=sys.stderr)
         vault_common.git_commit_vault(f"chore(vault): session notes [{project}]")
         _launch_summarizer_if_pending()
 
