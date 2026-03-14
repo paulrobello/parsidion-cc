@@ -210,7 +210,7 @@ All hooks read `~/ClaudeVault/config.yaml` for settings. CLI args override confi
 
 | Hook | Behavior | Config section |
 |---|---|---|
-| **SessionStart** | Loads relevant vault context based on the current project and recent daily notes; optional AI selection via `--ai [MODEL]` or `session_start_hook.ai_model` config | `session_start_hook` |
+| **SessionStart** | Loads relevant vault notes as a **compact one-line-per-note index** (title + tags) by default — minimal token usage. `--verbose` flag or `verbose_mode: true` config switches to full note summaries. Optional AI selection via `--ai [MODEL]` or `session_start_hook.ai_model` config. | `session_start_hook` |
 | **SessionEnd** | Captures learnings from the session transcript (fires once at session end); auto-launches the summarizer when pending entries exist | `session_stop_hook` |
 | **PreCompact** | Snapshots current working state so context survives compaction | `pre_compact_hook` |
 
@@ -225,7 +225,12 @@ The `CLAUDE.md` at the vault root is auto-generated. Rebuild it when:
 uv run ~/.claude/skills/claude-vault/scripts/update_index.py
 ```
 
-This scans all vault folders, reads frontmatter, and produces a structured index with links and tags. Confirm to the user when the rebuild is complete.
+This scans all vault folders, reads frontmatter, and produces:
+- A structured root `CLAUDE.md` index with tag cloud, recent activity, and per-folder listings
+- **Per-folder `MANIFEST.md` files** — table-format indexes (Note | Tags | Summary) written inside each subfolder for quick orientation without loading the full root index
+- **Staleness markers** — notes with zero incoming wikilinks AND older than 30 days are flagged `[STALE?]` in the index (surfaced for review, never auto-deleted)
+
+Confirm to the user when the rebuild is complete.
 
 ## Summarizing Pending Sessions
 
@@ -266,6 +271,28 @@ Processes up to 5 sessions in parallel (configurable via `summarizer.max_paralle
 Rebuilds the vault index automatically when done.
 Sessions from today whose generated note type is `daily` are skipped (today's daily note
 is still being built by the stop hook).
+
+### Write-Gate Filter
+
+Before generating a note, the summarizer asks Claude to evaluate whether the session contains
+reusable insight. Transient sessions (failed experiments, routine builds, dead-ends with no
+generalizable lesson) are skipped rather than saved. Skipped sessions are reported separately
+from failures in the output summary.
+
+### Hierarchical Summarization
+
+For sessions whose cleaned transcript exceeds `max_cleaned_chars` (default 12,000), the
+summarizer splits the transcript into chunks and uses a faster model (`claude-haiku-4-5-20251001`
+by default, configurable via `summarizer.cluster_model`) to summarize each chunk first. The
+chunk summaries are then fed to the main Sonnet note generator. This preserves context from
+very long sessions that would otherwise be truncated.
+
+### Automated Backlinks
+
+After writing a new note, the summarizer scans existing vault notes for tag overlap and
+injects bidirectional `[[wikilinks]]` — updating both the new note's `related` field and
+adding back-references in matching existing notes. This builds the link graph automatically
+rather than requiring manual maintenance.
 
 ## Vault Doctor
 
@@ -358,6 +385,7 @@ session_start_hook:
   ai_timeout: 25           # AI call timeout in seconds
   recent_days: 3           # Days to look back for recent notes
   debug: false             # Append injected context to debug log in $TMPDIR
+  verbose_mode: false      # If true, inject full note summaries instead of compact one-line index
 
 session_stop_hook:
   ai_model: null           # Model for AI classification (null = disabled)
@@ -373,6 +401,7 @@ summarizer:
   transcript_tail_lines: 400
   max_cleaned_chars: 12000
   persist: false           # SDK session persistence (for debugging)
+  cluster_model: claude-haiku-4-5-20251001  # Model for hierarchical chunk summarization
 
 git:
   auto_commit: true        # Auto-commit vault changes after writes

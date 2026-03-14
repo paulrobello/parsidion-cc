@@ -57,7 +57,7 @@ automatically stage and commit changes after every vault write:
 
 - `session_stop_wrapper.sh` / `session_stop_hook.py` — commits daily note + pending queue after each session end
 - `pre_compact_hook.py` — commits daily note after each pre-compact snapshot
-- `update_index.py` — commits `CLAUDE.md` after each index rebuild
+- `update_index.py` — commits `CLAUDE.md` + per-folder `MANIFEST.md` files after each index rebuild
 - `summarize_sessions.py` — commits new notes + updated index after processing
 
 To enable, initialize the vault as a git repo:
@@ -89,10 +89,10 @@ Config sections:
 
 | Section | Keys | Used by |
 |---|---|---|
-| `session_start_hook` | `ai_model`, `max_chars`, `ai_timeout`, `recent_days`, `debug` | `session_start_hook.py` |
+| `session_start_hook` | `ai_model`, `max_chars`, `ai_timeout`, `recent_days`, `debug`, `verbose_mode` | `session_start_hook.py` |
 | `session_stop_hook` | `ai_model`, `ai_timeout`, `auto_summarize` | `session_stop_hook.py` |
 | `pre_compact_hook` | `lines` | `pre_compact_hook.py` |
-| `summarizer` | `model`, `max_parallel`, `transcript_tail_lines`, `max_cleaned_chars`, `persist` | `summarize_sessions.py` |
+| `summarizer` | `model`, `max_parallel`, `transcript_tail_lines`, `max_cleaned_chars`, `persist`, `cluster_model` | `summarize_sessions.py` |
 | `git` | `auto_commit` | `vault_common.git_commit_vault()` |
 
 The config is parsed by `vault_common.load_config()` (simple stdlib YAML parser — supports
@@ -152,11 +152,11 @@ EOF
 The system has four layers:
 
 1. **Hook scripts** — Python scripts fired by Claude Code's lifecycle events, communicating via JSON stdin/stdout:
-   - `session_start_hook.py`: Loads relevant vault notes as `additionalContext`; optional `--ai [MODEL]` flag uses `claude -p` (haiku by default, `CLAUDECODE` unset) to intelligently select notes from the full vault — requires bumping the hook timeout to 30 s in `settings.json`
+   - `session_start_hook.py`: Loads relevant vault notes as `additionalContext`. Default mode injects a **compact one-line-per-note index** (title + tags) to minimize token usage; `--verbose` flag or `verbose_mode: true` config switches to full summaries. Optional `--ai [MODEL]` flag uses `claude -p` (haiku by default, `CLAUDECODE` unset) to intelligently select notes — requires bumping hook timeout to 30 s in `settings.json`
    - `session_stop_wrapper.sh` + `session_stop_hook.py`: Registered under the `SessionEnd` hook. The shell wrapper reads stdin, outputs `{}` immediately (so Claude Code doesn't cancel it during fast exits), then spawns `session_stop_hook.py` detached via `nohup`. The Python script detects learnable content and appends session metadata (session_id, transcript_path, categories) to `~/ClaudeVault/pending_summaries.jsonl`. Uses `fcntl.flock` for safe concurrent access across parallel Claude instances.
    - `pre_compact_hook.py`: Snapshots current task state before context compaction. Extracts the current task by scanning backwards through the last 200 transcript lines for the most recent user text message. Extracts recently-touched files by parsing `tool_use` blocks from assistant messages (Read/Write/Edit/Grep/NotebookEdit tools).
 
-2. **`summarize_sessions.py`** — On-demand PEP 723 script (requires `claude-agent-sdk`, `anyio`). Reads `pending_summaries.jsonl`, pre-processes transcripts, and calls Claude via the Agent SDK (up to 5 parallel sessions) to generate structured vault notes. Cleans processed entries from the queue and rebuilds the index when done.
+2. **`summarize_sessions.py`** — On-demand PEP 723 script (requires `claude-agent-sdk`, `anyio`). Reads `pending_summaries.jsonl`, pre-processes transcripts, and calls Claude via the Agent SDK (up to 5 parallel sessions) to generate structured vault notes. Features: **write-gate filter** (Claude decides per-session if insights are reusable before generating a note), **hierarchical summarization** (transcripts exceeding `max_cleaned_chars` are chunked and summarized by haiku first), **automated backlinks** (tag-overlap scan injects bidirectional wikilinks after each note write). Cleans processed entries from the queue and rebuilds the index when done.
 
 3. **`vault_common.py`** — Shared library imported by all hooks. Contains frontmatter parsing (regex-based, no pyyaml), vault traversal, note search functions, and path utilities. All vault operations go through this module.
 
