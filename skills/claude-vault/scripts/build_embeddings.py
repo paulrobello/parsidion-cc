@@ -359,19 +359,42 @@ def main() -> None:
         default=False,
         help="Preview actions without writing to disk.",
     )
+    config_model: str = vault_common.get_config("embeddings", "model", _DEFAULT_MODEL)
     parser.add_argument(
         "--model",
-        default=_DEFAULT_MODEL,
+        default=config_model,
         metavar="MODEL",
-        help=f"fastembed model ID to use (default: {_DEFAULT_MODEL}).",
+        help=f"fastembed model ID to use (default from config: {config_model}).",
     )
     args = parser.parse_args()
 
-    if args.model == _DEFAULT_MODEL:
+    if "bge-small" in args.model.lower():
         print(
-            f"Note: {_DEFAULT_MODEL} downloads ~67 MB on first use "
+            f"Note: {args.model} downloads ~67 MB on first use "
             "(cached in ~/.cache/fastembed after that)."
         )
+
+    # If the model changed since the last build, incremental is unsafe —
+    # existing vectors have a different dimension. Force full rebuild.
+    db_path = vault_common.get_embeddings_db_path()
+    if args.incremental and db_path.exists():
+        conn_check = _open_db(db_path)
+        row = conn_check.execute(
+            "SELECT embedding FROM note_embeddings LIMIT 1"
+        ).fetchone()
+        conn_check.close()
+        if row is not None:
+            import struct as _struct
+            stored_dim = len(_struct.unpack(f"{len(row[0]) // 4}f", row[0]))
+            # Load model briefly to check its output dimension
+            from fastembed import TextEmbedding as _TE  # type: ignore[import-untyped]
+            probe = list(_TE(model_name=args.model).embed(["probe"]))[0]
+            if len(probe) != stored_dim:
+                print(
+                    f"Model dimension mismatch (stored={stored_dim}, "
+                    f"new={len(probe)}) — forcing full rebuild."
+                )
+                args.incremental = False
 
     start = time.time()
     if args.incremental:

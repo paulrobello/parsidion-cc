@@ -32,8 +32,8 @@ from fastembed import TextEmbedding  # type: ignore[import-untyped]
 sys.path.insert(0, str(Path(__file__).parent))
 import vault_common  # noqa: E402
 
-_DEFAULT_MODEL: str = "BAAI/bge-small-en-v1.5"
-_EMBED_DIM: int = 384
+_DEFAULT_MODEL: str = vault_common.get_config("embeddings", "model", "BAAI/bge-small-en-v1.5")
+_EMBED_DIM: int = 384  # unused; kept for reference
 
 
 def _open_db(db_path: Path) -> sqlite3.Connection:
