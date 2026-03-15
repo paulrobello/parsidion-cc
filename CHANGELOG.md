@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `--rich` / `-r` output format for `vault-search` — Rich-colorized one-line-per-note output with score colored green/yellow/red by value, folder in cyan, stem bold, tags dim yellow, and title bright white
+- Short options for all `vault-search` flags: `-n`/`--top`, `-s`/`--min-score`, `-m`/`--model`, `-T`/`--tag` (uppercase to avoid conflict with `-t`), `-f`/`--folder`, `-k`/`--type`, `-p`/`--project`, `-d`/`--recent-days`, `-l`/`--limit`, `-j`/`--json`, `-t`/`--text`, `-r`/`--rich`
+- `VAULT_SEARCH_*` environment variable support: `VAULT_SEARCH_FORMAT`, `VAULT_SEARCH_MIN_SCORE`, `VAULT_SEARCH_TOP`, `VAULT_SEARCH_LIMIT`, `VAULT_SEARCH_MODEL`; precedence is CLI flag > env var > config.yaml > built-in default
+- `rich>=13.0` added to `[tools]` extras in `pyproject.toml` (was only in `[eval]`)
+
 ## [0.2.0] - 2026-03-15
 
 ### Added

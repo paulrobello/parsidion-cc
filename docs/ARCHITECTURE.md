@@ -536,18 +536,42 @@ Rebuilds `~/ClaudeVault/CLAUDE.md` by scanning all vault notes. Includes a PID s
 
 Both modes produce the same JSON output structure. The `vault-explorer` agent uses metadata mode as its Tier 2 search step (after semantic, before grep fallback).
 
+**Output formats** (all modes):
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--json` | `-j` | JSON array output (default) |
+| `--text` | `-t` | Human-readable one-line-per-note output |
+| `--rich` | `-r` | Rich-colorized one-line-per-note (score green/yellow/red, folder cyan, tags dim) |
+
 **Metadata filter flags:**
 
-| Flag | Description |
-|------|-------------|
-| `--tag TAG` | Filter by exact tag token (comma-sep list match) |
-| `--folder FOLDER` | Filter by exact folder name |
-| `--type TYPE` | Filter by `note_type` field |
-| `--project PROJECT` | Filter by `project` field |
-| `--recent-days N` | Notes modified within N days |
-| `--limit N` | Max results for metadata mode (default: 50) |
-| `--json` | JSON array output (default) |
-| `--text` | Human-readable one-line-per-note output |
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--tag TAG` | `-T` | Filter by exact tag token (comma-sep list match) |
+| `--folder FOLDER` | `-f` | Filter by exact folder name |
+| `--type TYPE` | `-k` | Filter by `note_type` field |
+| `--project PROJECT` | `-p` | Filter by `project` field |
+| `--recent-days N` | `-d` | Notes modified within N days |
+| `--limit N` | `-l` | Max results for metadata mode (default: 50) |
+
+**Semantic-mode flags:**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--top N` | `-n` | Max results (default: `embeddings.top_k` in config) |
+| `--min-score F` | `-s` | Minimum cosine similarity threshold |
+| `--model ID` | `-m` | fastembed model ID |
+
+**Environment variables** (`VAULT_SEARCH_*` prefix; precedence: CLI flag > env var > config.yaml > default):
+
+| Variable | Description |
+|---|---|
+| `VAULT_SEARCH_FORMAT` | Default output format: `json`, `text`, or `rich` |
+| `VAULT_SEARCH_MIN_SCORE` | Minimum cosine similarity threshold |
+| `VAULT_SEARCH_TOP` | Max semantic results |
+| `VAULT_SEARCH_LIMIT` | Max metadata results |
+| `VAULT_SEARCH_MODEL` | fastembed model ID |
 
 **Graceful degradation:** returns `[]` when `embeddings.db` is absent or `note_index` table does not exist.
 

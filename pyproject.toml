@@ -13,6 +13,7 @@ search = [
 # All CLI tools (vault-search + vault-query)
 tools = [
     "parsidion-cc[search]",
+    "rich>=13.0",
 ]
 # QA-019: Dependencies for embed_eval.py and migrate_*.py (not needed for core operation)
 eval = [

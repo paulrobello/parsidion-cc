@@ -27,7 +27,7 @@ you find, and return it in the standard format below.
 1. **Semantic search (if available):** Run vault_search.py with the full
    natural-language query as a single Bash call:
    ```bash
-   uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_search.py "QUERY" --json 2>/dev/null
+   uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_search.py "QUERY" -j 2>/dev/null
    ```
    - If the command returns **3 or more results** with `score ≥ 0.35`, use
      those `path` values as your candidates and **skip to step 6**.
@@ -36,15 +36,15 @@ you find, and return it in the standard format below.
      not exist yet.
 
 2. **Metadata search:** Infer filters from the query:
-   - Folder signals ("debugging notes", "patterns for X") → `--folder`
-   - Type signals ("find debugging notes", "what patterns") → `--type`
-   - Project name → `--project`
-   - Tag signal → `--tag`
-   - "recent" → `--recent-days 7`
+   - Folder signals ("debugging notes", "patterns for X") → `-f`/`--folder`
+   - Type signals ("find debugging notes", "what patterns") → `-k`/`--type`
+   - Project name → `-p`/`--project`
+   - Tag signal → `-T`/`--tag`
+   - "recent" → `-d 7`/`--recent-days 7`
 
    Run:
    ```bash
-   vault-search [--folder F] [--type T] [--tag TAG] [--project P] [--recent-days N] 2>/dev/null
+   vault-search [-f F] [-k T] [-T TAG] [-p P] [-d N] 2>/dev/null
    ```
    - If 3+ results → use those paths as candidates, **skip to step 6**.
    - If fewer than 3 results or command fails → continue to step 3.

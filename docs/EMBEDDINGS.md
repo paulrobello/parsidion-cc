@@ -173,12 +173,18 @@ Metadata queries use `vault_search.py` with filter flags and no positional query
 ```bash
 # All notes in the Patterns folder
 uv run ~/.claude/skills/claude-vault/scripts/vault_search.py --folder Patterns
+uv run ~/.claude/skills/claude-vault/scripts/vault_search.py -f Patterns   # short form
 
 # Notes tagged "python" modified in the last 7 days
 uv run ~/.claude/skills/claude-vault/scripts/vault_search.py --tag python --recent-days 7
+uv run ~/.claude/skills/claude-vault/scripts/vault_search.py -T python -d 7  # short form
 
-# Human-readable output
+# Human-readable text output
 uv run ~/.claude/skills/claude-vault/scripts/vault_search.py --project parsidion-cc --text
+uv run ~/.claude/skills/claude-vault/scripts/vault_search.py -p parsidion-cc -t
+
+# Rich-colorized output
+uv run ~/.claude/skills/claude-vault/scripts/vault_search.py -f Debugging -r
 ```
 
 ### Querying via Python
@@ -292,21 +298,37 @@ uv run ~/.claude/skills/claude-vault/scripts/build_embeddings.py --model BAAI/bg
 The basic search command returns a ranked list of matching notes:
 
 ```bash
-uv run ~/.claude/skills/claude-vault/scripts/vault_search.py "sqlite vector search" --top 5
+uv run ~/.claude/skills/claude-vault/scripts/vault_search.py "sqlite vector search" -n 5
 ```
 
 Each result line shows the similarity score, note stem, title, folder, tags, and absolute path.
 
-### JSON Mode
+### Output Formats
 
-Pass `--json` to receive a machine-readable JSON array. This is the format consumed by hook
-integrations:
+`vault-search` supports three output formats, selectable via flag or environment variable:
 
 ```bash
-uv run ~/.claude/skills/claude-vault/scripts/vault_search.py "hook patterns" --json
+# JSON array (default) — consumed by hook integrations and agents
+vault-search "hook patterns" --json     # long form
+vault-search "hook patterns" -j         # short form
+
+# Human-readable one-line-per-note text
+vault-search "hook patterns" --text     # long form
+vault-search "hook patterns" -t         # short form
+
+# Rich-colorized one-line-per-note (score colored green/yellow/red, folder cyan, tags dim)
+vault-search "hook patterns" --rich     # long form
+vault-search "hook patterns" -r         # short form
+vault-search "hook patterns" -n 5 -r   # top 5, rich output
 ```
 
-Each element in the array contains these fields:
+Set a permanent default with the `VAULT_SEARCH_FORMAT` environment variable:
+
+```bash
+VAULT_SEARCH_FORMAT=rich vault-search "query"
+```
+
+The JSON output format is the one consumed by hook integrations. Each element contains these fields:
 
 | Field | Description |
 |---|---|
@@ -319,26 +341,48 @@ Each element in the array contains these fields:
 
 ### Filtering by Score
 
-Use `--min-score` to exclude results below a similarity threshold:
+Use `--min-score` / `-s` to exclude results below a similarity threshold:
 
 ```bash
 uv run ~/.claude/skills/claude-vault/scripts/vault_search.py "qdrant embeddings" --min-score 0.4
+uv run ~/.claude/skills/claude-vault/scripts/vault_search.py "qdrant embeddings" -s 0.4
 ```
 
 The global default minimum score is controlled by `embeddings.min_score` in `config.yaml`
-(default `0.35`). The CLI flag overrides it for a single invocation.
+(default `0.35`). The CLI flag overrides it for a single invocation. You can also set it via
+environment variable: `VAULT_SEARCH_MIN_SCORE=0.5 vault-search "query"`.
 
-> **✅ Tip:** A score above `0.5` indicates strong topical overlap. Use `--min-score 0.5` when
+> **Tip:** A score above `0.5` indicates strong topical overlap. Use `--min-score 0.5` when
 > you want only high-confidence matches. Use the default `0.35` when exploring a new topic where
 > the vault may have only tangentially related notes.
 
 ### Controlling Result Count
 
-Use `--top N` to control how many results are returned (default is set by `embeddings.top_k` in
+Use `--top N` / `-n N` to control how many results are returned (default is set by `embeddings.top_k` in
 config, which defaults to `10`):
 
 ```bash
 uv run ~/.claude/skills/claude-vault/scripts/vault_search.py "fastapi middleware" --top 3
+uv run ~/.claude/skills/claude-vault/scripts/vault_search.py "fastapi middleware" -n 3
+```
+
+### Environment Variables
+
+All `vault-search` defaults can be set via `VAULT_SEARCH_*` environment variables. Precedence:
+**CLI flag > env var > config.yaml > built-in default**.
+
+| Variable | Flag equivalent | Description |
+|---|---|---|
+| `VAULT_SEARCH_FORMAT` | `--json` / `--text` / `--rich` | Default output format: `json`, `text`, or `rich` |
+| `VAULT_SEARCH_MIN_SCORE` | `--min-score` / `-s` | Minimum cosine similarity threshold (0.0–1.0) |
+| `VAULT_SEARCH_TOP` | `--top` / `-n` | Max semantic results |
+| `VAULT_SEARCH_LIMIT` | `--limit` / `-l` | Max metadata results |
+| `VAULT_SEARCH_MODEL` | `--model` / `-m` | fastembed model ID |
+
+Example:
+
+```bash
+VAULT_SEARCH_FORMAT=rich VAULT_SEARCH_MIN_SCORE=0.5 vault-search "sqlite patterns"
 ```
 
 ---
@@ -446,8 +490,9 @@ session_start_hook:
 | `top_k` | `embeddings` | integer | `10` | Default number of results returned per search |
 | `use_embeddings` | `session_start_hook` | boolean | `true` | Enable semantic blending in the session start hook |
 
-> **📝 Note:** CLI flags (`--min-score`, `--top`, `--model`) override `config.yaml` values for a
-> single invocation without modifying the stored configuration.
+> **Note:** CLI flags override `config.yaml` values for a single invocation without modifying
+> the stored configuration. Environment variables (`VAULT_SEARCH_*`) sit between config.yaml
+> and CLI flags in the precedence chain: **CLI flag > env var > config.yaml > built-in default**.
 
 ---
 

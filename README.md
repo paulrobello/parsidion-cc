@@ -319,14 +319,34 @@ uv run --no-project ~/.claude/skills/claude-vault/scripts/build_embeddings.py
 
 **Search vault from the CLI:**
 ```bash
-# Semantic search (natural language)
-vault-search "sqlite vector search patterns" --json
+# Semantic search (natural language) — three output formats
+vault-search "sqlite vector search patterns"          # JSON output (default)
+vault-search "sqlite vector search patterns" -t       # human-readable text
+vault-search "sqlite vector search patterns" -r       # Rich-colorized output
+vault-search "hook patterns" -n 5 -r                  # top 5, rich output
 
 # Metadata search (filter flags, no query)
-vault-search --folder Patterns --tag python
-vault-search --recent-days 7
-vault-search --project parsidion-cc --type debugging
+vault-search -f Patterns -T python                    # short options
+vault-search --folder Patterns --tag python           # long options (also valid)
+vault-search -d 7                                     # modified in last 7 days
+vault-search -p parsidion-cc -k debugging             # by project and type
+
+# Environment variables (override config.yaml defaults)
+VAULT_SEARCH_FORMAT=rich vault-search "query"
+VAULT_SEARCH_MIN_SCORE=0.5 VAULT_SEARCH_TOP=5 vault-search "query"
 ```
+
+**`VAULT_SEARCH_*` environment variables:**
+
+| Variable | Description | Example |
+|---|---|---|
+| `VAULT_SEARCH_FORMAT` | Default output format: `json`, `text`, or `rich` | `VAULT_SEARCH_FORMAT=rich` |
+| `VAULT_SEARCH_MIN_SCORE` | Minimum cosine similarity threshold (0.0–1.0) | `VAULT_SEARCH_MIN_SCORE=0.5` |
+| `VAULT_SEARCH_TOP` | Max semantic results | `VAULT_SEARCH_TOP=5` |
+| `VAULT_SEARCH_LIMIT` | Max metadata results | `VAULT_SEARCH_LIMIT=20` |
+| `VAULT_SEARCH_MODEL` | fastembed model ID | `VAULT_SEARCH_MODEL=BAAI/bge-small-en-v1.5` |
+
+Precedence: **CLI flag > env var > config.yaml > built-in default**
 
 > **📝 Note:** `vault-search` requires `uv run install.py --install-tools` (or `uv tool install --editable ".[tools]"` from the repo root) to register it as a global command. Without this, use `uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_search.py` instead.
 

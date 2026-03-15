@@ -4,6 +4,7 @@
 # dependencies = [
 #   "fastembed>=0.6.0,<1.0",
 #   "sqlite-vec>=0.1.6,<1.0",
+#   "rich>=13.0",
 # ]
 # ///
 """Unified vault search: semantic (positional query) or metadata (filter flags).
@@ -27,6 +28,7 @@ field (cosine similarity); metadata results set ``score`` to ``null``.
 
 import argparse
 import json
+import os
 import sqlite3
 import struct
 import sys
@@ -314,6 +316,95 @@ def _format_text(results: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _format_rich(results: list[dict[str, Any]]) -> None:
+    """Print results with Rich colorized one-line-per-note output.
+
+    Score is colored green (>=0.80), yellow (>=0.60), or red (<0.60).
+    Folder is cyan, stem bold, tags dim yellow, title bright white.
+
+    Args:
+        results: List of result dicts.
+    """
+    from rich.console import Console
+    from rich.text import Text
+
+    console = Console()
+    for r in results:
+        score = r.get("score")
+        tags = r.get("tags", [])
+        tags_str = ", ".join(str(t) for t in tags) if isinstance(tags, list) else ""
+        is_stale = bool(r.get("is_stale"))
+
+        line = Text()
+
+        if isinstance(score, (int, float)):
+            s = float(score)
+            score_style = "bold green" if s >= 0.80 else "yellow" if s >= 0.60 else "red"
+            line.append(f"{s:.4f}  ", style=score_style)
+
+        line.append(r.get("folder") or ".", style="cyan")
+        line.append("/", style="dim white")
+        line.append(str(r.get("stem", "")), style="bold white")
+
+        if tags_str:
+            line.append(" [", style="dim white")
+            line.append(tags_str, style="dim yellow")
+            line.append("]", style="dim white")
+
+        if is_stale:
+            line.append(" [STALE]", style="bold red")
+
+        line.append(" — ", style="dim white")
+        line.append(str(r.get("title", "")), style="bright_white")
+
+        console.print(line, soft_wrap=True)
+
+
+# ---------------------------------------------------------------------------
+# Env-var helpers
+# ---------------------------------------------------------------------------
+
+_ENV_PREFIX = "VAULT_SEARCH_"
+
+
+def _env_float(name: str, fallback: float) -> float:
+    """Return float from env var *name* or *fallback* on missing/invalid value.
+
+    Args:
+        name: Environment variable name (without prefix).
+        fallback: Value to use when the variable is absent or non-numeric.
+
+    Returns:
+        Parsed float or fallback.
+    """
+    raw = os.environ.get(_ENV_PREFIX + name)
+    if raw is None:
+        return fallback
+    try:
+        return float(raw)
+    except ValueError:
+        return fallback
+
+
+def _env_int(name: str, fallback: int) -> int:
+    """Return int from env var *name* or *fallback* on missing/invalid value.
+
+    Args:
+        name: Environment variable name (without prefix).
+        fallback: Value to use when the variable is absent or non-integer.
+
+    Returns:
+        Parsed int or fallback.
+    """
+    raw = os.environ.get(_ENV_PREFIX + name)
+    if raw is None:
+        return fallback
+    try:
+        return int(raw)
+    except ValueError:
+        return fallback
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -326,7 +417,13 @@ def main() -> None:
         description=(
             "Search Claude Vault notes by meaning (semantic) or by metadata filters.\n\n"
             "Semantic mode: provide a QUERY string.\n"
-            "Metadata mode: provide one or more filter flags (--tag, --folder, etc.).\n"
+            "Metadata mode: provide one or more filter flags (--tag, --folder, etc.).\n\n"
+            "Environment variables (VAULT_SEARCH_*):\n"
+            "  FORMAT=json|text|rich   default output format\n"
+            "  MIN_SCORE=0.0–1.0       minimum cosine similarity threshold\n"
+            "  TOP=N                   max semantic results\n"
+            "  LIMIT=N                 max metadata results\n"
+            "  MODEL=<id>              fastembed model ID\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -342,74 +439,100 @@ def main() -> None:
     # Semantic-only flags
     _cfg_top_k: int = vault_common.get_config("embeddings", "top_k", 10)
     _cfg_min_score: float = vault_common.get_config("embeddings", "min_score", 0.0)
+    _eff_top_k = _env_int("TOP", _cfg_top_k)
+    _eff_min_score = _env_float("MIN_SCORE", _cfg_min_score)
+    _eff_model = os.environ.get(_ENV_PREFIX + "MODEL", _DEFAULT_MODEL)
     parser.add_argument(
         "--top",
+        "-n",
         type=int,
-        default=_cfg_top_k,
+        default=_eff_top_k,
         metavar="N",
-        help=f"Semantic: max results (default {_cfg_top_k}).",
+        help=f"Semantic: max results (default {_eff_top_k}, env: VAULT_SEARCH_TOP).",
     )
     parser.add_argument(
         "--min-score",
+        "-s",
         type=float,
-        default=_cfg_min_score,
+        default=_eff_min_score,
         metavar="FLOAT",
-        help=f"Semantic: minimum cosine similarity 0.0–1.0 (default {_cfg_min_score}).",
+        help=(
+            f"Semantic: minimum cosine similarity 0.0–1.0 "
+            f"(default {_eff_min_score}, env: VAULT_SEARCH_MIN_SCORE)."
+        ),
     )
     parser.add_argument(
         "--model",
-        default=_DEFAULT_MODEL,
+        "-m",
+        default=_eff_model,
         metavar="MODEL",
-        help=f"Semantic: fastembed model ID (default: {_DEFAULT_MODEL}).",
+        help=f"Semantic: fastembed model ID (default: {_eff_model}, env: VAULT_SEARCH_MODEL).",
     )
 
     # Metadata filter flags
     parser.add_argument(
-        "--tag", metavar="TAG", help="Metadata: filter by exact tag token."
+        "--tag", "-T", metavar="TAG", help="Metadata: filter by exact tag token."
     )
     parser.add_argument(
-        "--folder", metavar="FOLDER", help="Metadata: filter by exact folder name."
+        "--folder", "-f", metavar="FOLDER", help="Metadata: filter by exact folder name."
     )
     parser.add_argument(
         "--type",
+        "-k",
         metavar="TYPE",
         dest="note_type",
         help="Metadata: filter by note type.",
     )
     parser.add_argument(
-        "--project", metavar="PROJECT", help="Metadata: filter by project name."
+        "--project", "-p", metavar="PROJECT", help="Metadata: filter by project name."
     )
     parser.add_argument(
         "--recent-days",
+        "-d",
         metavar="N",
         type=int,
         help="Metadata: notes modified within the last N days.",
     )
+    _eff_limit = _env_int("LIMIT", 50)
     parser.add_argument(
         "--limit",
+        "-l",
         metavar="N",
         type=int,
-        default=50,
-        help="Metadata: maximum number of results (default: 50).",
+        default=_eff_limit,
+        help=f"Metadata: maximum number of results (default: {_eff_limit}, env: VAULT_SEARCH_LIMIT).",
     )
 
-    # Output format
+    # Output format — VAULT_SEARCH_FORMAT=json|text|rich sets the default
+    _eff_format = os.environ.get(_ENV_PREFIX + "FORMAT", "json").lower()
+    if _eff_format not in {"json", "text", "rich"}:
+        _eff_format = "json"
     output_group = parser.add_mutually_exclusive_group()
     output_group.add_argument(
         "--json",
+        "-j",
         dest="output_format",
         action="store_const",
         const="json",
-        default="json",
-        help="JSON array output (default).",
+        help="JSON array output.",
     )
     output_group.add_argument(
         "--text",
+        "-t",
         dest="output_format",
         action="store_const",
         const="text",
         help="Human-readable one-line-per-note output.",
     )
+    output_group.add_argument(
+        "--rich",
+        "-r",
+        dest="output_format",
+        action="store_const",
+        const="rich",
+        help="Rich colorized one-line-per-note output.",
+    )
+    parser.set_defaults(output_format=_eff_format)
 
     args = parser.parse_args()
 
@@ -461,6 +584,8 @@ def main() -> None:
 
     if args.output_format == "text":
         print(_format_text(results))
+    elif args.output_format == "rich":
+        _format_rich(results)
     else:
         print(json.dumps(results, indent=2))
 

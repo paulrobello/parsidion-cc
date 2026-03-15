@@ -49,9 +49,12 @@ uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py 
 env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py
 
 # Search vault notes (after uv tool install --editable ".[tools]")
-vault-search "hook patterns" --top 5          # semantic search
-vault-search --folder Patterns                # metadata: by folder
-vault-search --tag python --recent-days 7     # metadata: by tag + recency
+vault-search "hook patterns" -n 5            # semantic, top 5
+vault-search -n 5 -r "hook patterns"         # semantic, rich output
+vault-search -f Patterns                     # metadata: by folder
+vault-search -T python -d 7                  # metadata: by tag + recency
+vault-search --folder Patterns --tag python  # metadata: long form still works
+VAULT_SEARCH_FORMAT=rich VAULT_SEARCH_MIN_SCORE=0.5 vault-search "query"  # env vars
 
 # Run the skill trigger accuracy eval (MUST be from a separate terminal, not inside Claude Code)
 bash ~/.claude/skills/claude-vault/scripts/run_trigger_eval.sh
@@ -181,7 +184,7 @@ The system has four layers:
 
 3. **`vault_common.py`** — Shared library imported by all hooks. Contains frontmatter parsing (regex-based, no pyyaml), vault traversal, note search functions (`find_notes_by_tag` etc. — DB-first, file-walk fallback), `ensure_note_index_schema()`, `query_note_index()`, and path utilities. All vault operations go through this module.
 
-4. **`vault_search.py`** — Unified search CLI with two modes. **Semantic mode** (positional `QUERY`): fastembed + sqlite-vec cosine similarity search. **Metadata mode** (filter flags `--tag`/`--folder`/`--type`/`--project`/`--recent-days`, no query): SQL query against `note_index` table. Both modes output identical JSON with a `score` field (`null` for metadata). Installed globally as `vault-search` via `uv tool install`. Used by `vault-explorer` agent for both Tier 1 and Tier 2 search.
+4. **`vault_search.py`** — Unified search CLI with two modes. **Semantic mode** (positional `QUERY`): fastembed + sqlite-vec cosine similarity search. **Metadata mode** (filter flags `--tag`/`-T`, `--folder`/`-f`, `--type`/`-k`, `--project`/`-p`, `--recent-days`/`-d`, no query): SQL query against `note_index` table. Both modes output identical JSON with a `score` field (`null` for metadata). Three output formats: `--json`/`-j` (default), `--text`/`-t` (human-readable), `--rich`/`-r` (Rich-colorized one-line-per-note). All flags have short options; defaults configurable via `VAULT_SEARCH_*` environment variables. Installed globally as `vault-search` via `uv tool install`. Used by `vault-explorer` agent for both Tier 1 and Tier 2 search.
 
 5. **`~/ClaudeVault/`** — The Obsidian vault itself. Auto-generated `CLAUDE.md` index at the root. Subfolders: `Daily/`, `Projects/`, `Languages/`, `Frameworks/`, `Patterns/`, `Debugging/`, `Tools/`, `Research/`, `Templates/` (symlink to skill templates). `embeddings.db` contains `note_embeddings` (vectors) and `note_index` (metadata).
 
