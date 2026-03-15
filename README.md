@@ -48,7 +48,7 @@ Parsidion CC replaces Claude Code's built-in auto memory with a richly organized
    ```bash
    uv run install.py
    ```
-   This installs the vault skill, research agent, session hooks, and always-on vault guidance into `~/.claude/`.
+   This installs the vault skill, research agent, vault-explorer agent, session hooks, and always-on vault guidance into `~/.claude/`.
 
 3. **Restart Claude Code** to activate the hooks.
 
@@ -68,6 +68,9 @@ uv run install.py --vault ~/MyVault --yes
 
 # Preview without making changes
 uv run install.py --dry-run
+
+# Also install vault-search as a global CLI command
+uv run install.py --force --yes --install-tools
 ```
 
 **Options:**
@@ -81,8 +84,9 @@ uv run install.py --dry-run
 | `--force / -f` | Overwrite existing skill files without prompting |
 | `--yes / -y` | Skip all confirmation prompts; uses `~/ClaudeVault` if `--vault` not given |
 | `--skip-hooks` | Do not modify `settings.json` |
-| `--skip-agent` | Do not install the research agent |
-| `--uninstall` | Remove installed skill, agent, and hook registrations |
+| `--skip-agent` | Do not install any agents |
+| `--install-tools` | Install `vault-search` as a global CLI command via `uv tool install` |
+| `--uninstall` | Remove installed skill, agents, and hook registrations |
 
 After installation, open the vault path in Obsidian and restart Claude Code to activate hooks.
 
@@ -99,13 +103,17 @@ An Obsidian vault-based knowledge management system that replaces Claude Code's 
 | Script | Purpose |
 |--------|---------|
 | `vault_common.py` | Shared library (frontmatter parsing, search, path utilities, config loader, git commit) |
-| `session_start_hook.py` | SessionStart hook - loads project-relevant vault context; `--ai [MODEL]` enables AI-powered note selection via `claude -p`; `--debug` logs injected context to `$TMPDIR` |
-| `session_stop_hook.py` | SessionEnd hook - queues sessions to `pending_summaries.jsonl` (deduped by session_id, `fcntl`-locked); auto-launches summarizer in background |
-| `summarize_sessions.py` | On-demand AI summarizer - generates structured vault notes from queued sessions (PEP 723, uses `claude-agent-sdk`) |
-| `pre_compact_hook.py` | PreCompact hook - snapshots working state before compaction |
-| `update_index.py` | Rebuilds `~/ClaudeVault/CLAUDE.md` index (includes `## Existing Tags` for summarizer, vault health from `doctor_state.json`) |
+| `session_start_hook.py` | SessionStart hook -- loads project-relevant vault context; `--ai [MODEL]` enables AI-powered note selection via `claude -p`; `--debug` logs injected context to `$TMPDIR` |
+| `session_stop_hook.py` | SessionEnd hook (launched via `session_stop_wrapper.sh`) -- queues sessions to `pending_summaries.jsonl` (deduped by session_id, `fcntl`-locked) |
+| `subagent_stop_hook.py` | SubagentStop hook (async) -- captures subagent transcripts and queues them to `pending_summaries.jsonl`; skips agents listed in `excluded_agents` |
+| `summarize_sessions.py` | On-demand AI summarizer -- generates structured vault notes from queued sessions (PEP 723, uses `claude-agent-sdk`) |
+| `pre_compact_hook.py` | PreCompact hook -- snapshots working state before compaction |
+| `build_embeddings.py` | Builds the semantic search embeddings database (`embeddings.db`) using fastembed and sqlite-vec |
+| `vault_search.py` | Unified search CLI -- semantic mode (natural language query) or metadata mode (`--tag`/`--folder`/`--type`/`--project`/`--recent-days`); available as `vault-search` global command with `--install-tools` |
+| `update_index.py` | Rebuilds `~/ClaudeVault/CLAUDE.md` index and populates the `note_index` SQLite table; includes tag cloud and vault health from `doctor_state.json` |
 | `vault_doctor.py` | Scans vault notes for structural issues (missing frontmatter, broken wikilinks, orphan notes, etc.); repairs via Claude haiku; singleton-guarded via PID in `doctor_state.json`; auto-commits uncommitted vault files ≥ 15 min old before scanning |
 | `check_graph_coverage.py` | Audits vault tags vs graph.json color groups; shows uncovered tags and stale entries |
+| `html-to-md.py` | PEP 723 standalone script -- converts HTML to clean, noise-free markdown optimized for LLM consumption; used by the research agent |
 | `run_trigger_eval.py` | Trigger accuracy eval (skill-selection simulation) |
 | `run_trigger_eval.sh` | Shell wrapper for running eval from a separate terminal (macOS/Linux) |
 | `run_trigger_eval.bat` | Batch wrapper for running eval from a separate terminal (Windows) |
@@ -120,6 +128,7 @@ An Obsidian vault-based knowledge management system that replaces Claude Code's 
   CLAUDE.md                  # Auto-generated index (includes tag cloud + Existing Tags list)
   config.yaml                # Optional -- hook/summarizer settings (see Configuration)
   pending_summaries.jsonl    # Queue of sessions awaiting AI summarization
+  embeddings.db              # SQLite database: note embeddings + note_index metadata table
   Daily/YYYY-MM/DD.md        # Session summaries (e.g. Daily/2026-03/13.md)
   Projects/                  # Per-project context
   Languages/                 # Language-specific knowledge
@@ -149,7 +158,7 @@ The claude-vault skill includes a sub-workflow for updating these groups -- add 
 
 ### CLAUDE-VAULT.md (`~/.claude/CLAUDE-VAULT.md`)
 
-An always-on guidance file loaded every Claude Code session via `@CLAUDE-VAULT.md` in `~/.claude/CLAUDE.md`. It enforces the **vault-first rule** unconditionally — no explicit invocation needed.
+An always-on guidance file loaded every Claude Code session via `@CLAUDE-VAULT.md` in `~/.claude/CLAUDE.md`. It enforces the **vault-first rule** unconditionally -- no explicit invocation needed.
 
 **What it enforces:**
 - **Debugging:** Search `~/ClaudeVault/Debugging/` before diagnosing any error. Extract the key signal (exception class, package name, distinctive phrase) and Grep the vault first. If found, apply the documented fix. If not, diagnose then save the solution.
@@ -158,18 +167,33 @@ An always-on guidance file loaded every Claude Code session via `@CLAUDE-VAULT.m
 
 The installer copies `CLAUDE-VAULT.md` from the repo root to `~/.claude/` and ensures the `@CLAUDE-VAULT.md` import line exists in `~/.claude/CLAUDE.md`. Uninstall removes both.
 
+### Vault Explorer Agent (`~/.claude/agents/vault-explorer.md`)
+
+A Haiku-powered read-only subagent that isolates vault lookups from the main session context. Dispatched automatically when the main session needs to search the vault.
+
+**7-step search procedure:**
+1. **Semantic search** -- `vault-search "QUERY" --json`; ≥3 results with score ≥ 0.35 → done
+2. **Metadata search** -- `vault-search --tag/--folder/--type/--project/--recent-days` with inferred filters; ≥3 results → done
+3. **Orient** -- reads `~/ClaudeVault/CLAUDE.md` index
+4. **Extract signals** -- exception class, package name, or keyword
+5. **Search by priority folder** -- Grep by query type table
+6. **Rank & read** -- top 5 by semantic score, then folder priority
+7. **Synthesize** -- returns `## Answer` + `## Sources`
+
+> **📝 Note:** The vault-explorer agent is listed in `excluded_agents` in `config.yaml` to prevent its own transcripts from being recursively harvested by the SubagentStop hook.
+
 ### Research Agent (`~/.claude/agents/research-documentation-agent.md`)
 
-Technical research agent that searches the vault first, conducts web research, and saves findings to the appropriate vault folder with proper YAML frontmatter. Fetches pages via `agentchrome page html` piped through `scripts/html-to-md` for noise-free markdown (curl fallback if agentchrome unavailable). Uses `mcpl` as a fallback search gateway when Brave Search hits rate limits — see [docs/MCPL.md](docs/MCPL.md) for mcpl setup.
+Technical research agent that searches the vault first, conducts web research, and saves findings to the appropriate vault folder with proper YAML frontmatter. Fetches pages via `agentchrome page html` piped through `html-to-md.py` for noise-free markdown (curl fallback if agentchrome unavailable). Uses `mcpl` as a fallback search gateway when Brave Search hits rate limits -- see [docs/MCPL.md](docs/MCPL.md) for mcpl setup.
 
-### HTML to Markdown (`scripts/html-to-md`)
+### HTML to Markdown (`skills/claude-vault/scripts/html-to-md.py`)
 
-A PEP 723 standalone script (installed to `~/.claude/scripts/html-to-md`) that converts HTML to clean, noise-free markdown optimized for LLM consumption. Strips navigation, banners, cookie notices, and script/style noise while preserving code fences with language annotations. Used by the research agent to clean `agentchrome` page output.
+A PEP 723 standalone script (installed to `~/.claude/skills/claude-vault/scripts/html-to-md.py`) that converts HTML to clean, noise-free markdown optimized for LLM consumption. Strips navigation, banners, cookie notices, and script/style noise while preserving code fences with language annotations. Used by the research agent to clean `agentchrome` page output.
 
 ```bash
-uv run --script scripts/html-to-md page.html          # file → stdout
-uv run --script scripts/html-to-md - < page.html      # stdin → stdout
-agentchrome page html | uv run --script ~/.claude/scripts/html-to-md - --url https://example.com
+uv run --script ~/.claude/skills/claude-vault/scripts/html-to-md.py page.html          # file → stdout
+uv run --script ~/.claude/skills/claude-vault/scripts/html-to-md.py - < page.html      # stdin → stdout
+agentchrome page html | uv run --script ~/.claude/skills/claude-vault/scripts/html-to-md.py - --url https://example.com
 ```
 
 ### Context Preview (`scripts/show-context`)
@@ -188,8 +212,9 @@ All hooks read `~/ClaudeVault/config.yaml` for settings (see [Configuration](#co
 | Hook Event | Script | Timeout | Config section | Notes |
 |------------|--------|---------|----------------|-------|
 | SessionStart | `session_start_hook.py` | 10 s (30 s with `--ai`) | `session_start_hook` | `--ai [MODEL]` or `session_start_hook.ai_model` enables AI selection |
-| SessionEnd | `session_stop_hook.py` | 10 s (30 s with `--ai`) | `session_stop_hook` | Auto-launches summarizer when pending entries exist |
+| SessionEnd | `session_stop_wrapper.sh` → `session_stop_hook.py` | 10 s | `session_stop_hook` | Shell wrapper outputs `{}` immediately; Python script runs detached via `nohup` |
 | PreCompact | `pre_compact_hook.py` | 10 s | `pre_compact_hook` | Configurable transcript lines |
+| SubagentStop | `subagent_stop_hook.py` | async | `subagent_stop_hook` | Non-blocking; skips agents listed in `excluded_agents` |
 
 ## Configuration
 
@@ -207,11 +232,17 @@ session_start_hook:
   ai_timeout: 25           # AI call timeout in seconds
   recent_days: 3           # Days to look back for recent notes
   debug: false             # Append injected context to debug log in $TMPDIR
+  use_embeddings: true     # Blend semantic search results into context injection
 
 session_stop_hook:
   ai_model: null           # Model for AI classification (null = disabled)
   ai_timeout: 25           # AI call timeout in seconds
   auto_summarize: true     # Auto-launch summarizer when pending entries exist
+
+subagent_stop_hook:
+  enabled: true            # Enable/disable subagent transcript capture
+  min_messages: 3          # Minimum messages before capturing transcript
+  excluded_agents: "vault-explorer,research-documentation-agent"  # Never capture these
 
 pre_compact_hook:
   lines: 200               # Transcript lines to analyse
@@ -222,6 +253,11 @@ summarizer:
   transcript_tail_lines: 400
   max_cleaned_chars: 12000
   persist: false           # SDK session persistence (for debugging)
+
+embeddings:
+  model: BAAI/bge-small-en-v1.5  # fastembed model for semantic search
+  min_score: 0.0           # Minimum cosine similarity threshold
+  top_k: 10                # Maximum semantic search results
 
 git:
   auto_commit: true        # Auto-commit vault changes after writes
@@ -249,15 +285,15 @@ If no `.git` directory is present, all git operations are silent no-ops.
   settings.json                      # Hooks, permissions, plugins
   agents/
     research-documentation-agent.md  # Research agent (vault-integrated)
-  scripts/
-    html-to-md                       # HTML → clean markdown (used by research agent)
+    vault-explorer.md                # Read-only Haiku vault search agent (7-step)
   skills/claude-vault/
     SKILL.md                         # Vault skill definition
-    scripts/                         # Hook scripts and utilities
+    scripts/                         # Hook scripts, utilities, and html-to-md.py
     templates/                       # Note templates + config.yaml reference
 
 ~/ClaudeVault/                       # Obsidian vault (knowledge base)
   config.yaml                        # Optional hook/summarizer settings
+  embeddings.db                      # Semantic search DB (note_embeddings + note_index tables)
 ```
 
 ## Usage
@@ -266,6 +302,24 @@ If no `.git` directory is present, all git operations are silent no-ops.
 ```bash
 uv run --no-project ~/.claude/skills/claude-vault/scripts/update_index.py
 ```
+
+**Build or rebuild semantic search embeddings:**
+```bash
+uv run --no-project ~/.claude/skills/claude-vault/scripts/build_embeddings.py
+```
+
+**Search vault from the CLI:**
+```bash
+# Semantic search (natural language)
+vault-search "sqlite vector search patterns" --json
+
+# Metadata search (filter flags, no query)
+vault-search --folder Patterns --tag python
+vault-search --recent-days 7
+vault-search --project parsidion-cc --type debugging
+```
+
+> **📝 Note:** `vault-search` requires `uv run install.py --install-tools` (or `uv tool install --editable ".[tools]"` from the repo root) to register it as a global command. Without this, use `uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_search.py` instead.
 
 **Summarize queued sessions** (generates structured vault notes via Claude Agent SDK):
 ```bash
@@ -297,7 +351,7 @@ uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --erro
 uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --no-state --dry-run
 ```
 
-The doctor is singleton-guarded — it stores its PID in `doctor_state.json` and exits if another instance is already running. Before scanning it auto-commits any uncommitted vault files whose mtime is ≥ 15 minutes old. Notes that time out twice are flagged `needs_review` and skipped on future runs. The vault health summary appears in `CLAUDE.md` after running `update_index.py`.
+The doctor is singleton-guarded -- it stores its PID in `doctor_state.json` and exits if another instance is already running. Before scanning it auto-commits any uncommitted vault files whose mtime is ≥ 15 minutes old. Notes that time out twice are flagged `needs_review` and skipped on future runs. The vault health summary appears in `CLAUDE.md` after running `update_index.py`.
 
 **Run trigger eval** (from a separate terminal, not inside Claude Code):
 ```bash
@@ -377,6 +431,11 @@ uv run install.py --uninstall
 - If running from inside Claude Code, unset the guard variable: `env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py`
 - Check that `pending_summaries.jsonl` exists and has entries.
 
+### `vault-search` command not found
+
+- Run `uv run install.py --force --yes --install-tools` to register the global command, or manually: `cd /path/to/parsidion-cc && uv tool install --editable ".[tools]"`
+- Ensure `~/.local/bin/` is on your PATH (Linux/macOS) or `%APPDATA%\Python\Scripts` (Windows).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding constraints, and PR guidelines.
@@ -387,5 +446,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding constraints
 
 ## Related Documentation
 
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) -- System architecture, file layout, and hook design
+- [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) -- Semantic search setup, embeddings database, and evaluation
 - [docs/MCPL.md](docs/MCPL.md) -- MCP Launchpad CLI: installation, configuration, and integration with Claude Code
 - [docs/DOCUMENTATION_STYLE_GUIDE.md](docs/DOCUMENTATION_STYLE_GUIDE.md) -- Documentation standards for this project
