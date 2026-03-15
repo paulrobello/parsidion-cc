@@ -872,5 +872,6 @@ Nodes with no matching tags remain the default gray. The priority order means a 
 ## Related Documentation
 
 - [README.md](../README.md) - Project overview and quick reference
+- [AGENTCHROME.md](AGENTCHROME.md) - AgentChrome browser CLI: installation and integration with the research agent
 - [DOCUMENTATION_STYLE_GUIDE.md](DOCUMENTATION_STYLE_GUIDE.md) - Documentation formatting standards
 - [SKILL.md](../skills/claude-vault/SKILL.md) - Vault philosophy, conventions, and anti-patterns
