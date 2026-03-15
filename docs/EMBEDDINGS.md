@@ -1,7 +1,7 @@
 # Local Vector Embeddings
 
 Semantic search for the Claude Vault — find relevant notes by meaning rather than by keyword,
-using a CPU-only ONNX embedding model that runs entirely on your machine.
+using the `fastembed` library with a CPU-only embedding model that runs entirely on your machine.
 
 ## Table of Contents
 
@@ -46,7 +46,7 @@ internet connection required.
 **Key capabilities:**
 
 - Purely local: model weights are downloaded once (~67 MB) and cached; no data leaves the machine
-- CPU-only: no GPU required; built on the ONNX runtime
+- CPU-only: no GPU required; built on `fastembed` and `sqlite-vec`
 - Fast enough for ~10 K notes with a brute-force scan (no external vector database needed)
 - Incremental builds: re-embeds only notes whose `mtime` has changed
 - Importable `search()` function for use by hooks and agents without spawning a subprocess loop
@@ -77,7 +77,7 @@ graph TB
     subgraph "Index Builders"
         BE[build_embeddings.py\nVector builder]
         IDX[update_index.py\nMetadata builder]
-        MODEL[BAAI/bge-small-en-v1.5\nONNX · 384-dim · CPU]
+        MODEL[BAAI/bge-small-en-v1.5\nfastembed · 384-dim · CPU]
     end
 
     subgraph "Storage"
@@ -85,8 +85,7 @@ graph TB
     end
 
     subgraph "Search Layer"
-        VS[vault_search.py\nSemantic search]
-        VQ[vault_query.py\nMetadata search]
+        VS[vault_search.py\nSemantic + metadata search]
         VC[vault_common.py\nquery_note_index]
     end
 
@@ -104,20 +103,16 @@ graph TB
     BE --> DB
     IDX --> DB
     DB --> VS
-    DB --> VQ
     DB --> VC
     VS --> SSH
     VS --> SUM
     VS --> VE
-    VQ --> VE
     VC --> SSH
     VS --> CLI
-    VQ --> CLI
 
     style BE fill:#e65100,stroke:#ff9800,stroke-width:3px,color:#ffffff
     style IDX fill:#e65100,stroke:#ff9800,stroke-width:2px,color:#ffffff
     style VS fill:#e65100,stroke:#ff9800,stroke-width:3px,color:#ffffff
-    style VQ fill:#e65100,stroke:#ff9800,stroke-width:2px,color:#ffffff
     style VC fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#ffffff
     style DB fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#ffffff
     style MODEL fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
@@ -133,10 +128,10 @@ graph TB
 
 **Data flow:**
 
-1. `build_embeddings.py` walks `~/ClaudeVault/`, encodes each note with the ONNX model, and upserts the vector into `note_embeddings`. It also ensures `note_index` schema exists via `ensure_note_index_schema()`.
+1. `build_embeddings.py` walks `~/ClaudeVault/`, encodes each note with the `fastembed` model, and upserts the vector into `note_embeddings` via `sqlite-vec`. It also ensures `note_index` schema exists via `ensure_note_index_schema()`.
 2. `update_index.py` walks the vault, extracts per-note metadata, and upserts rows into `note_index` on every index rebuild. This keeps metadata (folder, tags, mtime, staleness, incoming links) current without requiring a re-embedding run.
-3. `vault_search.py` loads the same ONNX model, encodes the query, and runs a cosine similarity scan against `note_embeddings`, returning ranked results as a JSON array.
-4. `vault_query.py` (or `vault_common.query_note_index()`) runs indexed SQL queries against `note_index` for fast metadata filtering — no model loading, no file walking.
+3. `vault_search.py` loads the same `fastembed` model, encodes the query, and runs a cosine similarity scan against `note_embeddings` via `sqlite-vec`, returning ranked results as a JSON array. It also supports a metadata-only mode (filter flags without a query) that queries `note_index` directly without loading the model.
+4. `vault_common.query_note_index()` runs indexed SQL queries against `note_index` for fast metadata filtering — no model loading, no file walking.
 5. Hook scripts and agents use both search paths: semantic for conceptual relevance, metadata for structural filters (folder, tag, recency).
 
 The `vault_common.py` module exposes `get_embeddings_db_path()` so every script resolves the
@@ -148,7 +143,7 @@ database path consistently without hardcoding it.
 
 The `note_index` table in `embeddings.db` provides fast metadata-based search without loading the
 embedding model. It is populated by `update_index.py` on every index rebuild and queried via
-`vault_query.py` or `vault_common.query_note_index()`.
+`vault_search.py` (metadata filter flags) or `vault_common.query_note_index()` from Python.
 
 ### Schema
 
@@ -173,15 +168,17 @@ CREATE TABLE note_index (
 
 ### Querying via CLI
 
+Metadata queries use `vault_search.py` with filter flags and no positional query argument:
+
 ```bash
 # All notes in the Patterns folder
-python ~/.claude/skills/claude-vault/scripts/vault_query.py --folder Patterns
+uv run ~/.claude/skills/claude-vault/scripts/vault_search.py --folder Patterns
 
 # Notes tagged "python" modified in the last 7 days
-python ~/.claude/skills/claude-vault/scripts/vault_query.py --tag python --recent-days 7
+uv run ~/.claude/skills/claude-vault/scripts/vault_search.py --tag python --recent-days 7
 
 # Human-readable output
-python ~/.claude/skills/claude-vault/scripts/vault_query.py --project parsidion-cc --text
+uv run ~/.claude/skills/claude-vault/scripts/vault_search.py --project parsidion-cc --text
 ```
 
 ### Querying via Python
@@ -205,7 +202,7 @@ The two tables serve complementary roles:
 | | `note_embeddings` | `note_index` |
 |--|---|---|
 | **Built by** | `build_embeddings.py` | `update_index.py` |
-| **Query type** | Semantic (cosine similarity) | Metadata (folder, tag, type, recency) |
+| **Query type** | Semantic (cosine similarity via `sqlite-vec`) | Metadata (folder, tag, type, recency) |
 | **Speed** | ~100 ms (brute-force scan) | < 1 ms (indexed SQL) |
 | **Requires model** | Yes | No |
 | **Updated** | On demand / background | Every index rebuild |
@@ -229,9 +226,8 @@ The first run takes roughly 30 seconds (model download + encoding all notes). Su
 rebuilds are faster because the model is cached locally. Incremental updates are faster still —
 only changed notes are re-encoded.
 
-> **📝 Note:** The model cache lives in the standard HuggingFace cache directory
-> (`~/.cache/huggingface/`). You can point to a different cache by setting the
-> `HF_HOME` environment variable before running the script.
+> **Note:** The model cache lives in `~/.cache/fastembed/`. This directory is managed
+> automatically by the `fastembed` library and does not require any environment variable changes.
 
 ---
 
@@ -445,7 +441,7 @@ session_start_hook:
 
 | Key | Section | Type | Default | Description |
 |---|---|---|---|---|
-| `model` | `embeddings` | string | `BAAI/bge-small-en-v1.5` | HuggingFace model ID for the ONNX embedding model |
+| `model` | `embeddings` | string | `BAAI/bge-small-en-v1.5` | fastembed model ID for the embedding model |
 | `min_score` | `embeddings` | float | `0.35` | Global minimum cosine similarity threshold; results below this are excluded |
 | `top_k` | `embeddings` | integer | `10` | Default number of results returned per search |
 | `use_embeddings` | `session_start_hook` | boolean | `true` | Enable semantic blending in the session start hook |
@@ -496,17 +492,17 @@ on modern hardware, and it eliminates the dependency on a vector database server
 > **⚠️ Warning:** If your vault grows beyond 10,000 notes, query latency will increase noticeably.
 > At that scale, consider migrating to a dedicated vector store such as Qdrant or Chroma.
 
-**Model size:** The BAAI/bge-small-en-v1.5 ONNX model is approximately 67 MB. It is downloaded
-once on the first run and cached locally. The embedding dimension is 384, so each stored vector
-occupies 1,536 bytes (384 × 4-byte floats). A 10,000-note vault produces a database of roughly
-20 MB including the metadata columns.
+**Model size:** The BAAI/bge-small-en-v1.5 model is approximately 67 MB. It is downloaded once
+on the first run and cached in `~/.cache/fastembed/`. The embedding dimension is 384, so each
+stored vector occupies 1,536 bytes (384 × 4-byte floats). A 10,000-note vault produces a
+database of roughly 20 MB including the metadata columns.
 
 **Build time:** A full rebuild of 1,000 notes takes approximately 30 seconds on a modern laptop
 CPU. Incremental updates are proportional to the number of changed notes and are typically
 sub-second for routine sessions.
 
-**CPU only:** The ONNX runtime runs on CPU. There is no GPU acceleration path. For a personal
-vault this is not a bottleneck.
+**CPU only:** `fastembed` runs on CPU by default. There is no GPU acceleration path required.
+For a personal vault this is not a bottleneck.
 
 ---
 
@@ -529,7 +525,7 @@ uv run ~/.claude/skills/claude-vault/scripts/build_embeddings.py
 
 **Symptom:** `build_embeddings.py` takes several minutes on the first invocation.
 
-**Cause:** The ONNX model weights are being downloaded from HuggingFace Hub (~67 MB).
+**Cause:** The model weights are being downloaded by `fastembed` on first use (~67 MB).
 
 **Fix:** Wait for the download to complete. Subsequent runs use the cached weights and are
 significantly faster.
@@ -568,13 +564,13 @@ are not compatible with the new model's embedding space.
 uv run ~/.claude/skills/claude-vault/scripts/build_embeddings.py
 ```
 
-### ONNX runtime missing
+### fastembed or sqlite-vec missing
 
 **Symptom:** `build_embeddings.py` or `vault_search.py` fail with an import error referencing
-`onnxruntime`.
+`fastembed` or `sqlite_vec`.
 
-**Cause:** Both scripts are PEP 723 scripts with inline dependency declarations. Running them
-without `uv run` skips dependency installation.
+**Cause:** Both scripts are PEP 723 scripts with inline dependency declarations (`fastembed`,
+`sqlite-vec`). Running them without `uv run` skips dependency installation.
 
 **Fix:** Always use `uv run` to invoke these scripts:
 

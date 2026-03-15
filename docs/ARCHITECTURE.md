@@ -220,6 +220,7 @@ Fires when a Claude Code session begins. Loads relevant vault context into the c
 | `recent_days` | `3` | Days to look back for recent notes |
 | `debug` | `false` | Append injected context + metadata to debug log in `$TMPDIR` |
 | `verbose_mode` | `false` | When true, inject full note summaries; default is compact one-line index |
+| `use_embeddings` | `true` | Blend semantic (embedding) matches into context selection; graceful fallback if `embeddings.db` is absent |
 
 **Standard behaviour:**
 1. Determines the current project from the working directory
@@ -621,6 +622,7 @@ session_start_hook:  # session_start_hook.py
   recent_days: 3     # Days to look back for recent notes
   debug: false       # Append injected context + metadata to debug log in $TMPDIR
   verbose_mode: false  # If true, inject full note summaries instead of compact one-line index
+  use_embeddings: true  # Blend semantic matches into context; graceful fallback if db absent
 
 session_stop_hook:   # session_stop_hook.py
   ai_model: null     # Model for AI classification (null = disabled)
@@ -759,6 +761,8 @@ parsidion-cc/
     │   ├── run_trigger_eval.py      # Trigger accuracy eval
     │   ├── run_trigger_eval.sh      # Shell wrapper for eval (macOS/Linux)
     │   ├── run_trigger_eval.bat     # Batch wrapper for eval (Windows)
+    │   ├── build_embeddings.py      # Builds fastembed vectors into embeddings.db
+    │   ├── embed_eval.py            # Evaluates embedding search quality
     │   ├── migrate_research.py      # One-time migration
     │   └── migrate_memory.py        # One-time migration
     └── templates/
