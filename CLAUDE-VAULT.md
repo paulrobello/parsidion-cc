@@ -61,7 +61,7 @@ of subfolder is allowed — never nest subfolders within subfolders.
 
 After any note reorganization (create, rename, move, delete) rebuild the index:
 ```bash
-uv run ~/.claude/skills/claude-vault/scripts/update_index.py
+uv run --no-project ~/.claude/skills/claude-vault/scripts/update_index.py
 ```
 
 ## Saving Solutions
@@ -73,11 +73,14 @@ After solving a non-obvious problem or implementing a reusable pattern, save it:
 | Error / bug fix | `~/ClaudeVault/Debugging/` |
 | Reusable code pattern | `~/ClaudeVault/Patterns/` |
 | Framework-specific fix | `~/ClaudeVault/Frameworks/` |
+| Language-specific knowledge | `~/ClaudeVault/Languages/` |
+| CLI tool or package notes | `~/ClaudeVault/Tools/` |
+| External research findings | `~/ClaudeVault/Research/` |
 | Architectural decision | `~/ClaudeVault/Projects/<project>/` |
 
 Then rebuild the index:
 ```bash
-uv run ~/.claude/skills/claude-vault/scripts/update_index.py
+uv run --no-project ~/.claude/skills/claude-vault/scripts/update_index.py
 ```
 
 Every unsaved solution is a missed opportunity for every future session.
