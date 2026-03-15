@@ -9,6 +9,7 @@ A Claude Code customization toolkit that replaces built-in auto memory with an O
   - [CLAUDE-VAULT.md — Always-On Guidance](#claude-vaultmd--always-on-guidance)
   - [Claude Vault Skill](#claude-vault-skill)
   - [Hook Scripts](#hook-scripts)
+  - [SubagentStop Hook](#subagent-stop-hook)
   - [Session Summarizer](#session-summarizer)
   - [Vault Doctor](#vault-doctor)
   - [Graph Coverage Checker](#graph-coverage-checker)
@@ -34,6 +35,7 @@ A Claude Code customization toolkit that replaces built-in auto memory with an O
 - Always-on vault-first rule: check the vault before debugging or implementing (via `CLAUDE-VAULT.md`)
 - Automatic context loading at session start — compact one-line-per-note index by default; full summaries opt-in via `verbose_mode`
 - Automatic learning capture at session stop via transcript analysis
+- Automatic learning capture from subagent transcripts via `SubagentStop` hook (vault-explorer and research-documentation-agent excluded to prevent recursion)
 - Write-gate filter: transient sessions are skipped rather than saved
 - Hierarchical summarization for long transcripts (chunk → haiku summary → Sonnet note)
 - Automated bidirectional backlinks injected after each new note write
@@ -66,6 +68,7 @@ graph TB
         VC[vault_common.py]
         SSH[session_start_hook.py]
         STH[session_stop_hook.py]
+        ASH[subagent_stop_hook.py]
         PCH[pre_compact_hook.py]
         SUM[summarize_sessions.py]
         IDX[update_index.py]
@@ -92,12 +95,14 @@ graph TB
     CC --> Hooks
     Hooks -->|SessionStart| SSH
     Hooks -->|SessionEnd| STH
+    Hooks -->|SubagentStop| ASH
     Hooks -->|PreCompact| PCH
     CC -->|invokes| Agent
     CC -->|invokes| VE
 
     SSH -->|reads| VC
     STH -->|reads| VC
+    ASH -->|reads| VC
     PCH -->|reads| VC
     IDX -->|reads| VC
     SUM -->|reads| VC
@@ -113,6 +118,7 @@ graph TB
     SSH -->|loads context from| Projects
     STH -->|writes to| Daily
     STH -->|queues to| Pending
+    ASH -->|queues to| Pending
     SUM -->|reads| Pending
     SUM -->|creates notes in| Debugging
     SUM -->|creates notes in| Patterns
@@ -137,6 +143,7 @@ graph TB
     style VC fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#ffffff
     style SSH fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#ffffff
     style STH fill:#880e4f,stroke:#c2185b,stroke-width:2px,color:#ffffff
+    style ASH fill:#880e4f,stroke:#c2185b,stroke-width:2px,color:#ffffff
     style PCH fill:#ff6f00,stroke:#ffa726,stroke-width:2px,color:#ffffff
     style SUM fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
     style IDX fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#ffffff
@@ -303,6 +310,34 @@ Fires before Claude Code compacts the conversation context. Snapshots the curren
 4. Appends a `## Pre-Compact Snapshot` section to today's daily note
 5. Calls `git_commit_vault` to commit the snapshot (respects `git.auto_commit` config)
 
+#### SubagentStop Hook
+
+**Script:** `skills/claude-vault/scripts/subagent_stop_hook.py`
+
+Fires (asynchronously, with `async: true`) when any subagent spawned via the `Agent` tool completes. Reads the subagent's own transcript (`agent_transcript_path`) to detect learnable content and queues it to `pending_summaries.jsonl` for the same AI summarization pipeline used by the SessionEnd hook.
+
+**Configurable options** (section `subagent_stop_hook` in `config.yaml`):
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `true` | Set `false` to disable subagent transcript capture entirely |
+| `min_messages` | `3` | Minimum assistant message count; filters trivial subagents |
+| `excluded_agents` | `"vault-explorer,research-documentation-agent"` | Comma-separated agent types to skip |
+
+**Behavior:**
+1. Checks `subagent_stop_hook.enabled` config (default `true`); exits immediately if disabled
+2. Checks `agent_type` against the `excluded_agents` list — skips `vault-explorer` and `research-documentation-agent` by default to prevent recursive capture of vault system internals
+3. Reads **all** lines of the subagent's `agent_transcript_path` (subagent sessions are short)
+4. Skips subagents with fewer than `min_messages` assistant turns (filters trivial one-shot agents)
+5. Runs the same keyword heuristics as SessionEnd to detect significant categories
+6. Uses `agent_id` as the deduplication key (via a synthetic path stem) when available
+7. Queues to `pending_summaries.jsonl` with `source: "subagent"` and `agent_type` metadata
+8. Does **not** update the daily note (too noisy for frequent subagent calls)
+9. Does **not** launch the summarizer (deferred to the next SessionEnd)
+10. Uses `CLAUDE_VAULT_STOP_ACTIVE` environment guard to prevent recursive invocation
+
+**Why `async: true`:** The hook runs in the background without blocking the subagent or the main session. The `pending_summaries.jsonl` queue is the rendezvous point — the SessionEnd hook's summarizer processes all queued entries, including those from subagents.
+
 ### Session Summarizer
 
 **Location:** `skills/claude-vault/scripts/summarize_sessions.py`
@@ -459,6 +494,11 @@ The shared utility library used by all hook scripts and the index generator. Use
 | `git_commit_vault()` | Stage and commit vault changes; respects `git.auto_commit` config |
 | `load_config()` | Load and cache `config.yaml` from `VAULT_ROOT` |
 | `get_config()` | Look up a config value by section/key with fallback default |
+| `parse_transcript_lines()` | Extract assistant texts from JSONL transcript lines |
+| `detect_categories()` | Keyword heuristic scanner returning category→excerpt mappings |
+| `append_to_pending()` | Deduplication-safe queue writer for `pending_summaries.jsonl`; includes `source` and `agent_type` metadata |
+| `TRANSCRIPT_CATEGORIES` | Keyword lists for four learning categories (error_fix, research, pattern, config_setup) |
+| `TRANSCRIPT_CATEGORY_LABELS` | Human-readable labels for category keys |
 
 **Configuration system:** `load_config()` reads `~/ClaudeVault/config.yaml` on first call and caches the result for the process lifetime. The file is parsed by `_parse_config_yaml()`, a stdlib-only YAML parser that handles one level of nesting (section headers with nested key-value pairs). `_strip_inline_comment()` handles trailing `# comment` syntax. `get_config(section, key, default)` provides the lookup API used by all hooks and the summarizer.
 
@@ -553,6 +593,11 @@ session_stop_hook:   # session_stop_hook.py
   ai_timeout: 25     # AI call timeout in seconds
   auto_summarize: true  # Auto-launch summarizer when pending entries exist
 
+subagent_stop_hook:  # subagent_stop_hook.py
+  enabled: true      # Set false to disable subagent transcript capture
+  min_messages: 3    # Minimum assistant turns before queuing
+  excluded_agents: "vault-explorer,research-documentation-agent"  # comma-separated skip list
+
 pre_compact_hook:    # pre_compact_hook.py
   lines: 200         # Transcript lines to analyse
 
@@ -582,6 +627,7 @@ sequenceDiagram
     participant SSH as SessionStart Hook
     participant V as Vault (~/ClaudeVault/)
     participant STH as SessionEnd Hook
+    participant ASH as SubagentStop Hook
     participant PCH as PreCompact Hook
 
     CC->>SSH: SessionStart (cwd, session info)
@@ -603,6 +649,13 @@ sequenceDiagram
     STH->>V: Queue to pending_summaries.jsonl (if significant learnings detected)
     STH->>V: git commit vault changes
     Note over STH: Auto-launches summarize_sessions.py<br/>in background if queue is non-empty
+
+    Note over CC: Subagents run during session...
+
+    CC->>ASH: SubagentStop (agent_transcript_path, agent_type)
+    Note over ASH: async: true — runs in background
+    ASH->>V: Read ALL subagent transcript lines
+    ASH->>V: Queue to pending_summaries.jsonl (if significant, not excluded)
 ```
 
 ### Research Flow
@@ -662,6 +715,7 @@ parsidion-cc/
     │   ├── session_start_hook.py    # SessionStart hook
     │   ├── session_stop_wrapper.sh  # SessionEnd hook wrapper (immediate ack + nohup detach)
     │   ├── session_stop_hook.py     # SessionEnd hook (queues to pending_summaries.jsonl)
+    │   ├── subagent_stop_hook.py    # SubagentStop hook (async, captures subagent learnings)
     │   ├── pre_compact_hook.py      # PreCompact hook
     │   ├── summarize_sessions.py    # On-demand AI summarizer (PEP 723)
     │   ├── update_index.py          # Index generator
