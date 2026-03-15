@@ -354,19 +354,20 @@ capability, not just recall speed.</div>
       <div class="slide-title">Step 1: Vault-First Search</div>
 
       <div class="claude-response">
-        The agent checks the vault before touching the web. Semantic search via <span class="hl-cyan">vault_search.py</span> is tried first — it matches query <em>intent</em> rather than exact keywords. If the embeddings DB is absent or returns too few results, vault-explorer's grep-based search fills the gap.
+        The agent checks the vault before touching the web. It dispatches <span class="hl-purple">vault-explorer</span>, which now uses a three-tier fast-path: <span class="hl-cyan">semantic search</span> (vault_search.py, MRR 0.889) → <span class="hl-purple">metadata search</span> (vault-search filter mode, note_index table) → grep-based fallback. DB-absent is handled gracefully at every tier.
       </div>
 
-      <div class="section-label">Semantic search (primary path)</div>
-      <div class="code-block"><span class="cm"># 1a. Semantic search — fast, intent-aware</span>
-<span class="fn">uv run</span> --no-project ~/.claude/skills/claude-vault/scripts/<span class="str">vault_search.py</span> <span class="str">"QUERY"</span> --top 10
-<span class="cm"># Score ≥ 0.5 → read notes directly (skip vault-explorer)</span>
+      <div class="section-label">vault-explorer 7-step procedure (dispatched)</div>
+      <div class="code-block"><span class="cm"># Step 1: Semantic search — intent-aware</span>
+<span class="fn">vault_search.py</span> <span class="str">"QUERY"</span> --json  <span class="cm"># ≥3 results (score ≥ 0.35) → done</span>
 
-<span class="cm"># 1b. Dispatch vault-explorer for remaining gaps</span>
-<span class="cm"># (graceful fallback when embeddings.db absent)</span>
-<span class="cm"># Agent: vault-explorer → ## Answer + ## Sources</span></div>
+<span class="cm"># Step 2: Metadata search — indexed sub-ms DB query</span>
+<span class="fn">vault-search</span> --tag TAG --folder Patterns  <span class="cm"># ≥3 results → done</span>
 
-      <div class="output highlight">update_index.py now triggers an incremental embeddings rebuild in the background — so vault notes written by this agent are automatically indexed for future semantic searches.</div>
+<span class="cm"># Steps 3–5: CLAUDE.md orient → extract signals → grep folders</span>
+<span class="cm"># Steps 6–7: Rank+read top 5 → synthesize ## Answer + ## Sources</span></div>
+
+      <div class="output highlight">update_index.py populates note_index on every rebuild — vault notes written by this agent are available for metadata search immediately after the index run.</div>
     </div>
 
     <!-- ── Slide 5: Step 2 — NotebookLM Integration ── -->
@@ -626,9 +627,9 @@ $ grep -c "research-documentation-agent" ~/.claude/CLAUDE-VAULT.md
           <div class="section-label" style="margin-bottom:6px;">New files</div>
           <ul class="feature-list" style="font-size:12px;">
             <li><span class="hl-amber">agents/research-documentation-agent.md</span></li>
-            <li><span class="hl-cyan">scripts/html-to-md</span> <span style="color:var(--text-muted)">(PEP 723)</span></li>
+            <li><span class="hl-cyan">skills/claude-vault/scripts/html-to-md.py</span> <span style="color:var(--text-muted)">(PEP 723)</span></li>
             <li class="purple"><span class="hl-purple">~/.claude/agents/research-documentation-agent.md</span></li>
-            <li class="cyan"><span class="hl-cyan">~/.claude/scripts/html-to-md</span></li>
+            <li class="cyan"><span class="hl-cyan">~/.claude/skills/claude-vault/scripts/html-to-md.py</span></li>
           </ul>
           <div class="section-label" style="margin-top:12px; margin-bottom:6px;">Key design decisions</div>
           <ul class="feature-list" style="font-size:12px; gap:5px;">

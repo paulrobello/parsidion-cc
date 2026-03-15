@@ -432,18 +432,19 @@ Model: Claude Haiku for the new agent.</div>
 
     <!-- ── Slide 5: Agent Search Procedure ── -->
     <div class="slide">
-      <div class="slide-title">Agent: 6-Step Search Procedure</div>
+      <div class="slide-title">Agent: 7-Step Search Procedure</div>
 
       <div class="checklist">
-        <div class="check-item"><span class="ck" style="background:var(--cyan);color:#000;">1</span><span><strong>Semantic search</strong> — <span class="hl-cyan">vault_search.py --json</span>; if ≥3 results with score ≥0.35 <span class="hl-green">→ skip to step 5</span></span></div>
-        <div class="check-item"><span class="ck">2</span><span><strong>Orient</strong> — Read <span class="hl-cyan">~/ClaudeVault/CLAUDE.md</span> index</span></div>
-        <div class="check-item"><span class="ck">3</span><span><strong>Extract signals</strong> — exception class, package name, keyword</span></div>
-        <div class="check-item"><span class="ck">4</span><span><strong>Search by priority folder</strong> (Grep by query type)</span></div>
-        <div class="check-item"><span class="ck">5</span><span><strong>Rank &amp; read</strong> — top 5 by <span class="hl-cyan">semantic score</span> first, then folder priority</span></div>
-        <div class="check-item"><span class="ck">6</span><span><strong>Synthesize</strong> — return fixed <span class="hl-cyan">## Answer</span> + <span class="hl-purple">## Sources</span></span></div>
+        <div class="check-item"><span class="ck" style="background:var(--cyan);color:#000;">1</span><span><strong>Semantic search</strong> — <span class="hl-cyan">vault_search.py --json</span>; if ≥3 results with score ≥0.35 <span class="hl-green">→ skip to step 6</span></span></div>
+        <div class="check-item"><span class="ck" style="background:var(--purple);color:#fff;">2</span><span><strong>Metadata search</strong> — <span class="hl-purple">vault-search (filter mode)</span> with inferred filters (--tag, --folder, --type, --project, --recent-days); if ≥3 results <span class="hl-green">→ skip to step 6</span></span></div>
+        <div class="check-item"><span class="ck">3</span><span><strong>Orient</strong> — Read <span class="hl-cyan">~/ClaudeVault/CLAUDE.md</span> index</span></div>
+        <div class="check-item"><span class="ck">4</span><span><strong>Extract signals</strong> — exception class, package name, keyword</span></div>
+        <div class="check-item"><span class="ck">5</span><span><strong>Search by priority folder</strong> (Grep by query type)</span></div>
+        <div class="check-item"><span class="ck">6</span><span><strong>Rank &amp; read</strong> — top 5 by <span class="hl-cyan">semantic score</span> first, then folder priority</span></div>
+        <div class="check-item"><span class="ck">7</span><span><strong>Synthesize</strong> — return fixed <span class="hl-cyan">## Answer</span> + <span class="hl-purple">## Sources</span></span></div>
       </div>
 
-      <div class="section-label">Fast-path: semantic search short-circuits grep when DB available</div>
+      <div class="section-label">Two fast-paths: semantic or metadata search short-circuit grep when DB available</div>
       <div class="output highlight">Error / exception  →  Debugging/ → Frameworks/ → Languages/
 Feature / pattern  →  Patterns/ → Frameworks/ → Projects/
 Cross-project      →  Projects/ → Patterns/
@@ -462,8 +463,8 @@ Research           →  Research/ → all folders</div>
       <div class="section-label">Step 1 command</div>
       <div class="code-block"><span class="fn">uv run</span> --no-project ~/.claude/skills/claude-vault/scripts/<span class="str">vault_search.py</span> <span class="str">"QUERY"</span> --json 2>/dev/null
 <span class="cm"># → [{"score": 0.87, "path": "/Users/probello/ClaudeVault/Patterns/...", ...}, ...]</span>
-<span class="cm"># If ≥ 3 results with score ≥ 0.35 → use paths, skip to step 5</span>
-<span class="cm"># If DB absent or &lt; 3 results → fall through to grep-based search</span></div>
+<span class="cm"># If ≥ 3 results with score ≥ 0.35 → use paths, skip to step 6</span>
+<span class="cm"># If DB absent or &lt; 3 results → fall through to metadata search (step 2)</span></div>
 
       <div class="section-label">Eval results (bge-base, whole-note, 200-note index)</div>
       <div class="output success">MRR: 0.889 &nbsp;|&nbsp; Recall@1: 0.833 &nbsp;|&nbsp; Recall@5: 0.917 &nbsp;|&nbsp; 12s build</div>
@@ -473,6 +474,38 @@ Research           →  Research/ → all folders</div>
         <span class="tag info">sqlite-vec cosine</span>
         <span class="tag purple">graceful fallback</span>
         <span class="tag success">config-driven</span>
+      </div>
+    </div>
+
+    <!-- ── Slide 5c: Metadata Search (vault-search filter mode) ── -->
+    <div class="slide">
+      <div class="slide-title">Step 2: Metadata Search (vault-search filter mode)</div>
+
+      <div class="claude-response">
+        New <span class="hl-purple">Tier 2</span> between semantic and grep. Queries the <span class="hl-cyan">note_index</span> SQLite table — instant indexed lookups vs O(n) file walks. Returns <span class="hl-green">[]</span> gracefully when DB absent.
+      </div>
+
+      <div class="section-label">CLI usage</div>
+      <div class="code-block"><span class="fn">vault-search</span> \
+    --folder Debugging --type debugging --recent-days 7
+
+<span class="cm"># → [{"stem": "fix-uv-hook", "path": "/Users/probello/ClaudeVault/...", ...</span>
+<span class="cm">#     "tags": ["python", "tool"], "is_stale": false, ...}, ...]</span>
+<span class="cm"># If ≥ 3 results → use those paths, skip to step 6 (rank+read)</span>
+<span class="cm"># If &lt; 3 results or DB absent → continue to step 3 (CLAUDE.md orient)</span></div>
+
+      <div class="section-label">Filter inference from query</div>
+      <div class="output highlight">"debugging notes"    → --type debugging
+"patterns for X"     → --folder Patterns
+"recent work"        → --recent-days 7
+"python tag"         → --tag python
+"parsidion project"  → --project parsidion-cc</div>
+
+      <div class="tags" style="margin-top:6px;">
+        <span class="tag purple">note_index table</span>
+        <span class="tag info">5 secondary indexes</span>
+        <span class="tag success">graceful fallback</span>
+        <span class="tag warn">stdlib-only</span>
       </div>
     </div>
 
@@ -766,6 +799,7 @@ $ grep -c "vault-explorer" ~/.claude/CLAUDE-VAULT.md
           <ul class="feature-list" style="font-size:12px;">
             <li><span class="hl-cyan">agents/vault-explorer.md</span> — Haiku agent</li>
             <li class="purple"><span class="hl-purple">~/.claude/agents/vault-explorer.md</span></li>
+            <li class="purple"><span class="hl-purple">vault-search (filter mode)</span> — metadata CLI (merged into vault_search.py)</li>
           </ul>
         </div>
         <div>
@@ -775,6 +809,8 @@ $ grep -c "vault-explorer" ~/.claude/CLAUDE-VAULT.md
             <li><span class="hl-yellow">skills/claude-vault/SKILL.md</span></li>
             <li><span class="hl-yellow">install.py</span></li>
             <li><span class="hl-yellow">docs/ARCHITECTURE.md</span></li>
+            <li><span class="hl-yellow">vault_common.py</span> — DB-first find_*</li>
+            <li><span class="hl-yellow">update_index.py</span> — writes note_index</li>
           </ul>
         </div>
       </div>
@@ -788,6 +824,7 @@ $ grep -c "vault-explorer" ~/.claude/CLAUDE-VAULT.md
         <li class="green"><span class="hl-green">install.py</span> now scales to N agents via <code>AGENT_SRCS</code> list</li>
         <li class="yellow">Manual Usage section aligned — vault-explorer is <span class="hl-cyan">primary search path</span></li>
         <li class="cyan"><span class="hl-cyan">Semantic search</span> (step 1) — bge-base MRR 0.889, fast-paths past grep when DB exists</li>
+        <li class="purple"><span class="hl-purple">Metadata search</span> (step 2) — <code>vault-search --flag</code> hits <span class="hl-cyan">note_index</span> table; sub-ms indexed queries vs O(n) file walk</li>
       </ul>
 
       <div class="output" style="font-size:11px; margin-top:8px; padding: 8px;">
@@ -802,6 +839,7 @@ $ grep -c "vault-explorer" ~/.claude/CLAUDE-VAULT.md
         <span class="tag purple">Haiku model</span>
         <span class="tag success">Live in ~/.claude/</span>
         <span class="tag info">sqlite-vec semantic</span>
+        <span class="tag purple">note_index metadata</span>
       </div>
     </div>
 
@@ -814,7 +852,7 @@ $ grep -c "vault-explorer" ~/.claude/CLAUDE-VAULT.md
 
 <div class="nav">
   <button class="nav-btn" id="prev" onclick="changeSlide(-1)">← Prev</button>
-  <span class="slide-counter" id="counter">1 / 17</span>
+  <span class="slide-counter" id="counter">1 / 18</span>
   <button class="nav-btn" id="next" onclick="changeSlide(1)">Next →</button>
 </div>
 
