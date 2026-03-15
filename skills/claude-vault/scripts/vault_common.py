@@ -5,6 +5,7 @@ blocks, and managing the vault directory structure. Uses only Python stdlib.
 """
 
 from pathlib import Path
+import json
 import os
 import re
 import subprocess
@@ -702,15 +703,15 @@ def get_config(section: str, key: str, default: Any = None) -> Any:
 try:
     import fcntl as _fcntl
 
-    def flock_exclusive(f) -> None:  # type: ignore[misc]
+    def flock_exclusive(f) -> None:
         """Acquire an exclusive (write) lock on an open file descriptor."""
         _fcntl.flock(f, _fcntl.LOCK_EX)
 
-    def flock_shared(f) -> None:  # type: ignore[misc]
+    def flock_shared(f) -> None:
         """Acquire a shared (read) lock on an open file descriptor."""
         _fcntl.flock(f, _fcntl.LOCK_SH)
 
-    def funlock(f) -> None:  # type: ignore[misc]
+    def funlock(f) -> None:
         """Release a lock on an open file descriptor."""
         _fcntl.flock(f, _fcntl.LOCK_UN)
 
@@ -718,15 +719,15 @@ except ImportError:
     # Windows: fcntl is not available. File operations proceed without locking.
     # Race conditions between simultaneous Claude instances are acceptably rare
     # on Windows.
-    def flock_exclusive(f) -> None:  # type: ignore[misc]
+    def flock_exclusive(f) -> None:
         """Acquire an exclusive (write) lock on an open file descriptor (no-op on Windows)."""
         pass
 
-    def flock_shared(f) -> None:  # type: ignore[misc]
+    def flock_shared(f) -> None:
         """Acquire a shared (read) lock on an open file descriptor (no-op on Windows)."""
         pass
 
-    def funlock(f) -> None:  # type: ignore[misc]
+    def funlock(f) -> None:
         """Release a lock on an open file descriptor (no-op on Windows)."""
         pass
 
