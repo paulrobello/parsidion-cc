@@ -40,6 +40,7 @@ import argparse
 import concurrent.futures
 import datetime
 import json
+import os
 import random
 import re
 import sqlite3
@@ -73,7 +74,7 @@ _DEFAULT_QUERIES_FILE: Path = vault_common.VAULT_ROOT / "embed_eval_queries.yaml
 _DEFAULT_NOTES_SAMPLE: int = 100
 _DEFAULT_QUERIES_PER_NOTE: int = 3
 _DEFAULT_TOP_K: int = 10
-_DEFAULT_WORKERS: int = 3
+_DEFAULT_WORKERS: int = 1
 _CLAUDE_TIMEOUT: int = 30  # seconds per claude -p call
 _MAX_TEXT_CHARS: int = 1500
 
@@ -356,6 +357,7 @@ def _eval_model_combos(
     eval_items: list[EvalItem],
     top_k: int,
     progress_queue: Any,  # multiprocessing.Queue or None
+    onnx_threads: int | None = None,
 ) -> list[ComboResult]:
     """Load model once, then evaluate all chunking strategies for it.
 
@@ -365,6 +367,9 @@ def _eval_model_combos(
 
     Args:
         model_name: fastembed model ID.
+        onnx_threads: ONNX Runtime thread count per model. Set to
+            cpu_count // workers to prevent CPU oversubscription when
+            running multiple models in parallel.
         chunking_strategies: List of chunking strategy strings.
         note_paths: Note paths to embed.
         eval_items: Ground-truth items.
@@ -375,7 +380,10 @@ def _eval_model_combos(
         List of ComboResult (one per chunking strategy).
     """
     try:
-        model = TextEmbedding(model_name=model_name)
+        kwargs: dict[str, object] = {"model_name": model_name}
+        if onnx_threads is not None:
+            kwargs["threads"] = onnx_threads
+        model = TextEmbedding(**kwargs)  # type: ignore[arg-type]
     except Exception as exc:
         console.log(f"[red]Failed to load model {model_name}: {exc}[/red]")
         return []
@@ -477,6 +485,10 @@ def run_evaluation(
 
     all_results: list[ComboResult] = []
     workers = min(max_workers, len(models))
+    # Limit ONNX threads per model to prevent CPU oversubscription.
+    # With workers=1, each model gets all cores; with workers=N, each gets 1/N.
+    cpu_count = os.cpu_count() or 4
+    onnx_threads: int | None = max(1, cpu_count // workers) if workers > 1 else None
 
     with Progress(
         SpinnerColumn(),
@@ -502,6 +514,7 @@ def run_evaluation(
                     eval_items,
                     top_k,
                     None,  # no queue needed — we poll futures
+                    onnx_threads,
                 )
                 futures[future] = model_name
 
