@@ -38,60 +38,12 @@ _DEFAULT_AI_TIMEOUT = 25  # seconds; hook timeout in settings.json should be >= 
 _flock_exclusive = vault_common.flock_exclusive
 _funlock = vault_common.funlock
 
-
-# Heuristic keyword sets for detecting learnable content categories
-_CATEGORIES: dict[str, list[str]] = {
-    "error_fix": [
-        "fixed",
-        "the issue was",
-        "root cause",
-        "the error",
-        "resolved by",
-        "the fix",
-        "bug was",
-        "problem was",
-        "workaround",
-    ],
-    "research": [
-        "found that",
-        "documentation says",
-        "according to",
-        "turns out",
-        "discovered that",
-        "learned that",
-        "it appears",
-        "the docs say",
-        "the spec says",
-    ],
-    "pattern": [
-        "pattern",
-        "approach",
-        "technique",
-        "best practice",
-        "convention",
-        "idiom",
-        "architecture",
-        "design decision",
-    ],
-    "config_setup": [
-        "configured",
-        "installed",
-        "set up",
-        "added to",
-        "created",
-        "initialized",
-        "migrated",
-        "deployed",
-    ],
-}
-
-# Map category keys to human-readable labels
-_CATEGORY_LABELS: dict[str, str] = {
-    "error_fix": "Error Resolution",
-    "research": "Research Findings",
-    "pattern": "Pattern Discovery",
-    "config_setup": "Config/Setup",
-}
+# Shared transcript analysis functions (canonical implementation in vault_common)
+parse_transcript_lines = vault_common.parse_transcript_lines
+detect_categories = vault_common.detect_categories
+append_to_pending = vault_common.append_to_pending
+_CATEGORIES = vault_common.TRANSCRIPT_CATEGORIES
+_CATEGORY_LABELS = vault_common.TRANSCRIPT_CATEGORY_LABELS
 
 
 def _classify_session_with_ai(
@@ -207,69 +159,6 @@ extract_text_from_content = vault_common.extract_text_from_content
 read_last_n_lines = vault_common.read_last_n_lines
 
 
-def parse_transcript_lines(lines: list[str]) -> list[str]:
-    """Parse JSONL transcript lines and extract assistant message text.
-
-    Args:
-        lines: Raw JSONL lines from the transcript file.
-
-    Returns:
-        A list of text strings from assistant messages.
-    """
-    assistant_texts: list[str] = []
-    for raw_line in lines:
-        line = raw_line.strip()
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-
-        if entry.get("type") != "assistant":
-            continue
-
-        # Content can be at entry["message"]["content"] or entry["content"]
-        message = entry.get("message", entry)
-        content = message.get("content")
-        if content is None:
-            continue
-
-        text = extract_text_from_content(content)
-        if text.strip():
-            assistant_texts.append(text)
-
-    return assistant_texts
-
-
-def detect_categories(texts: list[str]) -> dict[str, list[str]]:
-    """Scan assistant texts for learnable content using keyword heuristics.
-
-    Args:
-        texts: List of assistant message texts.
-
-    Returns:
-        Dict mapping category keys to lists of matching text excerpts
-        (each truncated to 500 chars).
-    """
-    found: dict[str, list[str]] = {}
-
-    for text in texts:
-        text_lower = text.lower()
-        for category, keywords in _CATEGORIES.items():
-            for keyword in keywords:
-                if keyword in text_lower:
-                    if category not in found:
-                        found[category] = []
-                    # Only keep first 500 chars as a brief excerpt
-                    excerpt = text[:500].strip()
-                    if excerpt and excerpt not in found[category]:
-                        found[category].append(excerpt)
-                    break  # One match per category per text is enough
-
-    return found
-
-
 def append_session_to_daily(
     project: str,
     categories: dict[str, list[str]],
@@ -321,74 +210,6 @@ def append_session_to_daily(
         updated = existing + "\n## Sessions\n" + section
 
     daily_path.write_text(updated, encoding="utf-8")
-
-
-def append_to_pending(
-    transcript_path: Path,
-    project: str,
-    categories: dict[str, list[str]],
-    force: bool = False,
-) -> None:
-    """Append a session entry to the pending summaries queue.
-
-    Only appends when at least one significant category is detected,
-    unless *force* is True (used when the AI gate has already decided).
-    Guards against duplicates by session ID (transcript filename stem).
-
-    Args:
-        transcript_path: Path to the session transcript JSONL file.
-        project: The project name.
-        categories: Detected categories mapping keys to excerpt lists.
-        force: Skip the significance filter; queue unconditionally.
-    """
-    all_keys = set(categories.keys())
-    if not force:
-        significant = {"error_fix", "research", "pattern"}
-        if not (significant & all_keys):
-            return
-
-    pending_path = vault_common.VAULT_ROOT / "pending_summaries.jsonl"
-    session_id = transcript_path.stem
-
-    entry = {
-        "session_id": session_id,
-        "transcript_path": str(transcript_path),
-        "project": project,
-        "categories": sorted(all_keys),
-        "timestamp": datetime.now().isoformat(),
-    }
-
-    try:
-        # Open in a+ so the file is created if absent; flock gives us an
-        # exclusive lock across processes so the duplicate-check + append
-        # is atomic even when multiple Claude instances stop simultaneously.
-        with open(pending_path, "a+", encoding="utf-8") as f:
-            _flock_exclusive(f)
-            try:
-                f.seek(0)
-                for raw_line in f:
-                    line = raw_line.strip()
-                    if not line:
-                        continue
-                    try:
-                        existing = json.loads(line)
-                        # Match by session_id (new format) or transcript path stem (old format)
-                        existing_id = (
-                            existing.get("session_id")
-                            or Path(existing.get("transcript_path", "")).stem
-                        )
-                        if existing_id == session_id:
-                            return  # Already queued
-                    except (json.JSONDecodeError, ValueError):
-                        continue
-                # Seek to end before appending (a+ mode keeps write position
-                # at end on most platforms, but be explicit)
-                f.seek(0, 2)
-                f.write(json.dumps(entry) + "\n")
-            finally:
-                _funlock(f)
-    except OSError:
-        pass
 
 
 def _launch_summarizer_if_pending() -> None:
