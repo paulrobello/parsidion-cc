@@ -30,6 +30,10 @@ Usage:
 
     # Limit scope for quick test:
     uv run embed_eval.py --notes 20 --queries-per-note 2 --top-k 5
+
+    # Cap index size (default 200; 0 = all vault notes):
+    uv run embed_eval.py --max-index-notes 100
+    uv run embed_eval.py --max-index-notes 0  # full vault (slow with paragraph)
 """
 
 import argparse
@@ -424,6 +428,8 @@ def run_evaluation(
     chunking_strategies: list[str],
     top_k: int,
     max_workers: int = _DEFAULT_WORKERS,
+    max_index_notes: int = 200,
+    seed: int = 42,
 ) -> list[ComboResult]:
     """Run the full model × chunking evaluation matrix in parallel.
 
@@ -436,24 +442,36 @@ def run_evaluation(
         chunking_strategies: List of chunking strategy names.
         top_k: Recall@K cutoff.
         max_workers: Maximum parallel threads (one per model).
+        max_index_notes: Cap total indexed notes (0 = all). Eval notes are
+            always included; remaining slots filled with random distractors.
+        seed: Random seed for distractor sampling.
 
     Returns:
         List of ComboResult sorted by MRR descending.
     """
-    # Index ALL vault notes — the eval must find the correct note among the full
-    # corpus, not just among the sampled notes. Searching only the sampled notes
-    # trivially yields perfect recall regardless of model quality.
-    note_paths: list[Path] = vault_common.all_vault_notes()
+    # Index vault notes — eval notes always included; distractors fill the rest.
+    all_notes: list[Path] = vault_common.all_vault_notes()
 
-    if not note_paths:
+    if not all_notes:
         console.print("[red]No vault notes found.[/red]")
         return []
+
+    eval_paths: set[Path] = {Path(item.path).resolve() for item in eval_items}
+    if max_index_notes > 0 and len(all_notes) > max_index_notes:
+        distractors = [p for p in all_notes if p.resolve() not in eval_paths]
+        rng = random.Random(seed)
+        sampled_distractors = rng.sample(distractors, min(max_index_notes - len(eval_paths), len(distractors)))
+        note_paths = [p for p in all_notes if p.resolve() in eval_paths] + sampled_distractors
+        index_note = f"{len(note_paths)} (capped from {len(all_notes)})"
+    else:
+        note_paths = all_notes
+        index_note = str(len(note_paths))
 
     total_combos = len(models) * len(chunking_strategies)
     total_queries = sum(len(i.queries) for i in eval_items)
     console.print(
         f"\n[bold]Running {total_combos} combinations in parallel[/bold] "
-        f"({len(eval_items)} eval notes out of {len(note_paths)} total, "
+        f"({len(eval_items)} eval notes, {index_note} indexed, "
         f"{total_queries} queries, {len(models)} threads)\n"
     )
 
@@ -1143,6 +1161,9 @@ def main() -> None:
                         help=f"Evaluate Recall@K (default: {_DEFAULT_TOP_K}).")
     parser.add_argument("--workers", type=int, default=_DEFAULT_WORKERS, metavar="N",
                         help=f"Parallel threads — one per model (default: {_DEFAULT_WORKERS}).")
+    parser.add_argument("--max-index-notes", type=int, default=200, metavar="N",
+                        help="Max notes to index (0 = all vault notes). Eval notes always "
+                             "included; remaining slots filled with random distractors (default: 200).")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for note sampling (default: 42).")
     parser.add_argument("--output", type=Path, default=None, metavar="FILE",
@@ -1196,6 +1217,8 @@ def main() -> None:
             chunking_strategies=chunking_strategies,
             top_k=args.top_k,
             max_workers=args.workers,
+            max_index_notes=args.max_index_notes,
+            seed=args.seed,
         )
 
         display_results(results, args.top_k)
