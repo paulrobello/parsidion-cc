@@ -84,7 +84,7 @@ The Grep strategy table (currently in this section) moves inside the vault-explo
 
 ---
 
-### 3. `skills/claude-vault/SKILL.md` — updated search guidance
+### 3. `skills/parsidion-cc/SKILL.md` — updated search guidance
 
 The following specific sections change (SKILL.md has a different structure from CLAUDE-VAULT.md):
 
@@ -124,7 +124,7 @@ All of the following code paths must be updated to iterate `AGENT_SRCS` rather t
 |---|---|
 | `agents/vault-explorer.md` | **New** |
 | `CLAUDE-VAULT.md` | Updated — Debugging, Implementation, and Efficient Vault Search sections |
-| `skills/claude-vault/SKILL.md` | Updated — Debugging, Implementation, Efficient Vault Search sections, and Vault-First Loop flowchart |
+| `skills/parsidion-cc/SKILL.md` | Updated — Debugging, Implementation, Efficient Vault Search sections, and Vault-First Loop flowchart |
 | `install.py` | Updated — multi-agent support across install, uninstall, printout, help text, and module docstring |
 
 ---

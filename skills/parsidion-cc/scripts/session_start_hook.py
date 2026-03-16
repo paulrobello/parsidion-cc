@@ -33,7 +33,7 @@ import vault_common  # noqa: E402
 _DEFAULT_AI_MODEL = "claude-haiku-4-5-20251001"
 _DEFAULT_AI_TIMEOUT = 25  # seconds; hook timeout in settings.json should be >= 30000ms
 _DEFAULT_MAX_CHARS = 4000
-_DEBUG_FILE = Path(tempfile.gettempdir()) / "claude-vault-session-start-debug.log"
+_DEBUG_FILE = Path(tempfile.gettempdir()) / "parsidion-cc-session-start-debug.log"
 _VAULT_SEARCH_SCRIPT_NAME: str = "vault_search.py"
 _SEMANTIC_TOP_N: int = 5
 _SEMANTIC_TIMEOUT: int = 10  # seconds
@@ -237,7 +237,7 @@ def build_compact_index(notes: list[Path], max_chars: int = 2000) -> str:
     """Build a compact one-line-per-note index: title [tags] (folder).
 
     Much smaller than build_context_block — use when vault is large or
-    token budget is tight. Full note content is available via the claude-vault skill.
+    token budget is tight. Full note content is available via the parsidion-cc skill.
 
     Args:
         notes: List of note paths to include.
@@ -268,7 +268,7 @@ def build_compact_index(notes: list[Path], max_chars: int = 2000) -> str:
         if total > max_chars:
             lines.append(
                 f"- ... ({len(notes) - len(lines)} more notes, "
-                "use claude-vault skill to browse)"
+                "use parsidion-cc skill to browse)"
             )
             break
         lines.append(entry)
@@ -278,7 +278,7 @@ def build_compact_index(notes: list[Path], max_chars: int = 2000) -> str:
 
     header = (
         "**Available vault notes** (compact index — "
-        "use `claude-vault` skill to load full content):\n"
+        "use `parsidion-cc` skill to load full content):\n"
     )
     return header + "\n".join(lines)
 
@@ -456,7 +456,7 @@ def _write_debug_log(
         pass  # debug logging is best-effort
 
 
-_HOOK_ERROR_LOG = "/tmp/claude-vault-hook-errors.log"
+_HOOK_ERROR_LOG = "/tmp/parsidion-cc-hook-errors.log"
 
 
 def _log_hook_error(hook_name: str) -> None:

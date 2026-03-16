@@ -73,7 +73,7 @@ Use modern Python type annotations throughout:
 
    For a single-file quick sync:
    ```bash
-   cp skills/claude-vault/scripts/vault_common.py ~/.claude/skills/claude-vault/scripts/vault_common.py
+   cp skills/parsidion-cc/scripts/vault_common.py ~/.claude/skills/parsidion-cc/scripts/vault_common.py
    ```
 
 3. **Run quality checks before committing:**
@@ -87,22 +87,22 @@ Hooks communicate via JSON on stdin/stdout. Use heredocs to avoid shell quoting 
 
 ```bash
 # Test session_start_hook
-python skills/claude-vault/scripts/session_start_hook.py <<'EOF'
+python skills/parsidion-cc/scripts/session_start_hook.py <<'EOF'
 {"cwd": "/Users/yourname/Repos/myproject"}
 EOF
 
 # Test session_stop_hook (requires a real transcript path)
-python skills/claude-vault/scripts/session_stop_hook.py <<'EOF'
+python skills/parsidion-cc/scripts/session_stop_hook.py <<'EOF'
 {"cwd": "/path/to/project", "transcript_path": "/path/to/transcript.jsonl"}
 EOF
 
 # Test pre_compact_hook
-python skills/claude-vault/scripts/pre_compact_hook.py <<'EOF'
+python skills/parsidion-cc/scripts/pre_compact_hook.py <<'EOF'
 {"cwd": "/path/to/project", "transcript_path": "/path/to/transcript.jsonl"}
 EOF
 
 # Test subagent_stop_hook (requires a real agent_transcript_path)
-python skills/claude-vault/scripts/subagent_stop_hook.py <<'EOF'
+python skills/parsidion-cc/scripts/subagent_stop_hook.py <<'EOF'
 {"cwd": "/path/to/project", "agent_transcript_path": "/path/to/agent.jsonl", "agent_id": "abc-123", "agent_type": "Explore"}
 EOF
 ```

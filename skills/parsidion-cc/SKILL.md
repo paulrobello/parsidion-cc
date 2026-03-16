@@ -1,5 +1,5 @@
 ---
-name: claude-vault
+name: parsidion-cc
 description: >
   ALWAYS invoke first — before any coding or debugging action — when the query
   references accumulated past knowledge or future session persistence.
@@ -222,7 +222,7 @@ The `CLAUDE.md` at the vault root is auto-generated. Rebuild it when:
 - The index timestamp is older than 24 hours
 
 ```bash
-uv run ~/.claude/skills/claude-vault/scripts/update_index.py
+uv run ~/.claude/skills/parsidion-cc/scripts/update_index.py
 ```
 
 This scans all vault folders, reads frontmatter, and produces:
@@ -241,19 +241,19 @@ Run the summarizer on demand to generate structured vault notes.
 
 **From a terminal outside Claude Code** (normal usage):
 ```bash
-uv run ~/.claude/skills/claude-vault/scripts/summarize_sessions.py
+uv run ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py
 ```
 
 **From inside a Claude Code session** (testing/debugging only):
 Claude Code sets the `CLAUDECODE` env var which blocks nested Claude sessions.
 Unset it for the subprocess:
 ```bash
-env -u CLAUDECODE uv run ~/.claude/skills/claude-vault/scripts/summarize_sessions.py
+env -u CLAUDECODE uv run ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py
 ```
 
 **Process a single explicit file** (useful for testing one entry):
 ```bash
-env -u CLAUDECODE uv run ~/.claude/skills/claude-vault/scripts/summarize_sessions.py \
+env -u CLAUDECODE uv run ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py \
   --sessions /path/to/file.jsonl
 ```
 
@@ -316,22 +316,22 @@ Daily notes (`type: daily` or path under `Daily/`) are exempt from `confidence`,
 
 ```bash
 # Scan and report only (no writes)
-uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --dry-run
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --dry-run
 
 # Scan and repair repairable issues via Claude haiku (3 parallel workers by default)
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --fix
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix
 
 # Repair with more parallelism (e.g. 5 workers)
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --fix --jobs 5
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix --jobs 5
 
 # Extend per-repair timeout (default 120s) when running many parallel workers
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --fix --jobs 5 --timeout 180
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix --jobs 5 --timeout 180
 
 # Repair up to 20 notes at a time
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --fix --limit 20
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix --limit 20
 
 # Errors only (skip warnings)
-uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --errors-only --dry-run
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --errors-only --dry-run
 ```
 
 Repairs run in parallel (`--jobs N`, default 3). Each `claude -p` subprocess is independent so parallelism is safe; state updates and console output are guarded by a lock so lines are never interleaved. The per-call timeout (`--timeout SECS`) defaults to 120s — increase it when running many parallel workers to avoid spurious timeouts.
@@ -369,11 +369,11 @@ Run `update_index.py` after repairs — it reads `doctor_state.json` and adds a 
 All hooks and the summarizer read `~/ClaudeVault/config.yaml` for settings.
 Precedence: **hardcoded defaults → config.yaml → CLI args** (last one wins).
 
-A template with all options lives at `~/.claude/skills/claude-vault/templates/config.yaml`.
+A template with all options lives at `~/.claude/skills/parsidion-cc/templates/config.yaml`.
 Copy it to the vault root to get started:
 
 ```bash
-cp ~/.claude/skills/claude-vault/templates/config.yaml ~/ClaudeVault/config.yaml
+cp ~/.claude/skills/parsidion-cc/templates/config.yaml ~/ClaudeVault/config.yaml
 ```
 
 ### Config Sections
@@ -382,7 +382,7 @@ cp ~/.claude/skills/claude-vault/templates/config.yaml ~/ClaudeVault/config.yaml
 > `claude-haiku-4-5-20251001`, `BAAI/bge-small-en-v1.5`) are the hardcoded defaults.
 > They can be changed via the corresponding keys in `~/ClaudeVault/config.yaml` without
 > modifying any scripts. See the template at
-> `~/.claude/skills/claude-vault/templates/config.yaml` for all available keys.
+> `~/.claude/skills/parsidion-cc/templates/config.yaml` for all available keys.
 
 ```yaml
 session_start_hook:
@@ -542,13 +542,13 @@ Groups are evaluated in order — the **first matching group wins**. Place more 
 Use `check_graph_coverage.py` to find vault tags that are not covered by any color group and to spot stale group entries (tags in `graph.json` that no longer exist in the vault):
 
 ```bash
-python ~/.claude/skills/claude-vault/scripts/check_graph_coverage.py
+python ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py
 
 # Only report uncovered tags used 2+ times
-python ~/.claude/skills/claude-vault/scripts/check_graph_coverage.py --threshold 2
+python ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py --threshold 2
 
 # Machine-readable JSON output
-python ~/.claude/skills/claude-vault/scripts/check_graph_coverage.py --json
+python ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py --json
 ```
 
 Run this script after a batch of session summarizations or whenever the vault index is rebuilt, then update `graph.json` accordingly.

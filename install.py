@@ -75,7 +75,7 @@ def dim(t: str) -> str:
 # ---------------------------------------------------------------------------
 
 REPO_ROOT: Path = Path(__file__).parent.resolve()
-SKILL_SRC: Path = REPO_ROOT / "skills" / "claude-vault"
+SKILL_SRC: Path = REPO_ROOT / "skills" / "parsidion-cc"
 AGENT_SRCS: list[Path] = [
     REPO_ROOT / "agents" / "research-documentation-agent.md",
     REPO_ROOT / "agents" / "vault-explorer.md",
@@ -328,11 +328,11 @@ def install_skill(
     dry_run: bool = False,
     verbose: bool = False,
 ) -> Path:
-    """Copy skill directory to ~/.claude/skills/claude-vault/.
+    """Copy skill directory to ~/.claude/skills/parsidion-cc/.
 
     Returns the installed skill path.
     """
-    dest = claude_dir / "skills" / "claude-vault"
+    dest = claude_dir / "skills" / "parsidion-cc"
 
     if dest.exists() and not force and not dry_run:
         _warn(f"Skill already exists at {dest}")
@@ -362,7 +362,7 @@ def install_skill(
             for script in (dest / "scripts").glob("*.sh"):
                 script.chmod(script.stat().st_mode | 0o755)
 
-    templates_dir = claude_dir / "skills" / "claude-vault" / "templates"
+    templates_dir = claude_dir / "skills" / "parsidion-cc" / "templates"
     patch_vault_common(
         dest, vault_root, templates_dir, dry_run=dry_run, verbose=verbose
     )
@@ -527,7 +527,7 @@ def _hook_command(claude_dir: Path, event: str) -> str:
     ``uv run --no-project`` to ensure the correct Python interpreter.
     """
     script = _HOOK_SCRIPTS[event]
-    script_path = claude_dir / "skills" / "claude-vault" / "scripts" / script
+    script_path = claude_dir / "skills" / "parsidion-cc" / "scripts" / script
     # Replace home dir with ~ for portability; use forward slashes so the
     # command works on both Unix and Windows (Claude Code and uv handle ~ expansion).
     try:
@@ -681,7 +681,7 @@ def rebuild_index(
     dry_run: bool = False,
 ) -> None:
     """Run update_index.py to rebuild ~/ClaudeVault/CLAUDE.md."""
-    script = claude_dir / "skills" / "claude-vault" / "scripts" / "update_index.py"
+    script = claude_dir / "skills" / "parsidion-cc" / "scripts" / "update_index.py"
     if not script.exists():
         _warn(f"update_index.py not found at {script} — skipping index rebuild")
         return
@@ -724,7 +724,7 @@ def uninstall(
     """Remove installed skill, agent, and hook registrations."""
     print(bold("\nUninstalling Parsidion CC..."))
 
-    skill_dir = claude_dir / "skills" / "claude-vault"
+    skill_dir = claude_dir / "skills" / "parsidion-cc"
 
     if skill_dir.exists():
         _step(f"Remove skill directory: {skill_dir}", dry_run=dry_run)
@@ -877,7 +877,7 @@ def install(args: argparse.Namespace) -> int:
     print(f"  {dim('Claude dir   :')} {claude_dir}")
     print(f"  {dim('Vault path   :')} {vault_root}")
     print(f"  {dim('Settings     :')} {settings_file}")
-    print(f"  {dim('Install skill:')} {claude_dir / 'skills' / 'claude-vault'}")
+    print(f"  {dim('Install skill:')} {claude_dir / 'skills' / 'parsidion-cc'}")
     if not args.skip_agent:
         for agent_src in AGENT_SRCS:
             print(f"  {dim('Install agent:')} {claude_dir / 'agents' / agent_src.name}")
@@ -924,7 +924,7 @@ def install(args: argparse.Namespace) -> int:
     create_vault_dirs(vault_root, dry_run=dry_run)
 
     # 6. Create Templates symlink
-    templates_src = claude_dir / "skills" / "claude-vault" / "templates"
+    templates_src = claude_dir / "skills" / "parsidion-cc" / "templates"
     create_templates_symlink(
         vault_root, templates_src, dry_run=dry_run, verbose=verbose
     )
@@ -956,11 +956,11 @@ def install(args: argparse.Namespace) -> int:
         print(f"  1. Open {vault_root} in Obsidian as a vault")
         print("  2. Restart Claude Code to activate hooks")
         print(
-            f"  3. Run: {cyan('uv run ~/.claude/skills/claude-vault/scripts/update_index.py')}"
+            f"  3. Run: {cyan('uv run ~/.claude/skills/parsidion-cc/scripts/update_index.py')}"
         )
         print("         to rebuild the vault index at any time")
         print(
-            f"  4. Run: {cyan('uv run ~/.claude/skills/claude-vault/scripts/build_embeddings.py')}"
+            f"  4. Run: {cyan('uv run ~/.claude/skills/parsidion-cc/scripts/build_embeddings.py')}"
         )
         print("         to build the semantic search index (~30s on first run)")
         if not args.install_tools:

@@ -657,7 +657,7 @@ def main() -> None:
     # Incrementally update embeddings.db in the background if the DB exists.
     # Skipped silently when the DB has not been built yet.
     # ARC-011: stderr is redirected to a log file so silent failures are
-    # visible.  Check /tmp/claude-vault-embed.log when embeddings seem stale.
+    # visible.  Check /tmp/parsidion-cc-embed.log when embeddings seem stale.
     db_path = get_embeddings_db_path()
     if db_path.exists():
         build_script = Path(__file__).parent / "build_embeddings.py"
@@ -665,7 +665,7 @@ def main() -> None:
             subprocess.Popen(
                 ["uv", "run", "--no-project", str(build_script), "--incremental"],
                 stdout=subprocess.DEVNULL,
-                stderr=open("/tmp/claude-vault-embed.log", "a"),  # noqa: SIM115
+                stderr=open("/tmp/parsidion-cc-embed.log", "a"),  # noqa: SIM115
                 start_new_session=True,
             )
             print("Embeddings: incremental rebuild launched in background")

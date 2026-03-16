@@ -105,7 +105,7 @@ The primary use case is fetching pages for the research agent:
 
 ```bash
 # Fetch a page and convert to clean markdown in one pipeline
-agentchrome page html | uv run --script ~/.claude/skills/claude-vault/scripts/html-to-md.py - --url https://example.com
+agentchrome page html | uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py - --url https://example.com
 ```
 
 The research agent (`~/.claude/agents/research-documentation-agent.md`) uses this pipeline automatically when agentchrome is available, falling back to `curl` otherwise.
@@ -130,7 +130,7 @@ agentchrome page tree
 ```bash
 # From a URL (agentchrome navigates, then fetches)
 agentchrome navigate https://docs.example.com/api
-agentchrome page html | uv run --script ~/.claude/skills/claude-vault/scripts/html-to-md.py - --url https://docs.example.com/api
+agentchrome page html | uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py - --url https://docs.example.com/api
 ```
 
 The `--url` flag is optional but improves link resolution in the markdown output.

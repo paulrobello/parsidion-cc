@@ -369,7 +369,7 @@ em { font-style: italic; color: var(--text-muted); }
       <div class="checklist">
         <div class="check-item"><span class="ck">✓</span><span>Task 1 — Create <span class="hl-cyan">agents/vault-explorer.md</span></span></div>
         <div class="check-item"><span class="ck">✓</span><span>Task 2 — Update <span class="hl-purple">CLAUDE-VAULT.md</span> guidance</span></div>
-        <div class="check-item"><span class="ck">✓</span><span>Task 3 — Update <span class="hl-purple">skills/claude-vault/SKILL.md</span></span></div>
+        <div class="check-item"><span class="ck">✓</span><span>Task 3 — Update <span class="hl-purple">skills/parsidion-cc/SKILL.md</span></span></div>
         <div class="check-item"><span class="ck">✓</span><span>Task 4 — Refactor <span class="hl-yellow">install.py</span> for multi-agent</span></div>
         <div class="check-item"><span class="ck">✓</span><span>Task 5 — Sync to <span class="hl-green">~/.claude/</span></span></div>
       </div>
@@ -461,7 +461,7 @@ Research           →  Research/ → all folders</div>
       </div>
 
       <div class="section-label">Step 1 command</div>
-      <div class="code-block"><span class="fn">uv run</span> --no-project ~/.claude/skills/claude-vault/scripts/<span class="str">vault_search.py</span> <span class="str">"QUERY"</span> --json 2>/dev/null
+      <div class="code-block"><span class="fn">uv run</span> --no-project ~/.claude/skills/parsidion-cc/scripts/<span class="str">vault_search.py</span> <span class="str">"QUERY"</span> --json 2>/dev/null
 <span class="cm"># → [{"score": 0.87, "path": "/Users/probello/ClaudeVault/Patterns/...", ...}, ...]</span>
 <span class="cm"># If ≥ 3 results with score ≥ 0.35 → use paths, skip to step 6</span>
 <span class="cm"># If DB absent or &lt; 3 results → fall through to metadata search (step 2)</span></div>
@@ -601,7 +601,7 @@ a single-pass review would have missed.</div>
       <div class="prompt-line">
         <span class="prompt">claude</span>
         <span class="prompt-symbol">→</span>
-        <span class="prompt-cmd">Edit skills/claude-vault/SKILL.md — 4 section replacements</span>
+        <span class="prompt-cmd">Edit skills/parsidion-cc/SKILL.md — 4 section replacements</span>
       </div>
 
       <div class="section-label">Four sections updated</div>
@@ -720,7 +720,7 @@ All 61 vault_common.py tests pass — install.py changes have no regressions.</d
 
       <div class="output" style="font-size:11.5px;">Parsidion CC Installer
 
-  + Install skill: claude-vault → ~/.claude/skills/claude-vault
+  + Install skill: parsidion-cc → ~/.claude/skills/parsidion-cc
   + Patch vault_common.py: VAULT_ROOT=/Users/probello/ClaudeVault
   <span style="color:var(--green)">+ Install agent: research-documentation-agent.md → ~/.claude/agents/</span>
   <span style="color:var(--cyan)">+ Install agent: vault-explorer.md → ~/.claude/agents/</span>
@@ -806,7 +806,7 @@ $ grep -c "vault-explorer" ~/.claude/CLAUDE-VAULT.md
           <div class="section-label">Modified files</div>
           <ul class="feature-list" style="font-size:12px;">
             <li><span class="hl-yellow">CLAUDE-VAULT.md</span></li>
-            <li><span class="hl-yellow">skills/claude-vault/SKILL.md</span></li>
+            <li><span class="hl-yellow">skills/parsidion-cc/SKILL.md</span></li>
             <li><span class="hl-yellow">install.py</span></li>
             <li><span class="hl-yellow">docs/ARCHITECTURE.md</span></li>
             <li><span class="hl-yellow">vault_common.py</span> — DB-first find_*</li>

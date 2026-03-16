@@ -60,7 +60,7 @@ def _get_excluded_agents() -> set[str]:
     return {s.strip().lower() for s in str(raw).split(",") if s.strip()}
 
 
-_HOOK_ERROR_LOG = "/tmp/claude-vault-hook-errors.log"
+_HOOK_ERROR_LOG = "/tmp/parsidion-cc-hook-errors.log"
 
 
 def _log_hook_error(hook_name: str) -> None:

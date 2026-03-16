@@ -78,12 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - History folder added to SKILL.md vault structure and update_index.py FOLDER_ORDER
 - Added missing .gitignore entries (`*-mcp.json`, `.gemini-clipboard`, `claude_scratch/`, etc.)
 - Documented show-context script in ARCHITECTURE.md
-- Moved `html-to-md` from `scripts/` to `skills/claude-vault/scripts/html-to-md.py`; added `.py` extension (it is a PEP 723 Python script); updated research agent, ARCHITECTURE.md, and slideshows to reference the new path (`~/.claude/skills/claude-vault/scripts/html-to-md.py`)
+- Moved `html-to-md` from `scripts/` to `skills/parsidion-cc/scripts/html-to-md.py`; added `.py` extension (it is a PEP 723 Python script); updated research agent, ARCHITECTURE.md, and slideshows to reference the new path (`~/.claude/skills/parsidion-cc/scripts/html-to-md.py`)
 
 ## [0.1.0] - 2026-03-10
 
 ### Added
-- Claude Vault skill (`skills/claude-vault/`) with Obsidian-backed knowledge management
+- Claude Vault skill (`skills/parsidion-cc/`) with Obsidian-backed knowledge management
 - Session lifecycle hooks: SessionStart, SessionEnd, PreCompact
 - AI-powered note selection via `--ai [MODEL]` flag on session start hook
 - AI-powered session classification via `--ai [MODEL]` flag on session stop hook

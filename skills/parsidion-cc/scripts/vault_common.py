@@ -71,7 +71,7 @@ __all__: list[str] = [
 # module-level mutable state and are NOT thread-safe — this is acceptable because
 # each hook script runs as a short-lived subprocess.  See ARC-007 in AUDIT.md.
 VAULT_ROOT: Path = Path.home() / "ClaudeVault"
-TEMPLATES_DIR: Path = Path.home() / ".claude" / "skills" / "claude-vault" / "templates"
+TEMPLATES_DIR: Path = Path.home() / ".claude" / "skills" / "parsidion-cc" / "templates"
 VAULT_DIRS: list[str] = [
     "Daily",
     "Projects",

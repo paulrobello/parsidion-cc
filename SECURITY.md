@@ -26,12 +26,12 @@ The following components are in scope for security reports:
 
 | Component | Location | Risk surface |
 |-----------|----------|--------------|
-| Hook scripts | `skills/claude-vault/scripts/session_start_hook.py`, `session_stop_hook.py`, `pre_compact_hook.py`, `subagent_stop_hook.py`, `session_stop_wrapper.sh` | Executed on every Claude Code lifecycle event |
-| Shared library | `skills/claude-vault/scripts/vault_common.py` | Vault path resolution, subprocess environment, SQLite access, file locking |
+| Hook scripts | `skills/parsidion-cc/scripts/session_start_hook.py`, `session_stop_hook.py`, `pre_compact_hook.py`, `subagent_stop_hook.py`, `session_stop_wrapper.sh` | Executed on every Claude Code lifecycle event |
+| Shared library | `skills/parsidion-cc/scripts/vault_common.py` | Vault path resolution, subprocess environment, SQLite access, file locking |
 | Installer | `install.py` | Writes to `~/.claude/settings.json`; copies files into the user's Claude config directory |
-| Session summarizer | `skills/claude-vault/scripts/summarize_sessions.py` | Processes transcript content via Claude API; writes vault notes from AI-generated content |
-| Vault index | `skills/claude-vault/scripts/update_index.py` | Reads all vault notes; writes SQLite database |
-| Semantic search | `skills/claude-vault/scripts/vault_search.py`, `build_embeddings.py` | Reads SQLite database; returns paths for injection into session context |
+| Session summarizer | `skills/parsidion-cc/scripts/summarize_sessions.py` | Processes transcript content via Claude API; writes vault notes from AI-generated content |
+| Vault index | `skills/parsidion-cc/scripts/update_index.py` | Reads all vault notes; writes SQLite database |
+| Semantic search | `skills/parsidion-cc/scripts/vault_search.py`, `build_embeddings.py` | Reads SQLite database; returns paths for injection into session context |
 
 ## Stdlib-Only Hook Constraint
 

@@ -264,7 +264,7 @@ def _launch_summarizer_if_pending() -> None:
         pass
 
 
-_HOOK_ERROR_LOG = "/tmp/claude-vault-hook-errors.log"
+_HOOK_ERROR_LOG = "/tmp/parsidion-cc-hook-errors.log"
 
 
 def _log_hook_error(hook_name: str) -> None:

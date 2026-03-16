@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Standalone trigger eval for the claude-vault skill.
+"""Standalone trigger eval for the parsidion-cc skill.
 
 Tests whether Claude would invoke the skill given its description,
 by simulating the skill selection decision that happens in interactive sessions.
 
 Run from a SEPARATE terminal (not inside Claude Code):
-    python3 ~/.claude/skills/claude-vault/scripts/run_trigger_eval.py
+    python3 ~/.claude/skills/parsidion-cc/scripts/run_trigger_eval.py
 
 Writes results to:
-    ~/.claude/skills/claude-vault/eval_results.json
+    ~/.claude/skills/parsidion-cc/eval_results.json
 """
 
 import json
@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import vault_common  # noqa: E402
 
-SKILL_DIR = Path.home() / ".claude" / "skills" / "claude-vault"
+SKILL_DIR = Path.home() / ".claude" / "skills" / "parsidion-cc"
 RESULTS_FILE = SKILL_DIR / "eval_results.json"
 MODEL = "claude-sonnet-4-6"
 
@@ -32,7 +32,7 @@ RUNS_PER_QUERY = 3
 NUM_WORKERS = 6
 
 # Distractor skills to make the eval realistic - these are real skills
-# from the user's setup that Claude must distinguish from claude-vault
+# from the user's setup that Claude must distinguish from parsidion-cc
 DISTRACTOR_SKILLS: list[dict[str, str]] = [
     {
         "name": "systematic-debugging",

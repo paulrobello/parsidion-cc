@@ -11,9 +11,9 @@ parsidion-cc is a Claude Code customization toolkit — the **source repository*
 | Component | Source (this repo) | Installed to |
 |---|---|---|
 | Installer | `install.py` | run in-place (`uv run install.py`) |
-| Claude Vault skill | `skills/claude-vault/` | `~/.claude/skills/claude-vault/` |
+| Claude Vault skill | `skills/parsidion-cc/` | `~/.claude/skills/parsidion-cc/` |
 | Research agent | `agents/research-documentation-agent.md` | `~/.claude/agents/` |
-| Hook scripts | `skills/claude-vault/scripts/` | referenced from `~/.claude/settings.json` |
+| Hook scripts | `skills/parsidion-cc/scripts/` | referenced from `~/.claude/settings.json` |
 | Vault | (generated) | `~/ClaudeVault/` (or custom path) |
 
 Use `install.py` to sync changes from this repo to the installed locations. After editing source files, run:
@@ -39,14 +39,14 @@ uv run install.py --install-tools    # runs uv tool install --editable ".[tools]
 uv tool install --editable ".[tools]"
 
 # Rebuild the vault index (after creating/renaming/deleting notes)
-uv run --no-project ~/.claude/skills/claude-vault/scripts/update_index.py
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/update_index.py
 
 # Summarize queued sessions (from a terminal outside Claude Code)
-uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py
-uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py --dry-run
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py --dry-run
 
 # Summarize from inside a Claude Code session (unset CLAUDECODE to allow nesting)
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py
 
 # Search vault notes (after uv tool install --editable ".[tools]")
 vault-search "hook patterns" -n 5            # semantic, top 5
@@ -57,7 +57,7 @@ vault-search --folder Patterns --tag python  # metadata: long form still works
 VAULT_SEARCH_FORMAT=rich VAULT_SEARCH_MIN_SCORE=0.5 vault-search "query"  # env vars
 
 # Run the skill trigger accuracy eval (MUST be from a separate terminal, not inside Claude Code)
-bash ~/.claude/skills/claude-vault/scripts/run_trigger_eval.sh
+bash ~/.claude/skills/parsidion-cc/scripts/run_trigger_eval.sh
 ```
 
 The trigger eval and summarizer cannot run nested inside a Claude Code session because they
@@ -91,11 +91,11 @@ If no `.git` directory is present, all `git_commit_vault()` calls are silent no-
 All hook and summarizer options can be set in `~/ClaudeVault/config.yaml`. Precedence:
 **defaults → config.yaml → CLI args** (last one wins).
 
-A template with all options and their defaults is at `skills/claude-vault/templates/config.yaml`.
+A template with all options and their defaults is at `skills/parsidion-cc/templates/config.yaml`.
 Copy it to the vault root to get started:
 
 ```bash
-cp ~/.claude/skills/claude-vault/templates/config.yaml ~/ClaudeVault/config.yaml
+cp ~/.claude/skills/parsidion-cc/templates/config.yaml ~/ClaudeVault/config.yaml
 ```
 
 Config sections:
@@ -124,44 +124,44 @@ uv run install.py --force --yes
 For a single-file quick sync (faster than full reinstall):
 ```bash
 # Example: after editing vault_common.py
-cp skills/claude-vault/scripts/vault_common.py ~/.claude/skills/claude-vault/scripts/vault_common.py
+cp skills/parsidion-cc/scripts/vault_common.py ~/.claude/skills/parsidion-cc/scripts/vault_common.py
 
 # After editing SKILL.md
-cp skills/claude-vault/SKILL.md ~/.claude/skills/claude-vault/SKILL.md
+cp skills/parsidion-cc/SKILL.md ~/.claude/skills/parsidion-cc/SKILL.md
 
 # After editing the research agent
 cp agents/research-documentation-agent.md ~/.claude/agents/research-documentation-agent.md
 
 # After editing subagent_stop_hook.py
-cp skills/claude-vault/scripts/subagent_stop_hook.py ~/.claude/skills/claude-vault/scripts/subagent_stop_hook.py
+cp skills/parsidion-cc/scripts/subagent_stop_hook.py ~/.claude/skills/parsidion-cc/scripts/subagent_stop_hook.py
 ```
 
 **Testing hooks manually** — hooks communicate via JSON on stdin/stdout.
 Use heredoc to avoid shell quoting issues with JSON:
 ```bash
 # Test session_start_hook
-python skills/claude-vault/scripts/session_start_hook.py <<'EOF'
+python skills/parsidion-cc/scripts/session_start_hook.py <<'EOF'
 {"cwd": "/Users/yourname/Repos/myproject"}
 EOF
 
 # Test session_stop_wrapper (the registered SessionEnd hook)
-bash skills/claude-vault/scripts/session_stop_wrapper.sh <<'EOF'
+bash skills/parsidion-cc/scripts/session_stop_wrapper.sh <<'EOF'
 {"cwd": "/path/to/project", "transcript_path": "/path/to/transcript.jsonl"}
 EOF
 # Background work logs to /tmp/session_stop_hook.log
 
 # Test session_stop_hook directly (requires a real transcript path)
-python skills/claude-vault/scripts/session_stop_hook.py <<'EOF'
+python skills/parsidion-cc/scripts/session_stop_hook.py <<'EOF'
 {"cwd": "/path/to/project", "transcript_path": "/path/to/transcript.jsonl"}
 EOF
 
 # Test pre_compact_hook
-python skills/claude-vault/scripts/pre_compact_hook.py <<'EOF'
+python skills/parsidion-cc/scripts/pre_compact_hook.py <<'EOF'
 {"cwd": "/path/to/project", "transcript_path": "/path/to/transcript.jsonl"}
 EOF
 
 # Test subagent_stop_hook (provide a real agent_transcript_path)
-python skills/claude-vault/scripts/subagent_stop_hook.py <<'EOF'
+python skills/parsidion-cc/scripts/subagent_stop_hook.py <<'EOF'
 {"cwd": "/path/to/project", "agent_transcript_path": "/path/to/agent.jsonl", "agent_id": "abc-123", "agent_type": "Explore"}
 EOF
 ```
@@ -209,12 +209,12 @@ session_id: <uuid>      # optional — set by summarize_sessions.py on AI-genera
 - No orphan notes — every note must link to at least one other note via `related`
 - Search before create — update existing notes rather than creating duplicates
 - **Tag brevity**: prefer short single-word or minimal-hyphen tags — e.g. `voxel` not `voxel-engine`, `terminal` not `terminal-emulator`. Use a longer form only when the short form would be genuinely ambiguous.
-- `Templates/` is a symlink to `skills/claude-vault/templates/` — never edit template files directly from the vault side
+- `Templates/` is a symlink to `skills/parsidion-cc/templates/` — never edit template files directly from the vault side
 - **Subfolder rule**: when 3 or more notes share a common subject prefix, move them into a subfolder named after that subject. Drop the redundant prefix from filenames inside the subfolder. Only one level of subfolder is allowed — never nest subfolders within subfolders. Update all wikilinks and run `update_index.py` after reorganizing.
 
 ## Skill SKILL.md Structure
 
-`skills/claude-vault/SKILL.md` has YAML frontmatter with `name` and `description` fields. The description is what Claude Code uses for automatic skill invocation — it was iteratively optimized using `run_trigger_eval.py`. When modifying the description, run the trigger eval to measure impact on precision/recall.
+`skills/parsidion-cc/SKILL.md` has YAML frontmatter with `name` and `description` fields. The description is what Claude Code uses for automatic skill invocation — it was iteratively optimized using `run_trigger_eval.py`. When modifying the description, run the trigger eval to measure impact on precision/recall.
 
 ## Research Agent
 
@@ -227,10 +227,10 @@ session_id: <uuid>      # optional — set by summarize_sessions.py on AI-genera
 ## Key File Paths in Code
 
 - `VAULT_ROOT` = `~/ClaudeVault/` (module-level constant in `vault_common.py`, patched by installer for custom vault paths)
-- `TEMPLATES_DIR` = `~/.claude/skills/claude-vault/templates/` (module-level constant in `vault_common.py`, patched by installer)
+- `TEMPLATES_DIR` = `~/.claude/skills/parsidion-cc/templates/` (module-level constant in `vault_common.py`, patched by installer)
 - `pending_summaries.jsonl` = `~/ClaudeVault/pending_summaries.jsonl` — queue of sessions awaiting AI summarization. Each line: `{"session_id": "...", "transcript_path": "...", "project": "...", "categories": [...], "timestamp": "..."}`. Deduplicated by `session_id`.
 - `embeddings.db` = `~/ClaudeVault/embeddings.db` — SQLite database with two tables: `note_embeddings` (384-dim float32 vectors built by `build_embeddings.py`) and `note_index` (per-note metadata built by `update_index.py`). Queried by `vault_search.py` (both modes) and `vault_common.query_note_index()`. All callers fall back gracefully when absent.
 - `EXCLUDE_DIRS` = set of folder names skipped by the indexer and vault traversal (defined in `vault_common.py`). Currently: `.obsidian`, `Templates`, `.git`, `.trash`, `TagsRoutes`.
 - Hook registration: `~/.claude/settings.json`
-- Trigger eval results: `~/.claude/skills/claude-vault/eval_results.json`
+- Trigger eval results: `~/.claude/skills/parsidion-cc/eval_results.json`
 - Installer: `install.py` (repo root)

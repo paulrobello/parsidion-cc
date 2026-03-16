@@ -45,7 +45,7 @@ build-backend = "setuptools.build_meta"
 py-modules = ["vault_search", "vault_common"]
 
 [tool.setuptools.package-dir]
-"" = "skills/claude-vault/scripts"
+"" = "skills/parsidion-cc/scripts"
 
 [dependency-groups]
 dev = [
@@ -58,7 +58,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov=skills/claude-vault/scripts --cov-report=term-missing"
+addopts = "-v --cov=skills/parsidion-cc/scripts --cov-report=term-missing"
 timeout = 10
 
 [tool.ruff]
@@ -77,7 +77,7 @@ select = ["E", "W", "F", "B", "BLE", "UP"]
 ignore = ["E501", "B008", "B904"]
 
 [tool.pyright]
-extraPaths = ["skills/claude-vault/scripts"]
+extraPaths = ["skills/parsidion-cc/scripts"]
 
 [tool.ty.environment]
-extra-paths = ["skills/claude-vault/scripts"]
+extra-paths = ["skills/parsidion-cc/scripts"]

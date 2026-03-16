@@ -94,7 +94,7 @@ After installation, open the vault path in Obsidian and restart Claude Code to a
 
 ## Components
 
-### Claude Vault (`~/.claude/skills/claude-vault/`)
+### Claude Vault (`~/.claude/skills/parsidion-cc/`)
 
 An Obsidian vault-based knowledge management system that replaces Claude Code's built-in auto memory with a richly organized, searchable, cross-linked knowledge base at `~/ClaudeVault/`.
 
@@ -157,7 +157,7 @@ An Obsidian vault-based knowledge management system that replaces Claude Code's 
 | 7 | Terminal | Teal `#009688` | 38536 | terminal, par-term, par-term-emu-core-rust |
 | 8 | Graphics / 3D | Pink `#E91E63` | 15277667 | wgpu, sdf, sdf-terrain, voxel, fractals, mandel, vrm, avatar, face-tracking |
 
-The claude-vault skill includes a sub-workflow for updating these groups -- add tags to existing groups or create new ones when new projects or topics are introduced. RGB colors are stored as decimal integers (e.g., `int("FF5722", 16)` -> `16733986`).
+The parsidion-cc skill includes a sub-workflow for updating these groups -- add tags to existing groups or create new ones when new projects or topics are introduced. RGB colors are stored as decimal integers (e.g., `int("FF5722", 16)` -> `16733986`).
 
 ### CLAUDE-VAULT.md (`~/.claude/CLAUDE-VAULT.md`)
 
@@ -189,14 +189,14 @@ A Haiku-powered read-only subagent that isolates vault lookups from the main ses
 
 Technical research agent that searches the vault first, conducts web research, and saves findings to the appropriate vault folder with proper YAML frontmatter. Fetches pages via `agentchrome page html` piped through `html-to-md.py` for noise-free markdown (curl fallback if agentchrome unavailable). Uses `mcpl` as a fallback search gateway when Brave Search hits rate limits -- see [docs/MCPL.md](docs/MCPL.md) for mcpl setup.
 
-### HTML to Markdown (`skills/claude-vault/scripts/html-to-md.py`)
+### HTML to Markdown (`skills/parsidion-cc/scripts/html-to-md.py`)
 
-A PEP 723 standalone script (installed to `~/.claude/skills/claude-vault/scripts/html-to-md.py`) that converts HTML to clean, noise-free markdown optimized for LLM consumption. Strips navigation, banners, cookie notices, and script/style noise while preserving code fences with language annotations. Used by the research agent to clean `agentchrome` page output.
+A PEP 723 standalone script (installed to `~/.claude/skills/parsidion-cc/scripts/html-to-md.py`) that converts HTML to clean, noise-free markdown optimized for LLM consumption. Strips navigation, banners, cookie notices, and script/style noise while preserving code fences with language annotations. Used by the research agent to clean `agentchrome` page output.
 
 ```bash
-uv run --script ~/.claude/skills/claude-vault/scripts/html-to-md.py page.html          # file → stdout
-uv run --script ~/.claude/skills/claude-vault/scripts/html-to-md.py - < page.html      # stdin → stdout
-agentchrome page html | uv run --script ~/.claude/skills/claude-vault/scripts/html-to-md.py - --url https://example.com
+uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py page.html          # file → stdout
+uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py - < page.html      # stdin → stdout
+agentchrome page html | uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py - --url https://example.com
 ```
 
 ### Context Preview (`scripts/show-context`)
@@ -225,7 +225,7 @@ All hooks and the summarizer read `~/ClaudeVault/config.yaml`. Precedence: **def
 
 Copy the template to get started:
 ```bash
-cp ~/.claude/skills/claude-vault/templates/config.yaml ~/ClaudeVault/config.yaml
+cp ~/.claude/skills/parsidion-cc/templates/config.yaml ~/ClaudeVault/config.yaml
 ```
 
 > **📝 Note:** Model IDs shown in the config block below (e.g. `claude-sonnet-4-6`,
@@ -295,7 +295,7 @@ If no `.git` directory is present, all git operations are silent no-ops.
   agents/
     research-documentation-agent.md  # Research agent (vault-integrated)
     vault-explorer.md                # Read-only Haiku vault search agent (7-step)
-  skills/claude-vault/
+  skills/parsidion-cc/
     SKILL.md                         # Vault skill definition
     scripts/                         # Hook scripts, utilities, and html-to-md.py
     templates/                       # Note templates + config.yaml reference
@@ -309,12 +309,12 @@ If no `.git` directory is present, all git operations are silent no-ops.
 
 **Rebuild vault index:**
 ```bash
-uv run --no-project ~/.claude/skills/claude-vault/scripts/update_index.py
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/update_index.py
 ```
 
 **Build or rebuild semantic search embeddings:**
 ```bash
-uv run --no-project ~/.claude/skills/claude-vault/scripts/build_embeddings.py
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/build_embeddings.py
 ```
 
 **Search vault from the CLI:**
@@ -348,43 +348,43 @@ VAULT_SEARCH_MIN_SCORE=0.5 VAULT_SEARCH_TOP=5 vault-search "query"
 
 Precedence: **CLI flag > env var > config.yaml > built-in default**
 
-> **📝 Note:** `vault-search` requires `uv run install.py --install-tools` (or `uv tool install --editable ".[tools]"` from the repo root) to register it as a global command. Without this, use `uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_search.py` instead.
+> **📝 Note:** `vault-search` requires `uv run install.py --install-tools` (or `uv tool install --editable ".[tools]"` from the repo root) to register it as a global command. Without this, use `uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_search.py` instead.
 
 **Summarize queued sessions** (generates structured vault notes via Claude Agent SDK):
 ```bash
 # Process all pending sessions (run from a terminal, not inside Claude Code)
-uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py
 
 # If running from inside a Claude Code session, unset CLAUDECODE to allow nesting:
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py
 
 # Preview without writing
-uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py --dry-run
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py --dry-run
 
 # Process an explicit file (e.g. to test a single entry)
-uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py --sessions /path/to/file.jsonl
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py --sessions /path/to/file.jsonl
 ```
 
 **Run vault doctor** (scan for issues and repair via Claude haiku):
 ```bash
 # Scan and report only
-uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --dry-run
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --dry-run
 
 # Repair repairable issues (must unset CLAUDECODE to allow nested claude calls)
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --fix --limit 20
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix --limit 20
 
 # Errors only; skip warnings
-uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --errors-only --dry-run
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --errors-only --dry-run
 
 # Ignore state file, rescan everything
-uv run --no-project ~/.claude/skills/claude-vault/scripts/vault_doctor.py --no-state --dry-run
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --no-state --dry-run
 ```
 
 The doctor is singleton-guarded -- it stores its PID in `doctor_state.json` and exits if another instance is already running. Before scanning it auto-commits any uncommitted vault files whose mtime is ≥ 15 minutes old. Notes that time out twice are flagged `needs_review` and skipped on future runs. The vault health summary appears in `CLAUDE.md` after running `update_index.py`.
 
 **Run trigger eval** (from a separate terminal, not inside Claude Code):
 ```bash
-bash ~/.claude/skills/claude-vault/scripts/run_trigger_eval.sh
+bash ~/.claude/skills/parsidion-cc/scripts/run_trigger_eval.sh
 ```
 
 **Preview session start context:**
@@ -396,19 +396,19 @@ bash ~/.claude/skills/claude-vault/scripts/run_trigger_eval.sh
 **Search vault programmatically:**
 ```python
 import sys
-sys.path.insert(0, str(Path.home() / ".claude/skills/claude-vault/scripts"))
+sys.path.insert(0, str(Path.home() / ".claude/skills/parsidion-cc/scripts"))
 from vault_common import find_notes_by_tag, find_notes_by_project
 ```
 
 **Audit graph color group coverage** (find uncovered vault tags, spot stale group entries):
 ```bash
-python ~/.claude/skills/claude-vault/scripts/check_graph_coverage.py
+python ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py
 
 # Only show tags used 2+ times
-python ~/.claude/skills/claude-vault/scripts/check_graph_coverage.py --threshold 2
+python ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py --threshold 2
 
 # JSON output for scripting
-python ~/.claude/skills/claude-vault/scripts/check_graph_coverage.py --json
+python ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py --json
 ```
 
 **Reinstall after source changes:**
@@ -448,7 +448,7 @@ uv run install.py --uninstall
 - Update `settings.json` to set the hook timeout to `30000` ms:
   ```json
   {
-    "command": "uv run --no-project ~/.claude/skills/claude-vault/scripts/session_start_hook.py --ai",
+    "command": "uv run --no-project ~/.claude/skills/parsidion-cc/scripts/session_start_hook.py --ai",
     "timeout": 30000
   }
   ```
@@ -457,7 +457,7 @@ uv run install.py --uninstall
 ### Summarizer fails to run
 
 - The summarizer cannot run inside an active Claude Code session. Run from a separate terminal.
-- If running from inside Claude Code, unset the guard variable: `env -u CLAUDECODE uv run --no-project ~/.claude/skills/claude-vault/scripts/summarize_sessions.py`
+- If running from inside Claude Code, unset the guard variable: `env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/summarize_sessions.py`
 - Check that `pending_summaries.jsonl` exists and has entries.
 
 ### `vault-search` command not found

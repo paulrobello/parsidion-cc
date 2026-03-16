@@ -13,7 +13,7 @@ from pathlib import Path
 # vault_common without pip install.  See ARC-009.
 sys.path.insert(
     0,
-    str(Path(__file__).resolve().parent.parent / "skills" / "claude-vault" / "scripts"),
+    str(Path(__file__).resolve().parent.parent / "skills" / "parsidion-cc" / "scripts"),
 )
 
 import vault_common  # noqa: E402
