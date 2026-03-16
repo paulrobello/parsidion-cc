@@ -462,16 +462,18 @@ uv run ~/.claude/skills/parsidion-cc/scripts/embed_eval.py \
 
 ### HTML Report
 
-Saved alongside the JSON file as `embed_eval_YYYYMMDD_HHMMSS.html`. The report is fully
-self-contained (all Chart.js assets inlined) and requires no server to view.
+Saved alongside the JSON file as `embed_eval_YYYYMMDD_HHMMSS.html`. The report requires no
+server to view but loads Chart.js from `cdn.jsdelivr.net` — an internet connection is needed
+to render the charts.
 
 **Contents:**
 
 - **Top-3 ranking cards** — the three best-performing combos shown with medal indicators,
   displaying MRR, Recall@1, and Q/s at a glance
-- **Six Chart.js charts:**
+- **Seven Chart.js charts** (loaded from CDN — requires network access to view):
   - MRR bar chart (all combos)
   - Recall@1 bar chart (all combos)
+  - Recall@5 bar chart (all combos)
   - Recall@K bar chart (all combos)
   - Queries per second bar chart (all combos)
   - Index time bar chart (all combos)

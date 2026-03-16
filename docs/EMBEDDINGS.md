@@ -179,6 +179,10 @@ uv run ~/.claude/skills/parsidion-cc/scripts/vault_search.py -f Patterns   # sho
 uv run ~/.claude/skills/parsidion-cc/scripts/vault_search.py --tag python --recent-days 7
 uv run ~/.claude/skills/parsidion-cc/scripts/vault_search.py -T python -d 7  # short form
 
+# Notes by type (debugging, pattern, research, etc.)
+uv run ~/.claude/skills/parsidion-cc/scripts/vault_search.py --type debugging
+uv run ~/.claude/skills/parsidion-cc/scripts/vault_search.py -k debugging    # short form
+
 # Human-readable text output
 uv run ~/.claude/skills/parsidion-cc/scripts/vault_search.py --project parsidion-cc --text
 uv run ~/.claude/skills/parsidion-cc/scripts/vault_search.py -p parsidion-cc -t
@@ -332,12 +336,20 @@ The JSON output format is the one consumed by hook integrations. Each element co
 
 | Field | Description |
 |---|---|
-| `score` | Cosine similarity (0.0 – 1.0; higher is more similar) |
+| `score` | Cosine similarity (0.0 – 1.0; higher is more similar); `null` in metadata mode |
 | `stem` | Filename without extension |
 | `title` | Note title from frontmatter (falls back to stem) |
 | `folder` | Vault subfolder (e.g. `Patterns`, `Debugging`) |
-| `tags` | Space-separated tag string from frontmatter |
+| `tags` | List of tag strings from frontmatter |
 | `path` | Absolute path to the note file |
+| `summary` | First non-heading body line (populated in metadata mode; empty string in semantic mode) |
+| `note_type` | Note type from frontmatter (populated in metadata mode; empty string in semantic mode) |
+| `project` | Project name from frontmatter (populated in metadata mode; empty string in semantic mode) |
+| `confidence` | Confidence level from frontmatter (populated in metadata mode; empty string in semantic mode) |
+| `mtime` | File modification timestamp in seconds since epoch (`null` in semantic mode) |
+| `related` | List of related note stems from frontmatter (populated in metadata mode; empty list in semantic mode) |
+| `is_stale` | Boolean — `true` if the note has no incoming links and is older than 30 days |
+| `incoming_links` | Count of other vault notes that link to this note |
 
 ### Filtering by Score
 

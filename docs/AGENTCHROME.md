@@ -27,12 +27,12 @@ A fast native CLI that lets AI coding agents control a Chrome or Chromium browse
 
 ## Why AgentChrome
 
-The research agent and other web-fetching workflows in Parsidion CC use `agentchrome page html` as their primary page-retrieval method, piped through `html-to-md.py` to produce clean, noise-free markdown for LLM consumption.
+The research agent and other web-fetching workflows in Parsidion CC use `agentchrome dom get-html` as their primary page-retrieval method, piped through `html-to-md.py` to produce clean, noise-free markdown for LLM consumption.
 
 ```mermaid
 graph LR
     Agent[Research Agent]
-    AC[agentchrome page html]
+    AC[agentchrome dom get-html]
     H2M[html-to-md.py]
     Vault[Vault Note]
 
@@ -87,11 +87,12 @@ agentchrome --help
 
 | Feature | Description |
 |---------|-------------|
-| **Page HTML extraction** | Retrieves fully-rendered DOM after JavaScript execution |
-| **Accessibility tree snapshots** | Returns stable UIDs for reliable element targeting |
+| **Page text extraction** | Extracts visible text from the rendered page |
+| **DOM HTML extraction** | Retrieves outer HTML of any element after JavaScript execution |
+| **Accessibility tree snapshots** | Returns stable UIDs for reliable element targeting (`page snapshot`) |
 | **Screenshot capture** | Full-page or viewport PNG screenshots |
-| **Form automation** | Batch fill form fields by UID |
-| **JavaScript execution** | Run arbitrary JS in the page context |
+| **Form automation** | Fill form fields by UID (`form fill`) |
+| **JavaScript execution** | Run arbitrary JS in the page context (`js exec`) |
 | **Network monitoring** | Inspect requests and responses |
 | **Device emulation** | Simulate mobile viewports |
 | **Performance tracing** | Capture Core Web Vitals |
@@ -101,26 +102,37 @@ agentchrome --help
 
 ### Research Agent Page Fetching
 
-The primary use case is fetching pages for the research agent:
+The primary use case is fetching pages for the research agent. Connect once per session, then navigate and extract HTML:
 
 ```bash
-# Fetch a page and convert to clean markdown in one pipeline
-agentchrome page html | uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py - --url https://example.com
+# Connect once per research session (launch headless Chrome)
+agentchrome connect --launch --headless
+
+# Navigate to a URL
+agentchrome navigate "https://example.com/docs" --wait-until networkidle
+
+# Fetch raw HTML and convert to clean markdown
+agentchrome dom get-html "css:html" | uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py - --url "https://example.com/docs" > /tmp/page-content.md
 ```
+
+Then read `/tmp/page-content.md` for the cleaned content.
 
 The research agent (`~/.claude/agents/research-documentation-agent.md`) uses this pipeline automatically when agentchrome is available, falling back to `curl` otherwise.
 
 ### Manual Page Inspection
 
 ```bash
-# Get rendered HTML of the current active tab
-agentchrome page html
+# Get visible text of the current active tab
+agentchrome page text
 
-# Save a screenshot
-agentchrome page screenshot --output screenshot.png
+# Get raw HTML of the entire page
+agentchrome dom get-html "css:html"
+
+# Save a screenshot (full page)
+agentchrome page screenshot --full-page --file screenshot.png
 
 # Get accessibility tree (structured element list with UIDs)
-agentchrome page tree
+agentchrome page snapshot
 ```
 
 ### Integration with html-to-md.py
@@ -128,9 +140,9 @@ agentchrome page tree
 `html-to-md.py` is designed to work with agentchrome output:
 
 ```bash
-# From a URL (agentchrome navigates, then fetches)
+# Navigate then fetch and convert to markdown
 agentchrome navigate https://docs.example.com/api
-agentchrome page html | uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py - --url https://docs.example.com/api
+agentchrome dom get-html "css:html" | uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py - --url https://docs.example.com/api
 ```
 
 The `--url` flag is optional but improves link resolution in the markdown output.
@@ -138,24 +150,34 @@ The `--url` flag is optional but improves link resolution in the markdown output
 ## Common Commands
 
 ```bash
+# Connect to (or launch) Chrome
+agentchrome connect
+agentchrome connect --launch --headless
+
 # Navigate to a URL
 agentchrome navigate https://example.com
 
-# Extract page content as clean HTML
-agentchrome page html
+# Extract visible text from the page
+agentchrome page text
+
+# Extract raw HTML of the full page
+agentchrome dom get-html "css:html"
 
 # Take a full-page screenshot
-agentchrome page screenshot
+agentchrome page screenshot --full-page --file screenshot.png
 
-# Get page title and URL
-agentchrome page info
+# Get accessibility tree (assigns UIDs to elements)
+agentchrome page snapshot
 
-# Interact with an element (requires accessibility tree UID)
-agentchrome click --uid <element-uid>
-agentchrome type --uid <element-uid> --text "hello world"
+# Interact with an element (requires UID from page snapshot)
+agentchrome interact click <element-uid>
+agentchrome interact type "hello world"
 
 # Execute JavaScript
-agentchrome js "document.title"
+agentchrome js exec "document.title"
+
+# List available command examples
+agentchrome examples
 ```
 
 ## Troubleshooting
@@ -188,6 +210,7 @@ If agentchrome cannot connect to Chrome, ensure:
 - Chrome or Chromium is installed
 - No firewall rule blocks localhost CDP connections
 - You are not running in a sandboxed environment that restricts browser access
+- Use `agentchrome connect --status` to check the current connection state
 
 ## Related Documentation
 

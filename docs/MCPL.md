@@ -130,7 +130,7 @@ mcpl --help
 
 ### Config File Format
 
-Create `mcp.json` to declare which MCP servers to connect to. The file format mirrors the Claude Code MCP configuration schema:
+Create a JSON file whose name contains `mcp` (e.g., `mcp.json`) to declare which MCP servers to connect to. The file format mirrors the Claude Code MCP configuration schema. Note that `.mcp.json` is reserved for Claude Code itself and is ignored by mcpl.
 
 ```json
 {
@@ -154,31 +154,34 @@ Environment variable references use `${VAR}` syntax. Variables are loaded from `
 
 ### Config Discovery Order
 
-mcpl searches for config files in priority order:
+mcpl searches for any JSON file whose name contains `mcp` (case-insensitive) across four directories in priority order. `.mcp.json` is explicitly excluded because that filename is reserved for Claude Code's own MCP configuration.
 
 ```mermaid
 graph TD
-    P1["1. ./mcp.json (project root)"]
-    P2["2. ./.claude/mcp.json (project Claude config)"]
-    P3["3. ~/.claude/mcp.json (user-level config)"]
+    P1["1. ./ (project root)"]
+    P2["2. ./.claude/ (project Claude config)"]
+    P3["3. ~/.claude/ (user-level config)"]
+    P4["4. ~/.config/claude/ (XDG standard, Linux)"]
+    Excl["Excludes: .mcp.json (reserved for Claude Code)"]
     Multi{Multiple found?}
-    Select[Prompt user to select]
-    Saved[Save preference]
-    Load[Load selected configs]
+    Saved[Use saved preferences]
+    Load[Aggregate servers from all active configs]
 
     P1 --> Multi
     P2 --> Multi
     P3 --> Multi
-    Multi -->|Yes| Select
+    P4 --> Multi
+    Excl -.->|filtered out| Multi
+    Multi -->|Yes| Saved
     Multi -->|No| Load
-    Select --> Saved
     Saved --> Load
 
     style P1 fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#ffffff
     style P2 fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#ffffff
     style P3 fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
+    style P4 fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
+    style Excl fill:#b71c1c,stroke:#f44336,stroke-width:2px,color:#ffffff
     style Multi fill:#ff6f00,stroke:#ffa726,stroke-width:2px,color:#ffffff
-    style Select fill:#e65100,stroke:#ff9800,stroke-width:3px,color:#ffffff
     style Saved fill:#880e4f,stroke:#c2185b,stroke-width:2px,color:#ffffff
     style Load fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#ffffff
 ```
@@ -555,7 +558,7 @@ Tokens are encrypted using Fernet (AES-128-CBC + HMAC) and stored in `~/.cache/m
 # 1. Install mcpl
 uv tool install https://github.com/kenneth-liao/mcp-launchpad.git
 
-# 2. Create a config file (project-level or user-level)
+# 2. Create a config file (project-level or user-level; name must contain "mcp")
 cat > ~/.claude/mcp.json << 'EOF'
 {
   "mcpServers": {

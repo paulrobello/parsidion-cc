@@ -283,7 +283,7 @@ Registered under the `SessionEnd` hook event — fires once when the session ter
    - **Patterns** (keywords: "pattern", "best practice", "architecture", etc.)
    - **Config/setup** (keywords: "configured", "installed", "set up", etc.)
 5. Appends a session summary to today's daily note under `## Sessions`
-6. Queues sessions with significant learnings (error_fix, research, or pattern categories) to `pending_summaries.jsonl` for AI-powered summarization. Uses `fcntl.flock` on macOS/Linux (with a `try/except ImportError` fallback for Windows) for safe concurrent access; deduplicates by `session_id`.
+6. Queues sessions with significant learnings (error_fix, research, or pattern categories) to `pending_summaries.jsonl` for AI-powered summarization. Uses `vault_common.flock_exclusive` (backed by `fcntl.flock` on macOS/Linux; no-op fallback on Windows) for safe concurrent access; deduplicates by `session_id`.
 7. Calls `git_commit_vault` to commit the updated daily note to the vault git repository (respects `git.auto_commit` config)
 8. Auto-launches `summarize_sessions.py` as a detached background process if there are pending entries in the queue and `session_stop_hook.auto_summarize` is `true` (default)
 9. Uses an environment variable guard (`CLAUDE_VAULT_STOP_ACTIVE`) to prevent recursive invocation
@@ -521,6 +521,8 @@ The shared utility library used by all hook scripts and the index generator. Use
 |----------|---------|
 | `parse_frontmatter()` | Regex-based YAML frontmatter parser |
 | `get_body()` | Returns markdown content after frontmatter |
+| `extract_title()` | Extract H1 heading or stem as the note title |
+| `get_embeddings_db_path()` | Return the path to `embeddings.db` |
 | `ensure_note_index_schema(conn)` | Creates `note_index` table and 5 indexes in an open SQLite connection |
 | `query_note_index(*, tag, folder, note_type, project, recent_days, limit)` | DB-first metadata query; returns `None` (not `[]`) when DB absent to signal file-walk fallback |
 | `find_notes_by_project()` | Search by `project` frontmatter field — DB-first, falls back to file walk |
@@ -531,12 +533,17 @@ The shared utility library used by all hook scripts and the index generator. Use
 | `build_context_block()` | Assemble notes into a character-budgeted context string |
 | `get_project_name()` | Derive project name from cwd or git root |
 | `ensure_vault_dirs()` | Create missing vault directories and Templates symlink |
+| `today_daily_path()` | Return the `Daily/YYYY-MM/DD.md` path for today |
 | `create_daily_note_if_missing()` | Create today's daily note from template |
 | `slugify()` | Convert text to kebab-case filename |
 | `all_vault_notes()` | Return all `.md` files in the vault (excluding `EXCLUDE_DIRS`) |
 | `git_commit_vault()` | Stage and commit vault changes; respects `git.auto_commit` config |
 | `load_config()` | Load and cache `config.yaml` from `VAULT_ROOT` |
 | `get_config()` | Look up a config value by section/key with fallback default |
+| `env_without_claudecode()` | Return `os.environ` copy with `CLAUDECODE` unset (for nested `claude -p` calls) |
+| `flock_exclusive()` | Acquire an exclusive file lock (`fcntl.flock` on POSIX; no-op on Windows) |
+| `flock_shared()` | Acquire a shared file lock (`fcntl.flock` on POSIX; no-op on Windows) |
+| `funlock()` | Release a file lock |
 | `parse_transcript_lines()` | Extract assistant texts from JSONL transcript lines |
 | `detect_categories()` | Keyword heuristic scanner returning category→excerpt mappings |
 | `append_to_pending()` | Deduplication-safe queue writer for `pending_summaries.jsonl`; includes `source` and `agent_type` metadata |
@@ -907,6 +914,7 @@ parsidion-cc/
 ├── Research/
 │   └── MANIFEST.md
 ├── History/
+│   └── MANIFEST.md
 └── Templates/ -> ~/.claude/skills/parsidion-cc/templates/
 ```
 
