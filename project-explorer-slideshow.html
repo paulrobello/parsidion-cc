@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Explorer Agent — Claude Code Build Session</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+    --bg-dark: #0B1120;
+    --bg-terminal: #0d1117;
+    --bg-card: #161b22;
+    --border: #30363d;
+    --cyan: #06B6D4;
+    --purple: #8B5CF6;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --gradient: linear-gradient(135deg, #22c55e 0%, #06B6D4 100%);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    background: var(--bg-dark);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.terminal {
+    width: 100%;
+    max-width: 860px;
+    background: var(--bg-terminal);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+}
+
+.terminal-header {
+    background: var(--bg-card);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.dots { display: flex; gap: 6px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; }
+.dot.red    { background: #ff5f57; }
+.dot.yellow { background: #febc2e; }
+.dot.green  { background: #28c840; }
+
+.terminal-title {
+    color: var(--text-muted);
+    font-size: 12px;
+    flex: 1;
+    text-align: center;
+}
+
+.terminal-body {
+    height: 580px;
+    overflow: hidden;
+    position: relative;
+}
+
+.slide {
+    display: none;
+    padding: 32px 36px;
+    height: 100%;
+    overflow: hidden;
+    animation: fadeIn 0.3s ease;
+}
+
+.slide.active { display: flex; flex-direction: column; gap: 14px; }
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Typography ── */
+.slide-title {
+    font-size: 22px;
+    font-weight: 700;
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.3;
+}
+
+.slide-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: -8px;
+}
+
+/* ── Prompt lines ── */
+.prompt-line {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 13px;
+}
+
+.prompt       { color: var(--green);  font-weight: 600; }
+.prompt-path  { color: var(--purple); }
+.prompt-symbol{ color: var(--text-muted); }
+.prompt-cmd   { color: var(--text); }
+
+/* ── Response boxes ── */
+.claude-response {
+    background: rgba(34,197,94,0.06);
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--text);
+}
+
+.output {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    white-space: pre;
+}
+
+.output.success {
+    border-color: rgba(34,197,94,0.35);
+    color: var(--green);
+}
+
+.output.highlight {
+    border-left: 3px solid var(--cyan);
+    color: var(--text);
+}
+
+/* ── Bullets ── */
+ul.feature-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    font-size: 13px;
+}
+
+ul.feature-list li::before {
+    content: "◆ ";
+    color: var(--green);
+}
+
+ul.feature-list li.purple::before { color: var(--purple); }
+ul.feature-list li.cyan::before   { color: var(--cyan);   }
+ul.feature-list li.yellow::before { color: var(--yellow); }
+
+/* ── Tags ── */
+.tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.tag {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.tag.success { background: rgba(34,197,94,0.15);  color: var(--green);  border: 1px solid rgba(34,197,94,0.3);  }
+.tag.info    { background: rgba(6,182,212,0.12);  color: var(--cyan);   border: 1px solid rgba(6,182,212,0.3);  }
+.tag.purple  { background: rgba(139,92,246,0.12); color: var(--purple); border: 1px solid rgba(139,92,246,0.3); }
+.tag.warn    { background: rgba(234,179,8,0.12);  color: var(--yellow); border: 1px solid rgba(234,179,8,0.3);  }
+
+/* ── Two-column layout ── */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* ── Code block ── */
+.code-block {
+    background: #0a0e1a;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 11.5px;
+    line-height: 1.7;
+    overflow: hidden;
+}
+
+.kw  { color: var(--purple); }
+.fn  { color: var(--cyan); }
+.str { color: var(--yellow); }
+.cm  { color: #4d5566; }
+.ty  { color: #fb923c; }
+
+/* ── Section label ── */
+.section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--yellow);
+    margin-bottom: 4px;
+}
+
+/* ── Divider ── */
+.divider {
+    height: 1px;
+    background: var(--border);
+    margin: 2px 0;
+}
+
+/* ── Inline highlight ── */
+.hl-cyan   { color: var(--cyan); }
+.hl-purple { color: var(--purple); }
+.hl-green  { color: var(--green); }
+.hl-yellow { color: var(--yellow); }
+.hl-red    { color: var(--red); }
+
+em { font-style: italic; color: var(--text-muted); }
+
+/* ── Progress & Nav ── */
+.progress-bar {
+    width: 100%;
+    max-width: 860px;
+    height: 3px;
+    background: var(--bg-card);
+    border-radius: 0 0 2px 2px;
+    margin-top: -1px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--gradient);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-top: 16px;
+}
+
+.nav-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 22px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.nav-btn:hover:not(:disabled) {
+    border-color: var(--green);
+    color: var(--green);
+}
+
+.nav-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.nav-btn.action {
+    background: var(--gradient);
+    border: none;
+    color: #fff;
+    font-weight: 600;
+}
+
+.slide-counter {
+    font-size: 12px;
+    color: var(--text-muted);
+    min-width: 60px;
+    text-align: center;
+}
+
+/* ── Checklist ── */
+.checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12.5px;
+}
+.check-item { display: flex; align-items: flex-start; gap: 8px; }
+.check-item .ck { color: var(--green); font-weight: 700; flex-shrink: 0; }
+.check-item .ck.pending { color: var(--text-muted); }
+
+@media (max-width: 600px) {
+    .terminal-body { height: 520px; }
+    .slide { padding: 20px; }
+    .slide-title { font-size: 18px; }
+    .two-col { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="terminal">
+  <div class="terminal-header">
+    <div class="dots">
+      <div class="dot red"></div>
+      <div class="dot yellow"></div>
+      <div class="dot green"></div>
+    </div>
+    <div class="terminal-title">claude-code — parsidion-cc</div>
+  </div>
+  <div class="terminal-body">
+
+    <!-- ── Slide 1: Introduction ── -->
+    <div class="slide active">
+      <div class="slide-title">Building the Project Explorer Agent</div>
+      <div class="slide-subtitle">parsidion-cc · Claude Code Build Session · 2026-03-16</div>
+
+      <div class="prompt-line" style="margin-top:4px;">
+        <span class="prompt">user</span>
+        <span class="prompt-path">~/Repos/parsidion-cc</span>
+        <span class="prompt-symbol">$</span>
+        <span class="prompt-cmd">claude</span>
+      </div>
+
+      <div class="claude-response">
+        ✦ Welcome to Claude Code!<br>
+        <span class="hl-cyan">claude-sonnet-4-6</span> · parsidion-cc
+      </div>
+
+      <div class="section-label">What we're building</div>
+      <ul class="feature-list">
+        <li>A new <span class="hl-green">project-explorer</span> Sonnet agent for deep project analysis</li>
+        <li class="cyan">Writes <span class="hl-cyan">Projects/</span> overview + <span class="hl-cyan">Patterns/</span> notes to the vault</li>
+        <li class="purple">Makes features <span class="hl-purple">searchable cross-project</span> via vault-search</li>
+        <li class="yellow">Adds agent to <span class="hl-yellow">install.py</span> and syncs to <span class="hl-yellow">~/.claude/</span></li>
+      </ul>
+
+      <div class="tags">
+        <span class="tag success">2 files changed</span>
+        <span class="tag info">Claude Sonnet</span>
+        <span class="tag purple">9-step workflow</span>
+        <span class="tag warn">vault-first</span>
+      </div>
+    </div>
+
+    <!-- ── Slide 2: The Problem ── -->
+    <div class="slide">
+      <div class="slide-title">The Problem: Pattern Reinvention</div>
+
+      <div class="claude-response">
+        When working across multiple projects, useful implementation patterns are reinvented from scratch because there's no record of how a prior project solved the same problem. Each session starts with zero cross-project context.
+      </div>
+
+      <div class="section-label">Common scenarios</div>
+      <ul class="feature-list">
+        <li>Built a <span class="hl-cyan">layered config system</span> in par-llama — re-invented it 3 months later in another project</li>
+        <li class="purple">Wrote a <span class="hl-purple">Rich progress CLI</span> — forgot the exact pattern by the next project</li>
+        <li class="yellow">Solved <span class="hl-yellow">PTY spoofing</span> in parvault — nothing to reference when it came up again</li>
+      </ul>
+
+      <div class="section-label">The fix</div>
+      <div class="output highlight">project-explorer  →  "explore this project and save it to the vault"
+  Step 1: vault check (no duplicate work)
+  Steps 2-5: deep project analysis
+  Steps 6-7: write overview + pattern notes
+  Step 8: rebuild index (notes are searchable)
+  Future: vault-search "streaming output" → finds the note</div>
+    </div>
+
+    <!-- ── Slide 3: The Plan ── -->
+    <div class="slide">
+      <div class="slide-title">The Implementation Plan</div>
+      <div class="prompt-line">
+        <span class="prompt">user</span>
+        <span class="prompt-path">~/Repos/parsidion-cc</span>
+        <span class="prompt-symbol">$</span>
+        <span class="prompt-cmd">implement plan: project-explorer agent</span>
+      </div>
+
+      <div class="claude-response">
+        Single self-contained agent file, following the same structure as
+        <span class="hl-cyan">research-documentation-agent.md</span> and
+        <span class="hl-purple">vault-explorer.md</span>. No new scripts required.
+      </div>
+
+      <div class="section-label">Files</div>
+      <div class="checklist">
+        <div class="check-item"><span class="ck">✓</span><span><strong>Create</strong> <span class="hl-green">agents/project-explorer.md</span> — 9-step agent</span></div>
+        <div class="check-item"><span class="ck">✓</span><span><strong>Modify</strong> <span class="hl-yellow">install.py</span> — add to AGENT_SRCS list</span></div>
+      </div>
+
+      <div class="output highlight">Architecture: agent-only approach — reuses existing vault_search.py,
+update_index.py, and vault-explorer agent. Zero new dependencies.</div>
+
+      <div class="tags">
+        <span class="tag success">stdlib-only</span>
+        <span class="tag info">no new scripts</span>
+        <span class="tag purple">reuses vault infra</span>
+      </div>
+    </div>
+
+    <!-- ── Slide 4: Agent Frontmatter ── -->
+    <div class="slide">
+      <div class="slide-title">Task 1: agents/project-explorer.md</div>
+      <div class="prompt-line">
+        <span class="prompt">claude</span>
+        <span class="prompt-symbol">→</span>
+        <span class="prompt-cmd">Write agents/project-explorer.md</span>
+      </div>
+
+      <div class="section-label">Frontmatter</div>
+      <div class="code-block"><span class="kw">---</span>
+<span class="fn">name:</span> <span class="str">project-explorer</span>
+<span class="fn">description:</span> <span class="str">&gt;</span>
+  <span class="str">Use when asked to explore, analyze, or document a project's</span>
+  <span class="str">architecture, features, and patterns for cross-project vault reference.</span>
+  <span class="cm">Trigger on: "explore project", "analyze project", "document this project",</span>
+  <span class="cm">"save project to vault", "catalog project features", "document project features".</span>
+  <span class="cm">Do NOT trigger for general code reading, debugging, or feature implementation —</span>
+  <span class="cm">only when the explicit goal is vault documentation of a project.</span>
+<span class="fn">model:</span> <span class="str">sonnet</span>
+<span class="fn">color:</span> <span class="str">green</span>
+<span class="kw">---</span></div>
+
+      <div class="output success">✓ agents/project-explorer.md created (9 steps, 170 lines)
+✓ Frontmatter: name ✓  model: sonnet ✓  color: green ✓
+✓ Sonnet chosen — deep analysis needs stronger reasoning than Haiku</div>
+    </div>
+
+    <!-- ── Slide 5: 9-Step Workflow ── -->
+    <div class="slide">
+      <div class="slide-title">Agent: 9-Step Workflow</div>
+
+      <div class="checklist">
+        <div class="check-item"><span class="ck" style="background:var(--green);color:#000;">1</span><span><strong>Vault Check</strong> — semantic search + dispatch vault-explorer; fill gaps only</span></div>
+        <div class="check-item"><span class="ck" style="background:var(--cyan);color:#000;">2</span><span><strong>Metadata Discovery</strong> — README, pyproject.toml, Cargo.toml, Makefile</span></div>
+        <div class="check-item"><span class="ck" style="background:var(--purple);color:#fff;">3</span><span><strong>Architecture Exploration</strong> — Glob + Read, top-level dirs, key modules</span></div>
+        <div class="check-item"><span class="ck">4</span><span><strong>Feature Extraction</strong> — 3–8 reusable features, binary --help, Makefile targets</span></div>
+        <div class="check-item"><span class="ck">5</span><span><strong>Pattern Identification</strong> — config, error handling, logging, design patterns</span></div>
+        <div class="check-item"><span class="ck">6</span><span><strong>Write Overview Note</strong> → <span class="hl-cyan">Projects/{slug}-overview.md</span></span></div>
+        <div class="check-item"><span class="ck">7</span><span><strong>Write Pattern Notes</strong> → <span class="hl-green">Patterns/{feature-slug}.md</span> (min 3)</span></div>
+        <div class="check-item"><span class="ck">8</span><span><strong>Rebuild Index</strong> — <span class="hl-yellow">update_index.py</span></span></div>
+        <div class="check-item"><span class="ck">9</span><span><strong>Summary Report</strong> — paths created/updated, skipped features, index status</span></div>
+      </div>
+    </div>
+
+    <!-- ── Slide 6: Steps 1–2 ── -->
+    <div class="slide">
+      <div class="slide-title">Steps 1–2: Vault Check + Metadata</div>
+
+      <div class="section-label">Step 1 — vault check before writing anything</div>
+      <div class="code-block"><span class="fn">uv run</span> --no-project ~/.claude/skills/claude-vault/scripts/<span class="str">vault_search.py</span> \
+  <span class="str">"project {name}"</span> -j 2>/dev/null
+
+<span class="cm"># Also dispatch vault-explorer: "project {name} architecture features"</span>
+<span class="cm"># If notes exist → read, identify gaps, only add/update (never delete)</span>
+<span class="cm"># If no notes → proceed to full analysis</span></div>
+
+      <div class="section-label">Step 2 — files read for metadata extraction</div>
+      <div class="output highlight">README.md / README.rst   → description, features, usage
+CLAUDE.md                → conventions, architecture notes
+pyproject.toml           → name, version, deps, entry points
+Cargo.toml / package.json / go.mod
+Makefile                 → available commands
+
+Extract: project-slug · language+version · frameworks
+         key deps (top 5-10) · entry points · build tool</div>
+    </div>
+
+    <!-- ── Slide 7: Steps 3–4 ── -->
+    <div class="slide">
+      <div class="slide-title">Steps 3–4: Architecture + Features</div>
+
+      <div class="section-label">Step 3 — architecture exploration</div>
+      <div class="code-block"><span class="cm"># 1. List top-level dirs (one level deep)</span>
+<span class="cm"># 2. Read one representative file per significant dir</span>
+<span class="cm"># 3. Identify main entry point(s)</span>
+<span class="cm"># 4. Note distinctive structural choices:</span>
+<span class="cm">#    monorepo · plugin system · layered config · event bus</span></div>
+
+      <div class="section-label">Step 4 — feature extraction sources</div>
+      <div class="output highlight">README feature sections
+{binary} --help 2>/dev/null || true
+Key module filenames + light content skim
+Makefile targets
+
+Per feature: what it does · which files · why reusable</div>
+
+      <div class="claude-response">
+        <span class="hl-green">3–8 features</span> is the target range — enough to be useful, not so many that the vault fills with noise. Features that are too project-specific are <span class="hl-yellow">skipped</span> and reported in the summary.
+      </div>
+    </div>
+
+    <!-- ── Slide 8: Step 5 — Pattern Identification ── -->
+    <div class="slide">
+      <div class="slide-title">Step 5: Pattern Identification</div>
+
+      <div class="claude-response">
+        Beyond individual features, the agent looks for project-level <em>patterns</em> — recurring solutions that appear across many projects and are worth documenting as reusable building blocks.
+      </div>
+
+      <div class="section-label">Pattern categories</div>
+      <div class="checklist">
+        <div class="check-item"><span class="ck">◆</span><span><strong>Config handling</strong> — YAML, env vars, layered precedence, <span class="hl-cyan">--config flag</span></span></div>
+        <div class="check-item"><span class="ck" style="color:var(--red);">◆</span><span><strong>Error handling</strong> — exceptions, Result types, exit codes, structured errors</span></div>
+        <div class="check-item"><span class="ck" style="color:var(--purple);">◆</span><span><strong>Logging</strong> — Rich, tracing, structured JSON, file-based, debug flags</span></div>
+        <div class="check-item"><span class="ck" style="color:var(--yellow);">◆</span><span><strong>Design patterns</strong> — plugin arch, event-driven, strategy, middleware chain</span></div>
+        <div class="check-item"><span class="ck" style="color:var(--cyan);">◆</span><span><strong>Testing approach</strong> — unit vs integration, fixtures, mocking conventions</span></div>
+        <div class="check-item"><span class="ck">◆</span><span><strong>CLI conventions</strong> — argument parsing, subcommands, output formatting</span></div>
+      </div>
+
+      <div class="output highlight">Patterns identified here drive which Patterns/ notes get written in step 7.</div>
+    </div>
+
+    <!-- ── Slide 9: Step 6 — Overview Note ── -->
+    <div class="slide">
+      <div class="slide-title">Step 6: Project Overview Note</div>
+      <div class="prompt-line">
+        <span class="prompt">claude</span>
+        <span class="prompt-symbol">→</span>
+        <span class="prompt-cmd">Write ~/ClaudeVault/Projects/{slug}-overview.md</span>
+      </div>
+
+      <div class="section-label">Frontmatter</div>
+      <div class="code-block"><span class="kw">---</span>
+<span class="fn">date:</span> <span class="str">YYYY-MM-DD</span>
+<span class="fn">type:</span> <span class="str">project</span>
+<span class="fn">tags:</span> [<span class="str">{name}</span>, <span class="str">{language}</span>, <span class="str">{framework}</span>, <span class="str">project</span>]
+<span class="fn">project:</span> <span class="str">{project-name}</span>
+<span class="fn">confidence:</span> <span class="str">high</span>
+<span class="fn">sources:</span> [<span class="str">"{/absolute/path/to/project}"</span>]
+<span class="fn">related:</span> [<span class="str">"[[{feature-1-slug}]]"</span>, <span class="str">"[[{feature-2-slug}]]"</span>]
+<span class="kw">---</span></div>
+
+      <div class="section-label">Body sections</div>
+      <div class="output highlight">## Summary · ## Tech Stack · ## Architecture
+## Features  (each links → [[pattern-note]])
+## Key Conventions</div>
+
+      <div class="claude-response" style="font-size:11.5px;">
+        <strong>CRITICAL</strong>: <span class="hl-red">related: []</span> is never acceptable. The overview's <span class="hl-green">related</span> field must list every pattern note about to be written — even before those notes exist on disk. They become valid wikilinks once step 7 completes.
+      </div>
+    </div>
+
+    <!-- ── Slide 10: Step 7 — Pattern Notes ── -->
+    <div class="slide">
+      <div class="slide-title">Step 7: Feature Pattern Notes</div>
+      <div class="prompt-line">
+        <span class="prompt">claude</span>
+        <span class="prompt-symbol">→</span>
+        <span class="prompt-cmd">Write ~/ClaudeVault/Patterns/{feature-slug}.md</span>
+      </div>
+
+      <div class="section-label">Frontmatter</div>
+      <div class="code-block"><span class="kw">---</span>
+<span class="fn">date:</span> <span class="str">YYYY-MM-DD</span>
+<span class="fn">type:</span> <span class="str">pattern</span>
+<span class="fn">tags:</span> [<span class="str">{feature-tag}</span>, <span class="str">{project-name}</span>, <span class="str">{language}</span>]
+<span class="fn">project:</span> <span class="str">{project-name}</span>
+<span class="fn">confidence:</span> <span class="str">high</span>
+<span class="fn">sources:</span> [<span class="str">"{/absolute/path/to/implementing/file}"</span>]
+<span class="fn">related:</span> [<span class="str">"[[{project-slug}-overview]]"</span>]
+<span class="kw">---</span></div>
+
+      <div class="section-label">Body sections</div>
+      <div class="output highlight">## Summary       → what it does + why it's reusable
+## Implementation → file:line refs + code snippets
+## How to Replicate → numbered steps for another project
+## Key Learnings  → gotchas, trade-offs, insights</div>
+
+      <div class="output" style="border-color: rgba(234,179,8,0.35); color: var(--yellow);">Minimum 3 pattern notes. Skip only if: (1) too project-specific to reuse,
+or (2) a vault note for this exact pattern already exists — add a related link instead.</div>
+    </div>
+
+    <!-- ── Slide 11: Steps 8–9 ── -->
+    <div class="slide">
+      <div class="slide-title">Steps 8–9: Index + Summary Report</div>
+
+      <div class="section-label">Step 8 — rebuild vault index</div>
+      <div class="code-block"><span class="fn">uv run</span> --no-project ~/.claude/skills/claude-vault/scripts/<span class="str">update_index.py</span>
+<span class="cm"># Makes all new notes searchable via vault-search immediately</span>
+<span class="cm"># Reports exit code — surfaces errors rather than silently failing</span></div>
+
+      <div class="section-label">Step 9 — structured summary report</div>
+      <div class="output highlight">## Project Explorer Summary
+
+**Project**: {project-name}
+**Path**: {/absolute/path}
+
+### Notes Written
+- ~/ClaudeVault/Projects/{slug}-overview.md  — [created|updated]
+- ~/ClaudeVault/Patterns/{feature-slug}.md   — [created|updated]
+
+### Skipped Features
+- {feature}: {reason skipped}
+
+### Vault Index
+update_index.py: {success|failed — error message}</div>
+    </div>
+
+    <!-- ── Slide 12: Quality Rules ── -->
+    <div class="slide">
+      <div class="slide-title">Quality Rules</div>
+
+      <div class="claude-response">
+        The agent enforces five hard rules to keep the vault healthy. These prevent the most common failure modes found in vault notes: orphan notes, empty sections, and tilde paths that break downstream tools.
+      </div>
+
+      <div class="checklist">
+        <div class="check-item"><span class="ck">1</span><span><strong>No orphan notes</strong> — every <span class="hl-green">related</span> field must contain at least one <span class="hl-cyan">[[wikilink]]</span></span></div>
+        <div class="check-item"><span class="ck">2</span><span><strong>No empty sections</strong> — omit a heading rather than leaving it blank</span></div>
+        <div class="check-item"><span class="ck">3</span><span><strong>Absolute source paths</strong> — <span class="hl-yellow">sources</span> must use full filesystem path, not <span class="hl-red">~</span></span></div>
+        <div class="check-item"><span class="ck">4</span><span><strong>Kebab-case filenames</strong> — no date suffix (date goes in frontmatter)</span></div>
+        <div class="check-item"><span class="ck">5</span><span><strong>Search before create</strong> — update existing pattern notes; add <span class="hl-purple">related</span> link back to overview</span></div>
+      </div>
+
+      <div class="output highlight">Related field format — inline quoted array (per vault convention):
+  related: ["[[note-a]]", "[[note-b]]"]   ✓
+  related: [[[note-a]], [[note-b]]]       ✗  (bare)
+  related:                                ✗  (empty)</div>
+    </div>
+
+    <!-- ── Slide 13: install.py Change ── -->
+    <div class="slide">
+      <div class="slide-title">Task 2: install.py — AGENT_SRCS</div>
+      <div class="prompt-line">
+        <span class="prompt">claude</span>
+        <span class="prompt-symbol">→</span>
+        <span class="prompt-cmd">Edit install.py — add project-explorer to AGENT_SRCS</span>
+      </div>
+
+      <div class="section-label">Change</div>
+      <div class="two-col">
+        <div class="code-block" style="font-size:11px;"><span class="cm"># Before</span>
+<span class="ty">AGENT_SRCS</span>: <span class="fn">list[Path]</span> = [
+  REPO_ROOT / <span class="str">"agents"</span>
+  / <span class="str">"research-documentation-agent.md"</span>,
+  REPO_ROOT / <span class="str">"agents"</span>
+  / <span class="str">"vault-explorer.md"</span>,
+]</div>
+        <div class="code-block" style="font-size:11px;"><span class="cm"># After</span>
+<span class="ty">AGENT_SRCS</span>: <span class="fn">list[Path]</span> = [
+  REPO_ROOT / <span class="str">"agents"</span>
+  / <span class="str">"research-documentation-agent.md"</span>,
+  REPO_ROOT / <span class="str">"agents"</span>
+  / <span class="str">"vault-explorer.md"</span>,
+  <span class="str">REPO_ROOT / </span><span class="str">"agents"</span>
+  <span class="str">/ </span><span class="hl-green">"project-explorer.md"</span>,
+]</div>
+      </div>
+
+      <div class="output success">✓ 1 line added — the AGENT_SRCS list pattern from the vault-explorer
+  session already makes install.py scale to N agents with no further changes.</div>
+
+      <div class="tags">
+        <span class="tag success">1 line change</span>
+        <span class="tag info">AGENT_SRCS list</span>
+        <span class="tag purple">no other sites needed</span>
+      </div>
+    </div>
+
+    <!-- ── Slide 14: Verification ── -->
+    <div class="slide">
+      <div class="slide-title">Verification: Dry-run + Install</div>
+
+      <div class="section-label">Dry-run confirms new agent in plan</div>
+      <div class="output" style="font-size:11.5px;">$ uv run install.py --dry-run --yes
+
+Installation Plan
+  Install agent: ~/.claude/agents/research-documentation-agent.md
+  Install agent: ~/.claude/agents/vault-explorer.md
+  <span style="color:var(--green);">Install agent: ~/.claude/agents/project-explorer.md</span>
+
+[dry-run] Install agent: research-documentation-agent.md → ~/.claude/agents/
+[dry-run] Install agent: vault-explorer.md → ~/.claude/agents/
+<span style="color:var(--green);">[dry-run] Install agent: project-explorer.md → ~/.claude/agents/</span>
+
+  ✓ Dry run complete — no changes were made.</div>
+
+      <div class="section-label">Live install</div>
+      <div class="output success">$ uv run install.py --force --yes
+  + Install agent: project-explorer.md → ~/.claude/agents/
+  ✓ Vault index rebuilt
+  ✓ Installation complete!
+
+$ ls -la ~/.claude/agents/project-explorer.md
+-rw-r--r--  1 probello  staff  7028  Mar 15 22:59
+  ~/.claude/agents/project-explorer.md  ✓</div>
+    </div>
+
+    <!-- ── Slide 15: Usage ── -->
+    <div class="slide">
+      <div class="slide-title">Using the Agent</div>
+
+      <div class="section-label">Invoke from any project directory</div>
+      <div class="prompt-line">
+        <span class="prompt">user</span>
+        <span class="prompt-path">~/Repos/par-llama</span>
+        <span class="prompt-symbol">$</span>
+        <span class="prompt-cmd">explore this project and save it to the vault</span>
+      </div>
+
+      <div class="claude-response">
+        Dispatching <span class="hl-green">project-explorer</span> agent to analyze par-llama and save structured notes to the vault.
+      </div>
+
+      <div class="section-label">Expected output</div>
+      <div class="output highlight">~/ClaudeVault/Projects/par-llama-overview.md          → created
+~/ClaudeVault/Patterns/streaming-llm-output.md        → created
+~/ClaudeVault/Patterns/model-provider-abstraction.md  → created
+~/ClaudeVault/Patterns/rich-progress-cli.md           → created
+
+update_index.py: success</div>
+
+      <div class="section-label">Cross-project search after exploration</div>
+      <div class="output success">$ vault-search "streaming output" -n 5
+→ ~/ClaudeVault/Patterns/streaming-llm-output.md  score: 0.91
+  (Implementation in par-llama: src/streaming.py:42)</div>
+    </div>
+
+    <!-- ── Slide 16: Summary ── -->
+    <div class="slide">
+      <div class="slide-title">What We Built</div>
+
+      <div class="two-col">
+        <div>
+          <div class="section-label">New files</div>
+          <ul class="feature-list" style="font-size:12px;">
+            <li><span class="hl-green">agents/project-explorer.md</span> — Sonnet agent</li>
+            <li class="cyan"><span class="hl-cyan">~/.claude/agents/project-explorer.md</span></li>
+          </ul>
+        </div>
+        <div>
+          <div class="section-label">Modified files</div>
+          <ul class="feature-list" style="font-size:12px;">
+            <li class="yellow"><span class="hl-yellow">install.py</span> — 1 line to AGENT_SRCS</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="section-label">Key design decisions</div>
+      <ul class="feature-list" style="font-size:12px;">
+        <li>Uses <span class="hl-green">Sonnet</span> (not Haiku) — deep reasoning needed for architecture analysis</li>
+        <li class="cyan"><span class="hl-cyan">vault-first</span> — checks for existing notes before writing anything; updates, not duplicates</li>
+        <li class="purple">Dispatches <span class="hl-purple">vault-explorer</span> as a sub-step — reuses proven search logic</li>
+        <li class="yellow">Minimum <span class="hl-yellow">3 pattern notes</span> enforced — ensures useful vault output every time</li>
+        <li class="cyan">Bidirectional links — overview <span class="hl-cyan">↔</span> pattern notes via wikilinks</li>
+        <li><span class="hl-green">update_index.py</span> always last — notes immediately searchable via vault-search</li>
+      </ul>
+
+      <div class="tags" style="margin-top:6px;">
+        <span class="tag success">Live in ~/.claude/</span>
+        <span class="tag info">Sonnet model</span>
+        <span class="tag purple">9-step workflow</span>
+        <span class="tag success">vault-first</span>
+        <span class="tag info">cross-project search</span>
+      </div>
+    </div>
+
+  </div><!-- terminal-body -->
+</div><!-- terminal -->
+
+<div class="progress-bar">
+  <div class="progress-fill" id="progress"></div>
+</div>
+
+<div class="nav">
+  <button class="nav-btn" id="prev" onclick="changeSlide(-1)">← Prev</button>
+  <span class="slide-counter" id="counter">1 / 16</span>
+  <button class="nav-btn" id="next" onclick="changeSlide(1)">Next →</button>
+</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const total = slides.length;
+let current = 0;
+
+function update() {
+    slides.forEach((s, i) => s.classList.toggle('active', i === current));
+    document.getElementById('counter').textContent = `${current + 1} / ${total}`;
+    document.getElementById('progress').style.width = `${((current + 1) / total) * 100}%`;
+    document.getElementById('prev').disabled = current === 0;
+    const btn = document.getElementById('next');
+    if (current === total - 1) {
+        btn.textContent = 'Done ✓';
+        btn.classList.add('action');
+        btn.disabled = true;
+    } else {
+        btn.textContent = 'Next →';
+        btn.classList.remove('action');
+        btn.disabled = false;
+    }
+}
+
+function changeSlide(dir) {
+    current = Math.max(0, Math.min(total - 1, current + dir));
+    update();
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); changeSlide(1); }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); changeSlide(-1); }
+});
+
+update();
+</script>
+</body>
+</html>

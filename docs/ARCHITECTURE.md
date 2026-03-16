@@ -1,6 +1,6 @@
 # Parsidion CC Architecture
 
-A Claude Code customization toolkit that replaces built-in auto memory with an Obsidian vault-based knowledge management system, augmented by lifecycle hooks, a research agent, and a graph-colorized vault explorer.
+A Claude Code customization toolkit that replaces built-in auto memory with an Obsidian vault-based knowledge management system, augmented by lifecycle hooks, a research agent, a graph-colorized vault explorer, and a project explorer that catalogs cross-project patterns.
 
 ## Table of Contents
 - [Overview](#overview)
@@ -15,6 +15,7 @@ A Claude Code customization toolkit that replaces built-in auto memory with an O
   - [Graph Coverage Checker](#graph-coverage-checker)
   - [Research Agent](#research-agent)
   - [Vault Explorer Agent](#vault-explorer-agent)
+  - [Project Explorer Agent](#project-explorer-agent)
   - [Vault Common Library](#vault-common-library)
   - [Index Generator](#index-generator)
   - [Metadata Query CLI](#metadata-query-cli)
@@ -67,6 +68,7 @@ graph TB
         Skill[Claude Vault Skill]
         Agent[Research Agent]
         VE[Vault Explorer Agent]
+        PE[Project Explorer Agent]
         VC[vault_common.py]
         SSH[session_start_hook.py]
         STH[session_stop_hook.py]
@@ -101,6 +103,7 @@ graph TB
     Hooks -->|PreCompact| PCH
     CC -->|invokes| Agent
     CC -->|invokes| VE
+    CC -->|invokes| PE
 
     SSH -->|reads| VC
     STH -->|reads| VC
@@ -115,6 +118,9 @@ graph TB
     VE -->|searches| Debugging
     VE -->|searches| Patterns
     VE -->|searches| Research
+    PE -->|dispatches| VE
+    PE -->|writes to| Projects
+    PE -->|writes to| Patterns
 
     SSH -->|loads context from| Daily
     SSH -->|loads context from| Projects
@@ -142,6 +148,7 @@ graph TB
     style Skill fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
     style Agent fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
     style VE fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
+    style PE fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#ffffff
     style VC fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#ffffff
     style SSH fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#ffffff
     style STH fill:#880e4f,stroke:#c2185b,stroke-width:2px,color:#ffffff
@@ -472,6 +479,36 @@ A read-only Claude Code agent (runs on Haiku) that searches the vault for releva
 
 **Relationship to other agents:** When the vault has no relevant information, the agent recommends dispatching `research-documentation-agent` to research the topic externally and save findings to the vault.
 
+### Project Explorer Agent
+
+**Location:** `agents/project-explorer.md`
+
+A Claude Code agent definition (runs on Sonnet) that deeply analyzes a software project and saves structured notes to the vault for cross-project pattern reuse.
+
+**Trigger phrases:** "explore project", "analyze project", "document this project", "save project to vault", "catalog project features", "document project features".
+
+**Scope:** Read-only analysis followed by vault writes. Does not modify project source files. Writes exclusively to `~/ClaudeVault/Projects/` and `~/ClaudeVault/Patterns/`.
+
+**Workflow (9 steps):**
+1. **Vault check** — semantic search + dispatches `vault-explorer` with `"project {name} architecture features"`; if notes exist, reads them and fills gaps only (never deletes)
+2. **Metadata discovery** — reads `README.md`, `CLAUDE.md`, `pyproject.toml`/`Cargo.toml`/`package.json`/`go.mod`, and `Makefile` to extract project name, language, frameworks, key deps, and entry points
+3. **Architecture exploration** — Glob + Read to map top-level directory structure, identify key modules and their responsibilities, locate main entry points, note distinctive structural choices
+4. **Feature extraction** — identifies 3–8 reusable features via README sections, `{binary} --help`, module filenames, and Makefile targets; for each: what it does, which files implement it, why it's reusable
+5. **Pattern identification** — looks for project-level patterns: config handling, error handling, logging, design patterns (plugin, event-driven, strategy), testing approach, CLI conventions
+6. **Write overview note** → `~/ClaudeVault/Projects/{project-slug}-overview.md` (creates or updates): summary, tech stack, 2-level architecture tree, features with wikilinks, key conventions
+7. **Write feature pattern notes** → `~/ClaudeVault/Patterns/{feature-slug}.md` for each reusable feature (minimum 3): summary, implementation with file:line refs, replication steps, key learnings
+8. **Rebuild index** — runs `update_index.py` so all new notes are immediately searchable via `vault-search`
+9. **Summary report** — paths created/updated, skipped features with reasons, index status
+
+**Quality rules enforced:**
+- No orphan notes — every `related` field must contain at least one `[[wikilink]]`
+- No empty sections — omit headings rather than leaving them blank
+- Absolute source paths in the `sources` frontmatter field (never `~`-prefixed)
+- Kebab-case filenames without date suffixes (date goes in frontmatter)
+- Search before create — updates existing pattern notes rather than creating duplicates
+
+**Relationship to other agents:** Dispatches `vault-explorer` as sub-step 1 for the vault check. Pattern notes written in step 7 become available to future `vault-explorer` queries, closing the cross-project knowledge loop.
+
 ### Vault Common Library
 
 **Location:** `skills/claude-vault/scripts/vault_common.py`
@@ -746,6 +783,33 @@ sequenceDiagram
     RA-->>CC: Summary report
 ```
 
+### Project Exploration Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant CC as Claude Code
+    participant PE as project-explorer agent
+    participant VE as vault-explorer agent
+    participant P as Project Source
+    participant V as Vault
+    participant IDX as update_index.py
+
+    U->>CC: "explore this project and save it to the vault"
+    CC->>PE: Delegate to project-explorer agent
+    PE->>VE: Dispatch with "project {name} architecture features"
+    VE->>V: Search existing vault notes
+    V-->>VE: Ranked matches (or "no notes found")
+    VE-->>PE: Answer + Sources
+    PE->>P: Read README, pyproject.toml, Makefile, key modules
+    P-->>PE: Project metadata + source structure
+    PE->>V: Write Projects/{slug}-overview.md
+    PE->>V: Write Patterns/{feature-slug}.md (min 3)
+    PE->>IDX: Rebuild vault index
+    IDX->>V: Write updated CLAUDE.md + MANIFEST.md files
+    PE-->>CC: Summary report (notes created, skipped features)
+```
+
 ## File Layout
 
 ### Source Repository (parsidion-cc)
@@ -764,7 +828,8 @@ parsidion-cc/
 │   └── DOCUMENTATION_STYLE_GUIDE.md
 ├── agents/
 │   ├── research-documentation-agent.md
-│   └── vault-explorer.md                # Read-only vault search agent (Haiku)
+│   ├── vault-explorer.md                # Read-only vault search agent (Haiku)
+│   └── project-explorer.md              # Project analysis + vault pattern capture (Sonnet)
 ├── tests/
 │   └── test_vault_common.py
 └── skills/claude-vault/
@@ -810,7 +875,8 @@ parsidion-cc/
 ├── settings.json                    # Hook registrations
 ├── agents/
 │   ├── research-documentation-agent.md
-│   └── vault-explorer.md                # Read-only vault search agent (Haiku)
+│   ├── vault-explorer.md                # Read-only vault search agent (Haiku)
+│   └── project-explorer.md              # Project analysis + vault pattern capture (Sonnet)
 └── skills/claude-vault/
     ├── SKILL.md
     ├── eval_results.json            # Trigger eval results
