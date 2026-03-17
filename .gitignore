@@ -13,3 +13,4 @@ CLAUDE.local.md
 MEMORY_REPORT.md
 *.egg-info/
 .coverage
+.worktrees
