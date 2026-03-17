@@ -7,6 +7,10 @@
 
 `parsidion-mcp` is a FastMCP-based MCP server that exposes the Claude Vault knowledge management system to Claude Desktop (and any other MCP-capable client). It lives at `parsidion-cc/parsidion-mcp/` as an independent Python package.
 
+## Deployment Model
+
+This is a **local-only deployment**. Both `parsidion-mcp` and its `parsidion-cc[search]` dependency must be installed as editable packages (`uv tool install --editable`). Non-editable installs are not supported due to the `py-modules` layout of `parsidion-cc` (see `pyproject.toml` comment at line 42–43). All installation instructions assume local development use.
+
 ## Package Structure
 
 ```
@@ -41,7 +45,16 @@ parsidion-cc = { path = "../", editable = true }
 
 [project.scripts]
 parsidion-mcp = "parsidion_mcp.server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "ruff>=0.9",
+    "pyright>=1.1",
+]
 ```
+
+The `parsidion-cc[search]` dependency brings in `vault_common`, `vault_search`, `fastembed`, and `sqlite-vec`. **First-run note:** on the first `vault_search` call, `fastembed` downloads the `BAAI/bge-small-en-v1.5` ONNX model (~67 MB) and caches it. This can take 30–60 seconds. Subsequent calls are fast. The tool returns an informative message if this initial download is still in progress.
 
 ## Tools
 
@@ -59,7 +72,9 @@ Searches vault notes using semantic (vector) or metadata (filter) mode.
 - `top_k: int = 10` — max results
 - `min_score: float = 0.35` — minimum cosine similarity (semantic mode only)
 
-**Behavior:** Semantic mode when `query` is provided; metadata mode otherwise. Mirrors `vault_search.py` exactly. Returns JSON array of note objects with `path`, `title`, `tags`, `score`.
+**Behavior:** Semantic mode when `query` is provided (calls `vault_search.search()`); metadata mode otherwise (calls `vault_search.query()`). Returns JSON array of all fields returned by the underlying functions: `score`, `stem`, `title`, `folder`, `tags`, `path`, `summary`, `note_type`, `project`, `confidence`, `mtime`, `related`, `is_stale`, `incoming_links`. Score is `null` for metadata results.
+
+**Missing embeddings DB:** The underlying `vault_search.search()` returns an empty list silently when the DB is absent. The tool adds a pre-check: if `query` is provided and `embeddings.db` does not exist, return `ERROR: embeddings DB not found — run rebuild_index first` rather than an empty result.
 
 ### `vault_read`
 
@@ -70,7 +85,7 @@ Reads a vault note by path.
 
 **Returns:** Full note content (frontmatter + body) as a string.
 
-**Safety:** Resolves path against `vault_common.VAULT_ROOT`; rejects any path that escapes the vault root.
+**Safety:** Resolves path against `vault_common.VAULT_ROOT`; rejects any path that escapes the vault root with `ERROR: path escapes vault root`.
 
 ### `vault_write`
 
@@ -80,18 +95,29 @@ Creates or overwrites a vault note.
 - `path: str` — path relative to vault root
 - `content: str` — full note content including YAML frontmatter
 
+**Frontmatter validation:** Not performed. The tool trusts the caller to provide valid frontmatter per vault conventions. Invalid or missing frontmatter will be caught by `vault_doctor` on the next scan.
+
 **Returns:** Success confirmation with resolved absolute path.
 
-**Safety:** Same path containment check as `vault_read`.
+**Safety:** Same path containment check as `vault_read`. Parent directories are created automatically (`mkdir -p` equivalent).
 
 ### `vault_context`
 
-Returns vault context in the same format as `session_start_hook` — compact one-line-per-note index by default, full summaries when `verbose=True`.
+Returns vault context in the same format as the session start hook — compact one-line-per-note index by default, full summaries when `verbose=True`.
 
 **Parameters:**
 - `project: str | None` — project name to filter context for
 - `recent_days: int = 3` — recency window for recent notes
 - `verbose: bool = False` — full note summaries vs compact index
+
+**Note selection algorithm** (implemented directly in `context.py` using `vault_common`):
+1. If `project` is set: call `vault_common.find_notes_by_project(project)` → project notes
+2. Call `vault_common.find_recent_notes(recent_days)` → recent notes
+3. Merge, deduplicating by path (project notes first)
+4. If `verbose=False`: produce a compact index using the same format as `session_start_hook.build_compact_index()` — one line per note: `- [[stem]] Title (folder) — \`tag1\` \`tag2\``; header: `**Available vault notes** (...)`; truncate at 4000 chars
+5. If `verbose=True`: call `vault_common.build_context_block(notes)` for full summaries
+
+The compact index format is reimplemented inline in `context.py` — no import of `session_start_hook` is required.
 
 **Returns:** Context string ready for injection into a system prompt.
 
@@ -101,33 +127,40 @@ Rebuilds the vault index (`CLAUDE.md`, per-folder `MANIFEST.md` files, and `note
 
 **Parameters:** None.
 
-**Returns:** Script output (stdout + stderr). Timeout: 30s.
+**Returns:** Combined stdout + stderr from `update_index.py`. Timeout: 30s.
 
 ### `vault_doctor`
 
 Scans vault notes for structural issues; optionally repairs them via Claude haiku.
 
 **Parameters:**
-- `fix: bool = False` — if False, scan and report only; if True, repair repairable issues
-- `errors_only: bool = False` — only report errors, skip warnings
-- `limit: int | None = None` — max notes to repair (only relevant when `fix=True`)
+- `fix: bool = False` — `False` → scan and report only (omit `--fix` flag); `True` → repair via Claude haiku (pass `--fix` flag)
+- `errors_only: bool = False` — only report errors, skip warnings (pass `--errors-only` flag when `True`)
+- `limit: int | None = None` — max notes to repair; only relevant when `fix=True` (pass `--limit N` when set)
 
-**Returns:** Scan/repair report. Timeout: 120s.
+**Unexposed flags:** `--dry-run`, `--model`, `--no-state`, `--jobs`, `--timeout` are not exposed. The default of 3 parallel workers and 120s per-repair timeout are used.
+
+**Returns:** Combined stdout + stderr from `vault_doctor.py`. Timeout: 120s.
 
 ## Architecture
 
 ### Importing vault_common / vault_search
 
-The `parsidion-cc[search]` path dependency makes `vault_common` and `vault_search` directly importable — no `sys.path` manipulation needed in the MCP server.
+The `parsidion-cc[search]` editable path dependency makes `vault_common` and `vault_search` directly importable — no `sys.path` manipulation needed in the MCP server.
 
 ### Finding scripts for subprocess calls
 
 ```python
 import vault_common
+
+# TEMPLATES_DIR is always ~/.claude/skills/parsidion-cc/templates/
+# (patched by the installer but its parent is always the skill root).
+# SCRIPTS_DIR is a stable structural invariant: TEMPLATES_DIR.parent / "scripts"
+# == ~/.claude/skills/parsidion-cc/scripts/
 SCRIPTS_DIR = vault_common.TEMPLATES_DIR.parent / "scripts"
 ```
 
-This derives the installed scripts path (`~/.claude/skills/parsidion-cc/scripts/`) from the already-imported `vault_common` module, without hardcoding.
+This invariant holds because the installer always sets `TEMPLATES_DIR` to `<skill_root>/templates/`. If a custom vault path is configured, only `VAULT_ROOT` is patched — `TEMPLATES_DIR` always points into `~/.claude/`. The MCP server documents this dependency explicitly with the comment above.
 
 ### Subprocess calls
 
@@ -141,8 +174,16 @@ subprocess.run(
 ```
 
 ```python
+args = [str(SCRIPTS_DIR / "vault_doctor.py")]
+if fix:
+    args.append("--fix")
+if errors_only:
+    args.append("--errors-only")
+if limit is not None:
+    args.extend(["--limit", str(limit)])
+
 subprocess.run(
-    ["uv", "run", "--no-project", str(SCRIPTS_DIR / "vault_doctor.py"), *flags],
+    ["uv", "run", "--no-project", *args],
     capture_output=True, text=True, timeout=120,
 )
 ```
@@ -153,9 +194,11 @@ No `env -u CLAUDECODE` needed — Claude Desktop does not set that environment v
 
 ```python
 from fastmcp import FastMCP
+from parsidion_mcp.tools import search, notes, context, ops
 
 mcp = FastMCP("parsidion-mcp")
-# tools registered via imports
+
+# Tool registrations (each module registers its tools on import)
 
 def main() -> None:
     mcp.run()
@@ -171,10 +214,13 @@ ERROR: <message>
 ```
 On success: the result content.
 
-- Subprocess non-zero exit → stderr returned as error message
-- Path escape attempt → `ERROR: path escapes vault root`
-- Missing vault → `ERROR: vault root not found at <path>`
-- Missing embeddings DB (semantic search) → `ERROR: embeddings DB not found — run rebuild_index first`
+| Condition | Error message |
+|---|---|
+| Subprocess non-zero exit | stderr from the subprocess |
+| Path escapes vault root | `ERROR: path escapes vault root` |
+| Vault root not found | `ERROR: vault root not found at <path>` |
+| Embeddings DB missing (semantic search) | `ERROR: embeddings DB not found — run rebuild_index first` |
+| Subprocess timeout | `ERROR: command timed out after <N>s` |
 
 No exceptions propagate to the MCP transport layer.
 
@@ -183,16 +229,29 @@ No exceptions propagate to the MCP transport layer.
 Location: `parsidion-mcp/tests/`
 
 - **Unit tests** — each tool module tested with mocked `vault_common`, `vault_search`, and `subprocess.run`
-- **Subprocess tests** — `rebuild_index` and `vault_doctor` tested with `unittest.mock.patch("subprocess.run")`
-- **Integration smoke test** — reads one real note; skipped via `pytest.mark.skipif` when vault is absent
+- **Subprocess tests** — `rebuild_index` and `vault_doctor` tested with `unittest.mock.patch("subprocess.run")`, verifying correct flag construction for each parameter combination
+- **Path safety tests** — path escape attempts in `vault_read` / `vault_write` return the expected error string
+- **Integration smoke test** — reads one real note; skipped via `pytest.mark.skipif` when vault is absent (`not vault_common.VAULT_ROOT.exists()`)
 
-Tools: `pytest`, `ruff`, `pyright` (same stack as core package).
+Tools: `pytest`, `ruff`, `pyright`.
 
 ## Installation
 
+Both packages must be editable installs:
+
 ```bash
-cd parsidion-cc/parsidion-mcp/
+# 1. Ensure parsidion-cc[search] is installed editably (may already be done)
+cd parsidion-cc/
+uv tool install --editable ".[tools]"
+
+# 2. Install the MCP server
+cd parsidion-mcp/
 uv tool install --editable .
+```
+
+`uv tool install` places the `parsidion-mcp` binary in `~/.local/bin/` (or equivalent uv tool bin dir). Verify:
+```bash
+which parsidion-mcp   # should print ~/.local/bin/parsidion-mcp
 ```
 
 ## Claude Desktop Configuration
@@ -203,8 +262,10 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "parsidion": {
-      "command": "parsidion-mcp"
+      "command": "/Users/<username>/.local/bin/parsidion-mcp"
     }
   }
 }
 ```
+
+Use the full absolute path (output of `which parsidion-mcp`) rather than a bare command name. Claude Desktop launches processes with a minimal PATH that may not include `~/.local/bin/`, so the bare `parsidion-mcp` command may not resolve.
