@@ -3,9 +3,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python 3.13+](https://img.shields.io/badge/Python-3.13%2B-blue.svg)
 
-A second brain for Claude Code -- Obsidian-backed knowledge management that gives Claude persistent memory, cross-session context, and a searchable vault of everything it learns.
+A second brain for Claude Code -- a markdown knowledge vault that gives Claude persistent memory, cross-session context, and a searchable store of everything it learns. [Obsidian](https://obsidian.md/) is **not required** -- it is an optional viewer for graph visualization and browsing.
 
-Parsidion CC replaces Claude Code's built-in auto memory with a richly organized Obsidian vault. Session lifecycle hooks automatically capture learnings, load relevant context at startup, and snapshot working state before compaction. A research agent saves structured findings, and an AI-powered summarizer generates vault notes from session transcripts.
+Parsidion CC replaces Claude Code's built-in auto memory with a richly organized markdown vault. Session lifecycle hooks automatically capture learnings, load relevant context at startup, and snapshot working state before compaction. A research agent saves structured findings, and an AI-powered summarizer generates vault notes from session transcripts.
 
 ![Parsidion CC Architecture](https://raw.githubusercontent.com/paulrobello/parsidion-cc/main/parsidion-cc-architecture.png)
 
@@ -55,7 +55,7 @@ Parsidion CC replaces Claude Code's built-in auto memory with a richly organized
 
 3. **Restart Claude Code** to activate the hooks.
 
-That's it. Claude Code now has persistent memory backed by an Obsidian vault at `~/ClaudeVault/`.
+That's it. Claude Code now has persistent memory backed by a markdown vault at `~/ClaudeVault/`. Optionally, open that directory in [Obsidian](https://obsidian.md/) to browse notes and explore the knowledge graph.
 
 ## Installation
 
@@ -80,7 +80,7 @@ uv run install.py --force --yes --install-tools
 
 | Flag | Description |
 |------|-------------|
-| `--vault PATH` | Obsidian vault path (skips interactive prompt) |
+| `--vault PATH` | Vault path (skips interactive prompt) |
 | `--claude-dir PATH` | Target Claude config dir (default: `~/.claude`) |
 | `--dry-run / -n` | Preview all actions, no changes made |
 | `--verbose / -v` | Show detailed output |
@@ -97,13 +97,13 @@ During interactive installation, the installer prompts for two optional features
 1. **"Install CLI tools?"** (default: yes) — runs `uv tool install --editable ".[tools]"` to register `vault-search`, `vault-new`, and `vault-stats` as global commands. Use `--install-tools` to enable this non-interactively (e.g. with `--yes`).
 2. **"Enable AI-powered note selection?"** (default: no) — writes `ai_model` to `config.yaml` and sets the SessionStart hook timeout to 30 s, enabling claude-haiku to intelligently select relevant vault notes at session start. Use `--enable-ai` to enable this non-interactively (e.g. with `--yes`).
 
-After installation, open the vault path in Obsidian and restart Claude Code to activate hooks.
+After installation, restart Claude Code to activate hooks. Optionally, open the vault path in Obsidian for graph visualization and note browsing -- this is not required for the system to work.
 
 ## Components
 
 ### Claude Vault (`~/.claude/skills/parsidion-cc/`)
 
-An Obsidian vault-based knowledge management system that replaces Claude Code's built-in auto memory with a richly organized, searchable, cross-linked knowledge base at `~/ClaudeVault/`.
+A markdown vault-based knowledge management system that replaces Claude Code's built-in auto memory with a richly organized, searchable, cross-linked knowledge base at `~/ClaudeVault/`. The vault is plain markdown -- [Obsidian](https://obsidian.md/) can be used to visualize the graph and browse notes but is not required.
 
 **Auto-triggering:** The skill includes YAML frontmatter with a description that enables automatic invocation when users mention saving knowledge, checking notes, or persisting findings across sessions.
 
@@ -353,7 +353,7 @@ If no `.git` directory is present, all git operations are silent no-ops.
     scripts/                         # Hook scripts, utilities, and html-to-md.py
     templates/                       # Note templates + config.yaml reference
 
-~/ClaudeVault/                       # Obsidian vault (knowledge base)
+~/ClaudeVault/                       # Markdown vault (knowledge base; open in Obsidian for graph view)
   config.yaml                        # Optional hook/summarizer settings
   embeddings.db                      # Semantic search DB (note_embeddings + note_index tables)
 ```

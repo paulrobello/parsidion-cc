@@ -1,6 +1,6 @@
 # Parsidion CC Architecture
 
-A Claude Code customization toolkit that replaces built-in auto memory with an Obsidian vault-based knowledge management system, augmented by lifecycle hooks, a research agent, a graph-colorized vault explorer, and a project explorer that catalogs cross-project patterns.
+A Claude Code customization toolkit that replaces built-in auto memory with a markdown vault-based knowledge management system, augmented by lifecycle hooks, a research agent, a graph-colorized vault explorer, and a project explorer that catalogs cross-project patterns. [Obsidian](https://obsidian.md/) is **not required** — it is an optional viewer for graph visualization and note browsing.
 
 ## Table of Contents
 - [Overview](#overview)
@@ -33,7 +33,7 @@ A Claude Code customization toolkit that replaces built-in auto memory with an O
 
 ## Overview
 
-**Purpose:** Provide a structured, searchable, cross-linked knowledge base that persists across Claude Code sessions, replacing the flat auto memory with richly organized Obsidian notes.
+**Purpose:** Provide a structured, searchable, cross-linked knowledge base that persists across Claude Code sessions, replacing the flat auto memory with richly organized markdown notes.
 
 **Key capabilities:**
 - Always-on vault-first rule: check the vault before debugging or implementing (via `CLAUDE-VAULT.md`)
@@ -52,7 +52,7 @@ A Claude Code customization toolkit that replaces built-in auto memory with an O
 **Runtime requirements:**
 - Python 3.13+ (stdlib only -- no third-party packages)
 - `uv` for script execution
-- Obsidian for vault browsing and graph view (optional but recommended)
+- [Obsidian](https://obsidian.md/) for vault browsing and graph view (optional; not required for any core functionality)
 
 **Configuration:** All hooks and the summarizer read `~/ClaudeVault/config.yaml` for tuneable settings. A reference config with all defaults is shipped as `templates/config.yaml`. Precedence: script defaults → config.yaml → CLI arguments.
 
@@ -752,9 +752,9 @@ Requires `jq` to be installed. The script invokes `session_start_hook.py` with a
 
 ### Obsidian Integration
 
-The vault is a standard Obsidian vault at `~/ClaudeVault/`. Obsidian provides the graph view, search, and wikilink navigation.
+The vault at `~/ClaudeVault/` is plain markdown — no Obsidian required. If you open it in [Obsidian](https://obsidian.md/), you get graph view, search, and wikilink navigation, but all core functionality (hooks, search, summarizer) works without it.
 
-**Templates:** The `Templates/` directory is a symlink to the skill's `templates/` folder, making 8 note templates and the reference `config.yaml` available in Obsidian:
+**Templates:** The `Templates/` directory is a symlink to the skill's `templates/` folder, making 8 note templates and the reference `config.yaml` available:
 
 | Template | Note Type |
 |----------|-----------|
@@ -997,7 +997,7 @@ parsidion-cc/
     ├── scripts/
     └── templates/
 
-~/ClaudeVault/                       # Obsidian vault
+~/ClaudeVault/                       # Markdown vault (open in Obsidian for graph view — optional)
 ├── .obsidian/
 │   └── graph.json                   # Graph view color config
 ├── config.yaml                      # User config (copied from templates/config.yaml)
@@ -1056,6 +1056,8 @@ stateDiagram-v2
 ```
 
 ## Obsidian Graph View
+
+> **Optional:** The graph view requires [Obsidian](https://obsidian.md/). It is not needed for any core functionality.
 
 The graph view uses domain-based color groups configured in `.obsidian/graph.json`. Since Obsidian applies **first-match-wins** coloring and 57% of vault notes have multiple tags, colors represent semantic categories rather than individual tags.
 
