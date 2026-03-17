@@ -624,10 +624,16 @@ def check_note(path: Path, note_map: dict[str, list[Path]]) -> list[Issue]:
                 )
             )
 
-    # Broken wikilinks anywhere in the document
-    for link in re.findall(r"\[\[([^\]]+)\]\]", content):
+    # Broken wikilinks anywhere in the document.
+    # Exclude newlines from the match to avoid capturing cross-line false positives
+    # (e.g. truncated MANIFEST table cells in daily notes).
+    # Also skip links containing shell metacharacters (bash [[ ]] conditionals).
+    _SHELL_META = re.compile(r"[!$<>|&;{}\n]")
+    for link in re.findall(r"\[\[([^\]\n]+)\]\]", content):
         clean = link.split("|")[0].split("#")[0].strip()
-        if clean and not resolve_wikilink(clean, note_map):
+        if not clean or _SHELL_META.search(clean):
+            continue
+        if not resolve_wikilink(clean, note_map):
             issues.append(
                 Issue(
                     path,
@@ -1110,9 +1116,13 @@ def main() -> None:
         target_notes = list(vault_common.all_vault_notes())
         explicit = False
 
-    # Always skip the auto-generated vault index — rebuilt by update_index.py
+    # Always skip the auto-generated vault index and per-folder MANIFEST files —
+    # both are rebuilt by update_index.py and should never be doctor-repaired.
     vault_claude_md = vault_common.VAULT_ROOT / "CLAUDE.md"
-    target_notes = [p for p in target_notes if p != vault_claude_md]
+    target_notes = [
+        p for p in target_notes
+        if p != vault_claude_md and p.name != "MANIFEST.md"
+    ]
 
     # Skip notes that have already been processed and are still fresh
     if not explicit and not args.no_state:
