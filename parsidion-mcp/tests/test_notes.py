@@ -1,9 +1,8 @@
 """Tests for vault_read and vault_write tools."""
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 
 from parsidion_mcp.tools.notes import vault_read, vault_write
 
