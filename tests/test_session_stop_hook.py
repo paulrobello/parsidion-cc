@@ -166,7 +166,9 @@ class TestAppendToPending:
         # File either doesn't exist or is empty — nothing written
         if pending.exists():
             lines = [
-                ln for ln in pending.read_text(encoding="utf-8").splitlines() if ln.strip()
+                ln
+                for ln in pending.read_text(encoding="utf-8").splitlines()
+                if ln.strip()
             ]
             assert len(lines) == 0
 

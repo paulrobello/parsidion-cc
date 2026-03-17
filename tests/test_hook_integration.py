@@ -89,7 +89,11 @@ class TestSessionStopHookIntegration:
 
     def test_invalid_json_stdin_exits_cleanly(self, tmp_path: Path) -> None:
         script_path = _SCRIPTS_DIR / "session_stop_hook.py"
-        env = {**os.environ, "VAULT_ROOT": str(tmp_path), "CLAUDE_VAULT_STOP_ACTIVE": ""}
+        env = {
+            **os.environ,
+            "VAULT_ROOT": str(tmp_path),
+            "CLAUDE_VAULT_STOP_ACTIVE": "",
+        }
         result = subprocess.run(
             [sys.executable, str(script_path)],
             input="not valid json",
@@ -115,13 +119,17 @@ class TestSessionStopHookIntegration:
         """Hook with a real transcript file should still exit 0 and return {}."""
         transcript = tmp_path / "session-abc.jsonl"
         # Write a minimal transcript with one assistant message containing an error fix keyword
-        assistant_msg = json.dumps({
-            "type": "assistant",
-            "message": {
-                "role": "assistant",
-                "content": [{"type": "text", "text": "Root cause was a missing import."}],
-            },
-        })
+        assistant_msg = json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "Root cause was a missing import."}
+                    ],
+                },
+            }
+        )
         transcript.write_text(assistant_msg + "\n", encoding="utf-8")
 
         result = _run_hook(
@@ -186,26 +194,30 @@ class TestPreCompactHookIntegration:
     def test_with_real_transcript(self, tmp_path: Path) -> None:
         """Hook with a real transcript should write a snapshot and return {}."""
         transcript = tmp_path / "compact-session.jsonl"
-        user_msg = json.dumps({
-            "type": "user",
-            "message": {
-                "role": "user",
-                "content": "Implement the new feature for the project",
-            },
-        })
-        assistant_msg = json.dumps({
-            "type": "assistant",
-            "message": {
-                "role": "assistant",
-                "content": [
-                    {
-                        "type": "tool_use",
-                        "name": "Read",
-                        "input": {"file_path": str(tmp_path / "file.py")},
-                    }
-                ],
-            },
-        })
+        user_msg = json.dumps(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": "Implement the new feature for the project",
+                },
+            }
+        )
+        assistant_msg = json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Read",
+                            "input": {"file_path": str(tmp_path / "file.py")},
+                        }
+                    ],
+                },
+            }
+        )
         transcript.write_text(user_msg + "\n" + assistant_msg + "\n", encoding="utf-8")
 
         result = _run_hook(
@@ -326,7 +338,11 @@ class TestSubagentStopHookIntegration:
 
     def test_invalid_json_stdin_exits_cleanly(self, tmp_path: Path) -> None:
         script_path = _SCRIPTS_DIR / "subagent_stop_hook.py"
-        env = {**os.environ, "VAULT_ROOT": str(tmp_path), "CLAUDE_VAULT_STOP_ACTIVE": ""}
+        env = {
+            **os.environ,
+            "VAULT_ROOT": str(tmp_path),
+            "CLAUDE_VAULT_STOP_ACTIVE": "",
+        }
         result = subprocess.run(
             [sys.executable, str(script_path)],
             input="{ bad json",

@@ -94,7 +94,9 @@ AI_TIMEOUT = 120  # seconds
 STATE_FILE = vault_common.VAULT_ROOT / "doctor_state.json"
 STATE_STALE_DAYS = 7  # re-check "ok" notes after this many days
 STALE_COMMIT_MINUTES = 15  # auto-commit uncommitted files older than this
-PREFIX_CLUSTER_MIN = 3  # minimum flat notes sharing a prefix to trigger subfolder grouping
+PREFIX_CLUSTER_MIN = (
+    3  # minimum flat notes sharing a prefix to trigger subfolder grouping
+)
 
 
 # ---------------------------------------------------------------------------
@@ -749,9 +751,7 @@ def _auto_repair_broken_wikilinks(
 
     # --- Update `related` frontmatter field ---
     became_orphan = False
-    related_pattern = re.compile(
-        r'^(related:\s*)(\[.*?\])\s*$', re.MULTILINE
-    )
+    related_pattern = re.compile(r"^(related:\s*)(\[.*?\])\s*$", re.MULTILINE)
     related_match = related_pattern.search(content)
     if related_match:
         prefix = related_match.group(1)
@@ -760,7 +760,7 @@ def _auto_repair_broken_wikilinks(
         entries = re.findall(r'"(\[\[[^\]]+\]\])"', raw_list)
         new_entries: list[str] = []
         for entry in entries:
-            m = re.match(r'\[\[([^\]]+)\]\]', entry)
+            m = re.match(r"\[\[([^\]]+)\]\]", entry)
             if not m:
                 new_entries.append(f'"{entry}"')
                 continue
@@ -774,14 +774,14 @@ def _auto_repair_broken_wikilinks(
                 new_entries.append(f'"{entry}"')
 
         if new_entries:
-            new_related_line = f'{prefix}[{", ".join(new_entries)}]'
+            new_related_line = f"{prefix}[{', '.join(new_entries)}]"
         else:
             # All links removed — check if we can inject semantic candidates
             became_orphan = True
             candidates = _find_semantic_candidates(path)
             if candidates:
                 candidate_entries = [f'"[[{s}]]"' for s in candidates]
-                new_related_line = f'{prefix}[{", ".join(candidate_entries)}]'
+                new_related_line = f"{prefix}[{', '.join(candidate_entries)}]"
                 became_orphan = False
             else:
                 new_related_line = f"{prefix}[]"
@@ -1122,8 +1122,7 @@ def main() -> None:
     # both are rebuilt by update_index.py and should never be doctor-repaired.
     vault_claude_md = vault_common.VAULT_ROOT / "CLAUDE.md"
     target_notes = [
-        p for p in target_notes
-        if p != vault_claude_md and p.name != "MANIFEST.md"
+        p for p in target_notes if p != vault_claude_md and p.name != "MANIFEST.md"
     ]
 
     # Skip notes that have already been processed and are still fresh
@@ -1142,7 +1141,9 @@ def main() -> None:
     clusters = find_prefix_clusters(all_notes)
     if clusters and not args.dry_run:
         # Filter out generic-word false positives using Claude
-        clusters = _filter_clusters_with_claude(clusters, model=args.model, timeout=args.timeout)
+        clusters = _filter_clusters_with_claude(
+            clusters, model=args.model, timeout=args.timeout
+        )
     cluster_repaired = 0
     if clusters:
         total_cluster_notes = sum(len(n) for _, _, n, _ in clusters)
@@ -1265,9 +1266,7 @@ def main() -> None:
         }
 
     if not repair_candidates:
-        print(
-            "No repairable issues (flat daily notes require manual fixes)."
-        )
+        print("No repairable issues (flat daily notes require manual fixes).")
         save_state(state)
         return
 
