@@ -232,14 +232,23 @@ def query_note_index(
 
 
 # Variables safe to pass through to child processes (avoids leaking secrets).
-# SEC-006: ANTHROPIC_BASE_URL is intentionally included — environments that
-# configure the Anthropic API via a proxy or custom base URL need it forwarded
-# to child ``claude -p`` processes for AI features to work.
-# ANTHROPIC_API_KEY is included so non-default key configurations (proxy, org,
-# Bedrock) work correctly; without it all ``claude -p`` subprocess calls fail
-# silently when the user has a non-standard API key configured.
+# SEC-006: ANTHROPIC_* vars are intentionally included so that non-default API
+# configurations (proxy, org key, Bedrock, Vertex, corporate proxy) are
+# forwarded to child ``claude -p`` processes for AI features to work.
+#
+# Included Anthropic vars and their purpose:
+#   ANTHROPIC_API_KEY           — API key (non-default / org / proxy setups)
+#   ANTHROPIC_AUTH_TOKEN        — Bearer token alternative to API key
+#   ANTHROPIC_BASE_URL          — Custom endpoint (proxy, gateway, Bedrock)
+#   ANTHROPIC_CUSTOM_HEADERS    — Extra HTTP headers (corp auth, tracing)
+#   ANTHROPIC_DEFAULT_HAIKU_MODEL   — Pinned haiku model ID
+#   ANTHROPIC_DEFAULT_SONNET_MODEL  — Pinned sonnet model ID
+#   ANTHROPIC_DEFAULT_OPUS_MODEL    — Pinned opus model ID
+#   API_TIMEOUT_MS              — API call timeout in milliseconds
+#   HTTPS_PROXY / HTTP_PROXY    — Corporate / network proxy
 _SAFE_ENV_KEYS: frozenset[str] = frozenset(
     {
+        # Shell / locale
         "PATH",
         "HOME",
         "USER",
@@ -248,8 +257,20 @@ _SAFE_ENV_KEYS: frozenset[str] = frozenset(
         "LANG",
         "LC_ALL",
         "TMPDIR",
-        "ANTHROPIC_BASE_URL",
+        # Anthropic API auth & routing
         "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_CUSTOM_HEADERS",
+        # Model pinning
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        # Timeout
+        "API_TIMEOUT_MS",
+        # Network proxy
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
     }
 )
 
