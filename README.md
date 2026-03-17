@@ -88,13 +88,14 @@ uv run install.py --force --yes --install-tools
 | `--yes / -y` | Skip all confirmation prompts; uses `~/ClaudeVault` if `--vault` not given |
 | `--skip-hooks` | Do not modify `settings.json` |
 | `--skip-agent` | Do not install any agents |
+| `--enable-ai` | Enable AI-powered note selection: writes `ai_model` to `config.yaml` and sets SessionStart timeout to 30 s |
 | `--install-tools` | Install `vault-search`, `vault-new`, and `vault-stats` as global CLI commands via `uv tool install` |
 | `--uninstall` | Remove installed skill, agents, and hook registrations |
 
 During interactive installation, the installer prompts for two optional features:
 
 1. **"Install CLI tools?"** (default: yes) — runs `uv tool install --editable ".[tools]"` to register `vault-search`, `vault-new`, and `vault-stats` as global commands. Use `--install-tools` to enable this non-interactively (e.g. with `--yes`).
-2. **"Enable AI-powered note selection?"** (default: no) — writes `ai_model` to `config.yaml` and sets the SessionStart hook timeout to 30 s, enabling claude-haiku to intelligently select relevant vault notes at session start.
+2. **"Enable AI-powered note selection?"** (default: no) — writes `ai_model` to `config.yaml` and sets the SessionStart hook timeout to 30 s, enabling claude-haiku to intelligently select relevant vault notes at session start. Use `--enable-ai` to enable this non-interactively (e.g. with `--yes`).
 
 After installation, open the vault path in Obsidian and restart Claude Code to activate hooks.
 

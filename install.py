@@ -21,6 +21,7 @@ Options:
     --skip-hooks        Do not modify settings.json
     --skip-agent        Do not install any agents
     --uninstall         Remove installed skill, agent, and hooks
+    --enable-ai         Enable AI-powered note selection (writes ai_model to config.yaml, sets 30s timeout)
     --install-tools     Install vault-search, vault-new, and vault-stats as global CLI commands
     --help, -h          Show this help message
 """
@@ -978,8 +979,8 @@ def install(args: argparse.Namespace) -> int:
         )
 
     # --- AI mode prompt ---
-    enable_ai: bool = False
-    if not args.yes and not args.skip_hooks:
+    enable_ai: bool = args.enable_ai
+    if not args.yes and not enable_ai and not args.skip_hooks:
         print()
         print(bold("AI-Powered Note Selection (optional)"))
         print(
@@ -1120,7 +1121,7 @@ def parse_args() -> argparse.Namespace:
     Returns:
         Parsed argument namespace. Key attributes: ``vault``, ``claude_dir``,
         ``dry_run``, ``verbose``, ``force``, ``yes``, ``skip_hooks``,
-        ``skip_agent``, ``uninstall``, ``install_tools``.
+        ``skip_agent``, ``uninstall``, ``enable_ai``, ``install_tools``.
     """
     parser = argparse.ArgumentParser(
         prog="install.py",
@@ -1182,6 +1183,17 @@ def parse_args() -> argparse.Namespace:
         "--uninstall",
         action="store_true",
         help="Remove installed skill, agents, and hooks",
+    )
+    parser.add_argument(
+        "--enable-ai",
+        action="store_true",
+        help=(
+            "Enable AI-powered note selection: writes ai_model to vault config.yaml "
+            "and sets the SessionStart hook timeout to 30s so claude-haiku can "
+            "intelligently select relevant vault notes. "
+            "The interactive installer prompts for this; use this flag to enable "
+            "it non-interactively (e.g. with --yes)."
+        ),
     )
     parser.add_argument(
         "--install-tools",
