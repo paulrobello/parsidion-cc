@@ -59,12 +59,12 @@ You are an elite technical research agent specializing in gathering, synthesizin
 
    # Navigate to each URL, get raw HTML, and convert to clean markdown
    agentchrome navigate "https://example.com/docs" --wait-until networkidle
-   agentchrome page html | uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py - --url "https://example.com/docs" > /tmp/page-content.md
+   agentchrome dom get-html "css:html" | uv run --script ~/.claude/skills/parsidion-cc/scripts/html-to-md.py - --url "https://example.com/docs" > /tmp/page-content.md
    ```
    Then read `/tmp/page-content.md` for the cleaned content.
 
    - Use `--wait-until networkidle` to ensure JS-heavy sites fully render before extraction
-   - Use `agentchrome page html` (raw HTML) rather than `page text` — the html-to-md.py
+   - Use `agentchrome dom get-html "css:html"` (raw HTML) rather than `page text` — the html-to-md.py
      script removes navigation, banners, cookie notices, and script noise while
      preserving code fences with language annotations
    - Pass `--url` to html-to-md.py to resolve any relative links in the output

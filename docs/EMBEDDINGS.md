@@ -470,6 +470,9 @@ a few seconds for a handful of new notes.
 The automatic rebuild is skipped silently when `embeddings.db` does not yet exist. To create
 the database for the first time, run `build_embeddings.py` manually (see [Quick Start](#quick-start)).
 
+Background rebuild output is redirected to `/tmp/parsidion-cc-embed.log`. Check this file when
+embeddings appear stale after an expected rebuild.
+
 **Triggers that indirectly kick off an incremental rebuild:**
 
 | Trigger | Via |
@@ -487,6 +490,7 @@ The `use_embeddings` flag for the session start hook lives under `session_start_
 
 ```yaml
 embeddings:
+  enabled: true
   model: BAAI/bge-small-en-v1.5
   min_score: 0.35
   top_k: 10
@@ -497,6 +501,7 @@ session_start_hook:
 
 | Key | Section | Type | Default | Description |
 |---|---|---|---|---|
+| `enabled` | `embeddings` | boolean | `true` | Master switch — set `false` to disable all embedding builds and `note_index` writes |
 | `model` | `embeddings` | string | `BAAI/bge-small-en-v1.5` | fastembed model ID for the embedding model |
 | `min_score` | `embeddings` | float | `0.35` | Global minimum cosine similarity threshold; results below this are excluded |
 | `top_k` | `embeddings` | integer | `10` | Default number of results returned per search |

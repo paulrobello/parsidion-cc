@@ -23,6 +23,7 @@ A unified command-line interface for discovering and executing tools from multip
   - [session](#session)
   - [auth](#auth)
   - [Global Options](#global-options)
+  - [JSON Mode](#json-mode)
 - [Session Daemon](#session-daemon)
 - [Integration with Claude Code](#integration-with-claude-code)
   - [How CLAUDE.md References mcpl](#how-claudemd-references-mcpl)
@@ -228,14 +229,19 @@ mcpl config files --reset       # Clear saved preferences; re-prompts on next ru
 Search for tools across all configured servers by keyword or natural language description.
 
 ```bash
-mcpl search "list github issues"          # Returns 5 results by default
+mcpl search "list github issues"                    # Returns 5 results by default
+mcpl search "create pull request" -l 10             # Short form for --limit
 mcpl search "create pull request" --limit 10
 mcpl search "database query" --limit 20
-mcpl search "github" --schema            # Include full input schema in results
-mcpl search "github" --refresh           # Refresh tool cache before searching
+mcpl search "github" -s                             # Short form for --schema
+mcpl search "github" --schema                       # Include full input schema in results
+mcpl search "github" --refresh                      # Refresh tool cache before searching
+mcpl search "github" -m exact                       # Force exact matching
+mcpl search "github" -m regex                       # Force regex matching
+mcpl search "github" -m bm25                        # Force BM25 ranking (default)
 ```
 
-The search uses BM25 ranking, regex matching, and exact matching. Each result shows the server name, tool name, and required parameters — giving you everything needed to construct a `call` immediately.
+The search supports three methods selectable via `-m, --method [bm25|regex|exact]`: BM25 ranking (default), regex matching, and exact matching. Each result shows the server name, tool name, and required parameters — giving you everything needed to construct a `call` immediately.
 
 > **✅ Tip:** Always search before calling. Tool names vary between servers and versions. Never guess a tool name — `mcpl search` is the fastest way to confirm the correct name and its required parameters.
 
@@ -270,8 +276,9 @@ echo '{"owner": "acme", "repo": "api"}' | mcpl call github list_issues --stdin
 Get the full JSON schema for a specific tool, including all parameters and their types.
 
 ```bash
-mcpl inspect github list_issues              # Full schema
-mcpl inspect sentry search_issues --example  # Schema + ready-to-run example call
+mcpl inspect github list_issues               # Full schema
+mcpl inspect sentry search_issues -e          # Short form for --example
+mcpl inspect sentry search_issues --example   # Schema + ready-to-run example call
 ```
 
 The `--example` flag outputs a ready-to-run `mcpl call` command pre-filled with placeholder values — useful when a tool has many required parameters.
@@ -282,9 +289,10 @@ Test connectivity to all configured MCP servers. Use this as the first diagnosti
 
 ```bash
 mcpl verify
+mcpl verify -t 60    # Custom connection timeout per server (seconds)
 ```
 
-Each server is tested for connection and responsiveness. Failed servers are clearly identified.
+Each server is tested for connection and responsiveness. Failed servers are clearly identified. Use `-t, --timeout` to override the per-server connection timeout when servers are slow to initialize.
 
 ### config
 
@@ -292,7 +300,8 @@ Display the current resolved configuration including all loaded servers and thei
 
 ```bash
 mcpl config
-mcpl config files          # Show multi-config file status
+mcpl config --show-secrets  # Show actual values of environment variables (use with caution)
+mcpl config files           # Show multi-config file status
 ```
 
 ### enable / disable

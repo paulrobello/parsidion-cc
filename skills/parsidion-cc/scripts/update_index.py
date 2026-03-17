@@ -29,6 +29,7 @@ from vault_common import (
     ensure_vault_dirs,
     extract_title,
     get_body,
+    get_config,
     get_embeddings_db_path,
     git_commit_vault,
     parse_frontmatter,
@@ -575,13 +576,15 @@ def build_manifests(
 def _write_note_index_to_db(db_rows: list[NoteEntry], current_stems: set[str]) -> None:
     """Write per-note metadata rows to the note_index table in embeddings.db.
 
-    No-op if the DB file does not exist. Errors are printed to stderr so DB
-    failures are visible without crashing the indexer.
+    No-op if embeddings are disabled or the DB file does not exist. Errors are
+    printed to stderr so DB failures are visible without crashing the indexer.
 
     Args:
         db_rows: List of NoteEntry records to upsert into note_index.
         current_stems: Set of stems currently in the vault (used to prune deleted notes).
     """
+    if not get_config("embeddings", "enabled", True):
+        return
     try:
         import sqlite3 as _sqlite3
         from vault_common import ensure_note_index_schema
@@ -654,21 +657,27 @@ def main() -> None:
         f"{manifest_count} MANIFEST.md file(s) generated"
     )
 
-    # Incrementally update embeddings.db in the background if the DB exists.
-    # Skipped silently when the DB has not been built yet.
+    # Update embeddings.db in the background when enabled.
+    # Incremental when the DB already exists; full rebuild when it does not.
     # ARC-011: stderr is redirected to a log file so silent failures are
     # visible.  Check /tmp/parsidion-cc-embed.log when embeddings seem stale.
-    db_path = get_embeddings_db_path()
-    if db_path.exists():
+    if get_config("embeddings", "enabled", True):
+        db_path = get_embeddings_db_path()
         build_script = Path(__file__).parent / "build_embeddings.py"
         if build_script.exists():
+            cmd = ["uv", "run", "--no-project", str(build_script)]
+            if db_path.exists():
+                cmd.append("--incremental")
+                label = "incremental"
+            else:
+                label = "full"
             subprocess.Popen(
-                ["uv", "run", "--no-project", str(build_script), "--incremental"],
+                cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=open("/tmp/parsidion-cc-embed.log", "a"),  # noqa: SIM115
                 start_new_session=True,
             )
-            print("Embeddings: incremental rebuild launched in background")
+            print(f"Embeddings: {label} rebuild launched in background")
 
 
 if __name__ == "__main__":

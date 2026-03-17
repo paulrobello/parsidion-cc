@@ -419,20 +419,25 @@ and a results array:
 
 ```json
 {
-  "generated_at": "2026-03-14T10:23:47",
-  "notes_sampled": 100,
-  "queries_per_note": 3,
-  "total_queries": 300,
-  "top_k": 10,
-  "seed": 42,
+  "metadata": {
+    "generated_at": "2026-03-14T10:23:47",
+    "notes_sampled": 100,
+    "total_queries": 300,
+    "models": ["BAAI/bge-small-en-v1.5"],
+    "chunking_strategies": ["whole", "paragraph", "sliding_512_128"],
+    "top_k": 10,
+    "workers": 1
+  },
   "results": [
     {
       "model": "BAAI/bge-small-en-v1.5",
       "chunking": "whole",
       "recall_at_1": 0.71,
       "recall_at_5": 0.89,
-      "recall_at_k": 0.93,
+      "recall_at_10": 0.93,
       "mrr": 0.79,
+      "total_queries": 300,
+      "top_k": 10,
       "index_time_s": 18.4,
       "query_time_s": 1.2,
       "queries_per_sec": 250,
@@ -444,12 +449,13 @@ and a results array:
 
 | Field | Description |
 |---|---|
-| `generated_at` | ISO 8601 timestamp of when the eval was run |
-| `notes_sampled` | Number of notes included in ground truth |
-| `queries_per_note` | Queries generated per note |
-| `total_queries` | Total ground-truth queries evaluated |
-| `top_k` | Recall@K cutoff used |
-| `seed` | Random seed used for note sampling |
+| `metadata.generated_at` | ISO 8601 timestamp of when the eval was run |
+| `metadata.notes_sampled` | Number of notes included in ground truth |
+| `metadata.total_queries` | Total ground-truth queries evaluated |
+| `metadata.models` | List of model IDs evaluated |
+| `metadata.chunking_strategies` | List of chunking strategy names evaluated |
+| `metadata.top_k` | Recall@K cutoff used |
+| `metadata.workers` | Number of parallel worker threads used |
 | `results` | Array of per-combo metric objects |
 
 Use `--output` to override the auto-timestamped default path:

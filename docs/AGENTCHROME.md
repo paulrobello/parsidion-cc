@@ -91,9 +91,10 @@ agentchrome --help
 | **DOM HTML extraction** | Retrieves outer HTML of any element after JavaScript execution |
 | **Accessibility tree snapshots** | Returns stable UIDs for reliable element targeting (`page snapshot`) |
 | **Screenshot capture** | Full-page or viewport PNG screenshots |
-| **Form automation** | Fill form fields by UID (`form fill`) |
+| **Form automation** | Fill form fields by UID or CSS selector (`form fill`, `form fill-many`) |
 | **JavaScript execution** | Run arbitrary JS in the page context (`js exec`) |
 | **Network monitoring** | Inspect requests and responses |
+| **Cookie management** | List, set, delete, and clear browser cookies (`cookie`) |
 | **Device emulation** | Simulate mobile viewports |
 | **Performance tracing** | Capture Core Web Vitals |
 | **Dialog handling** | Auto-accept or dismiss alerts and confirmations |

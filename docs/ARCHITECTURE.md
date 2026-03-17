@@ -93,6 +93,7 @@ graph TB
         Debugging[Debugging/]
         Tools[Tools/]
         Research[Research/]
+        History[History/]
         Graph[.obsidian/graph.json]
     end
 
@@ -170,6 +171,7 @@ graph TB
     style Debugging fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
     style Tools fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
     style Research fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
+    style History fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
     style Graph fill:#37474f,stroke:#78909c,stroke-width:1px,color:#ffffff
 ```
 
@@ -395,8 +397,15 @@ An on-demand diagnostic and repair tool that scans vault notes for structural is
 | `ORPHAN_NOTE` | warning | No `[[wikilinks]]` in `related` field; repaired with semantic candidates from `vault-search` |
 | `BROKEN_WIKILINK` | warning | Link target not found in vault; auto-repaired via exact stem match or `vault-search` semantic lookup; removed if no match found |
 | `FLAT_DAILY` | warning | `Daily/YYYY-MM-DD.md` instead of `Daily/YYYY-MM/DD.md` |
+| `PREFIX_CLUSTER` | info | 3+ flat notes share a common prefix and could be reorganized into a subfolder |
 
 Daily notes are exempt from `confidence`, `related`, and orphan checks.
+
+**Prefix-cluster reorganization:** In `--fix` mode, after per-note repairs, the doctor also scans for groups of flat notes that share a common prefix and should be moved into a subfolder. Two cluster types are detected:
+- **Exact-stem clusters:** one note's stem is the exact prefix of 2+ sibling notes (e.g. `gpu-voxel-ray-marching-optimizations`, `gpu-voxel-ray-marching-optimizations-0853`, …) — relationship is unambiguous, so these bypass Claude filtering and are moved immediately.
+- **First-word clusters:** 3+ notes share the same first `-`-delimited word; these are sent to Claude (haiku) to filter out generic words before moves are applied.
+
+Notes are moved, wikilinks in all vault notes are updated, `doctor_state.json` is wiped for moved notes, and the vault index is rebuilt. Requires `PREFIX_CLUSTER_MIN = 3` notes per cluster (configurable in source).
 
 **State file:** `~/ClaudeVault/doctor_state.json` tracks per-note status across runs and the running doctor's PID:
 - `pid` — PID of the currently-running doctor; cleared on exit (singleton guard)
