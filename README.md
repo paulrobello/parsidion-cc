@@ -19,6 +19,7 @@ Parsidion CC replaces Claude Code's built-in auto memory with a richly organized
 - [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Components](#components)
+- [parsidion-mcp (Claude Desktop)](#parsidion-mcp-claude-desktop)
 - [Configuration](#configuration)
 - [Vault Git Integration](#vault-git-integration)
 - [File Locations](#file-locations)
@@ -218,6 +219,42 @@ All hooks read `~/ClaudeVault/config.yaml` for settings (see [Configuration](#co
 | SessionEnd | `session_stop_wrapper.sh` → `session_stop_hook.py` | 10 s | `session_stop_hook` | Shell wrapper outputs `{}` immediately; Python script runs detached via `nohup` |
 | PreCompact | `pre_compact_hook.py` | 10 s | `pre_compact_hook` | Configurable transcript lines |
 | SubagentStop | `subagent_stop_hook.py` | async | `subagent_stop_hook` | Non-blocking; skips agents listed in `excluded_agents` |
+
+## parsidion-mcp (Claude Desktop)
+
+An optional MCP server that exposes Claude Vault operations to **Claude Desktop** (and any other MCP-compatible client) over stdio. It lives in the `parsidion-mcp/` subdirectory and is installed independently from the main skill.
+
+**Six tools:**
+
+| Tool | Description |
+|------|-------------|
+| `vault_search` | Semantic search (natural language query) or metadata search (tag/folder/type/project/days) |
+| `vault_read` | Read a vault note by relative or absolute path |
+| `vault_write` | Create or overwrite a vault note |
+| `vault_context` | Return a session-start-style context block (compact index or verbose summaries) |
+| `rebuild_index` | Rebuild `CLAUDE.md`, `MANIFEST.md` files, and the `note_index` SQLite table |
+| `vault_doctor` | Scan vault notes for structural issues; optionally repair them |
+
+**Install:**
+
+```bash
+cd parsidion-mcp
+uv tool install --editable .
+```
+
+**Configure Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "parsidion": {
+      "command": "/Users/yourname/.local/bin/parsidion-mcp"
+    }
+  }
+}
+```
+
+Replace the path with the output of `which parsidion-mcp`. See [docs/MCP.md](docs/MCP.md) for the full tools reference.
 
 ## Configuration
 
@@ -476,6 +513,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding constraints
 ## Related Documentation
 
 - [docs/README.md](docs/README.md) -- Navigation index for all files in the `docs/` directory
+- [docs/MCP.md](docs/MCP.md) -- parsidion-mcp MCP server: installation, configuration, and tools reference
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) -- System architecture, file layout, and hook design
 - [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) -- Semantic search setup, embeddings database, and evaluation
 - [docs/EMBEDDINGS_EVAL.md](docs/EMBEDDINGS_EVAL.md) -- Evaluation harness for benchmarking embedding models and chunking strategies
