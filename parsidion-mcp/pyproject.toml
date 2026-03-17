@@ -1,0 +1,39 @@
+[project]
+name = "parsidion-mcp"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "fastmcp>=2.0",
+    "parsidion-cc[search]",
+]
+
+[tool.uv.sources]
+parsidion-cc = { path = "../", editable = true }
+
+[project.scripts]
+parsidion-mcp = "parsidion_mcp.server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "pytest-timeout>=0.5",
+    "pytest-cov>=4.0",
+    "ruff>=0.9",
+    "pyright>=1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --cov=src --cov-report=term-missing"
+timeout = 10
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "B", "BLE", "UP"]
+ignore = ["E501", "B008", "B904"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.13"
