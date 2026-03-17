@@ -91,6 +91,7 @@ _HOOK_SCRIPTS: dict[str, str] = {
     "SessionStart": "session_start_hook.py",
     "SessionEnd": "session_stop_wrapper.sh",
     "PreCompact": "pre_compact_hook.py",
+    "PostCompact": "post_compact_hook.py",
     "SubagentStop": "subagent_stop_hook.py",
 }
 
