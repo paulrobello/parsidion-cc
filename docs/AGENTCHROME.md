@@ -111,7 +111,8 @@ This auto-detects the active agentic environment. Use `agentchrome skill list` t
 | **Performance tracing** | Capture Core Web Vitals (`perf vitals`) |
 | **Dialog handling** | Auto-accept or dismiss alerts and confirmations (`dialog`) |
 | **Skill management** | Install agentchrome skill files for AI coding tools (`skill install`) |
-| **Configuration** | Manage connection config via config file (`config show`) |
+| **Configuration** | Manage connection config via TOML config file (`config show`, `config init`, `config path`) |
+| **Capabilities manifest** | Output a machine-readable manifest of all CLI commands and flags (`capabilities`) |
 
 ## Usage in Parsidion CC
 
@@ -215,6 +216,9 @@ agentchrome examples
 
 # Install the agentchrome skill for the current AI coding tool
 agentchrome skill install
+
+# Output machine-readable manifest of all commands and flags
+agentchrome capabilities
 ```
 
 ## Troubleshooting
@@ -225,7 +229,7 @@ The binary is not on your `PATH`. Either install via `cargo install agentchrome`
 
 ### Chrome not found
 
-AgentChrome looks for Chrome or Chromium in standard installation paths. If you use a non-standard location, check `agentchrome connect --help` for the `--channel` flag or set the path via config (`agentchrome config show`).
+AgentChrome looks for Chrome or Chromium in standard installation paths. If you use a non-standard location, pass `--chrome-path /path/to/chrome` to `agentchrome connect --launch`, use `--channel` to target a specific release channel (stable, beta, dev, canary), or set `chrome_path` in the TOML config file (`agentchrome config init` to create one, `agentchrome config show` to inspect).
 
 ### Falls back to curl in the research agent
 

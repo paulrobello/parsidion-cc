@@ -19,6 +19,8 @@ A Claude Code customization toolkit that replaces built-in auto memory with a ma
   - [Vault Common Library](#vault-common-library)
   - [Index Generator](#index-generator)
   - [Metadata Query CLI](#metadata-query-cli)
+  - [Vault Links Library](#vault-links-library)
+  - [CLI Utilities](#cli-utilities)
   - [Trigger Evaluation](#trigger-evaluation)
   - [Context Preview Script](#context-preview-script)
   - [Obsidian Integration](#obsidian-integration)
@@ -28,8 +30,6 @@ A Claude Code customization toolkit that replaces built-in auto memory with a ma
 - [Vault Note Lifecycle](#vault-note-lifecycle)
 - [Obsidian Graph View](#obsidian-graph-view)
 - [Related Documentation](#related-documentation)
-
-> **Table of Contents note:** New components added in the enhancement sprint — `post_compact_hook.py` (PostCompact hook), `vault_links.py` (backlink module), `vault_new.py` / `vault-new` CLI, `vault_stats.py` / `vault-stats` CLI, `vault_export.py` / `vault-export` CLI, `vault_merge.py` / `vault-merge` CLI, `vault_review.py` / `vault-review` CLI — are documented under [Hook Scripts](#hook-scripts), [Vault Links Library](#vault-links-library), and [CLI Utilities](#cli-utilities) respectively.
 
 ## Overview
 
@@ -606,11 +606,12 @@ Rebuilds `~/ClaudeVault/CLAUDE.md` by scanning all vault notes. Includes a PID s
 
 **Location:** `skills/parsidion-cc/scripts/vault_search.py` (unified CLI)
 
-`vault-search` operates in three modes depending on arguments:
+`vault-search` operates in four modes depending on arguments:
 
 - **Semantic mode** (positional `QUERY`): embeds the query with fastembed and retrieves top-K notes by cosine similarity. Results include a `score` field.
 - **Metadata mode** (filter flags, no `QUERY`): queries the `note_index` table in `embeddings.db` using SQL. Results set `score` to `null`.
 - **Full-text body search** (`--grep`/`-G` flag): scans note bodies for a regex/literal pattern. `--grep-case` enables case-sensitive matching. Results set `score` to `null`. Can be combined with metadata filters (e.g. `vault-search --grep "pattern" -f Patterns`).
+- **Interactive TUI** (`--interactive`/`-i`): curses-based interface with real-time search results, keyboard navigation, and editor integration. Results update as you type.
 
 All modes produce the same JSON output structure. The `vault-explorer` agent uses metadata mode as its Tier 2 search step (after semantic, before grep fallback).
 
@@ -752,9 +753,13 @@ Exports vault notes to different formats. Uses the `note_index` DB when availabl
 
 Merges two vault notes into one. Accepts either absolute paths or stem names (case-insensitive search across the vault).
 
-**Usage:** `vault-merge NOTE_A NOTE_B [--output OUTPUT] [--dry-run] [--execute]`
+**Merge usage:** `vault-merge NOTE_A NOTE_B [--output OUTPUT] [--dry-run] [--execute]`
 
 Without `--execute`, prints the proposed merged content and exits. With `--execute`, writes the merged note, moves `NOTE_B` to `.trash/`, and updates all wikilinks across the vault.
+
+**Scan usage:** `vault-merge --scan [--threshold SCORE] [--top N]`
+
+Scans all vault notes for near-duplicate pairs using embedding similarity. Reports candidate pairs above `--threshold` (default `0.85`), limited to `--top` pairs (default `10`).
 
 #### vault-review
 

@@ -117,7 +117,7 @@ Script paths for `rebuild_index` and `vault_doctor` are derived from `vault_comm
 - `uv` (the package manager — install from [docs.astral.sh/uv](https://docs.astral.sh/uv))
 - `parsidion-cc` installed as an editable package with the `[search]` extra (this brings in `vault_common`, `vault_search`, `fastembed`, and `sqlite-vec`)
 
-> **Note:** Both `parsidion-cc` and `parsidion-mcp` must be editable installs. Non-editable installs are not supported due to the `py-modules` layout of `parsidion-cc`.
+> **📝 Note:** Both `parsidion-cc` and `parsidion-mcp` must be editable installs. Non-editable installs are not supported due to the `py-modules` layout of `parsidion-cc`.
 
 ### Install from Repository
 
@@ -133,7 +133,7 @@ uv tool install --editable .
 
 `uv tool install` places the `parsidion-mcp` binary in `~/.local/bin/` (or the equivalent `uv` tool bin directory on your platform).
 
-> **First-run note:** On the first `vault_search` call with a query, `fastembed` downloads the `BAAI/bge-small-en-v1.5` ONNX model (~67 MB) and caches it. This initial download can take 30–60 seconds. Subsequent calls are fast. If the embeddings database does not yet exist, the tool returns a clear error message prompting you to run `rebuild_index` first.
+> **📝 Note:** On the first `vault_search` call with a query, `fastembed` downloads the `BAAI/bge-small-en-v1.5` ONNX model (~67 MB) and caches it. This initial download can take 30–60 seconds. Subsequent calls are fast. If the embeddings database does not yet exist, the tool returns a clear error message prompting you to run `rebuild_index` first.
 
 ### Verify Installation
 
@@ -158,7 +158,7 @@ Add the server to Claude Desktop's configuration file at `~/Library/Application 
 }
 ```
 
-Replace `<username>` with the output of `which parsidion-mcp`. Use the full absolute path rather than a bare command name — Claude Desktop launches processes with a minimal `PATH` that may not include `~/.local/bin/`, so the bare `parsidion-mcp` command may not resolve.
+Replace `<username>` with your actual username. Use the full absolute path rather than a bare command name — Claude Desktop launches processes with a minimal `PATH` that may not include `~/.local/bin/`, so the bare `parsidion-mcp` command may not resolve. Run `which parsidion-mcp` to confirm the exact path.
 
 After saving the file, restart Claude Desktop for the change to take effect.
 
