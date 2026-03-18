@@ -1184,6 +1184,12 @@ def main() -> None:
         default=None,
         help="Enable SDK session persistence (default: off). Use when debugging to inspect saved sessions.",
     )
+    parser.add_argument(
+        "--run-doctor",
+        action="store_true",
+        default=False,
+        help="Run vault_doctor before summarizing to fix legacy pending paths and stale files.",
+    )
     args = parser.parse_args()
 
     # Resolve options: defaults → config → CLI args
@@ -1217,6 +1223,15 @@ def main() -> None:
         "cluster_model",
         _DEFAULT_CLUSTER_MODEL,
     )
+
+    # Optionally run vault_doctor first (fixes legacy paths, commits stale files)
+    if args.run_doctor:
+        import subprocess as _sp
+        import sys as _sys
+
+        _doctor = Path(__file__).parent / "vault_doctor.py"
+        print("Running vault_doctor before summarizing…")
+        _sp.run([_sys.executable, str(_doctor)], check=False)
 
     # Determine source file
     if args.sessions:

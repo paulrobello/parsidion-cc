@@ -487,6 +487,7 @@ def _build_launchd_plist(uv_path: str, scripts_dir: Path, hour: int = 3) -> str:
         <string>run</string>
         <string>--no-project</string>
         <string>{script_path}</string>
+        <string>--run-doctor</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
@@ -613,8 +614,8 @@ def _schedule_summarizer_cron(
         hour: Hour of day to run (0-23).
     """
     cron_line = (
-        f"0 {hour} * * * {uv_path} run --no-project {script_path} "
-        f">> /tmp/parsidion-cc-summarizer.log 2>&1  {_CRON_MARKER}"
+        f"0 {hour} * * * {uv_path} run --no-project {script_path} --run-doctor"
+        f" >> /tmp/parsidion-cc-summarizer.log 2>&1  {_CRON_MARKER}"
     )
     _step(f"Schedule nightly summarizer via cron (hour={hour})", dry_run=dry_run)
     if dry_run:
