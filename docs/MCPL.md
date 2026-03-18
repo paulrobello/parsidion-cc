@@ -264,7 +264,7 @@ mcpl call github list_issues '{"owner": "acme", "repo": "api"}'
 mcpl call filesystem read_file '{"path": "/project/README.md"}'
 mcpl call sentry search_issues '{"organizationSlug": "my-org", "query": "is:unresolved"}'
 
-# Bypass the session daemon (useful for debugging)
+# Bypass the session daemon (useful for debugging; note: daemon required for browser MCPs)
 mcpl call github list_repos '{}' --no-daemon
 
 # Read large argument payloads from stdin
@@ -409,9 +409,10 @@ The parsidion-cc project embeds mcpl usage instructions directly in `~/.claude/C
 1. **Always discover before calling** — never guess tool names; use `mcpl search` first
 2. **Search returns required params** — the search result gives you everything needed to construct a call
 3. **Use `inspect --example` for complex tools** — generates a ready-to-run call with placeholders
-4. **Troubleshoot with `mcpl verify`** — first step when any server fails
+4. **Always set a timeout** — when using MCP tools that make network requests, always specify a `timeout` parameter (API calls 5-10s, web scraping 10-30s, large downloads 30-60s)
+5. **Troubleshoot with `mcpl verify`** — first step when any server fails
 
-The upstream repo's `CLAUDE.md` is designed to be copied directly into your own `CLAUDE.md` or `AGENTS.md` at either the project level (`./CLAUDE.md`) or user level (`~/.claude/CLAUDE.md`).
+The mcpl guidance is part of the global user-level `~/.claude/CLAUDE.md` installed by parsidion-cc. The same pattern — embedding an "MCP Launchpad" section in your CLAUDE.md or AGENTS.md — can be applied at either the project level (`./CLAUDE.md`) or user level (`~/.claude/CLAUDE.md`).
 
 ### Agent Workflow Pattern
 

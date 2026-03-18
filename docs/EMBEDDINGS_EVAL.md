@@ -366,9 +366,9 @@ ranks in the top-K results.
 
 **Strategy name:** `sliding_SIZE_OVERLAP` (e.g., `sliding_512_128`)
 
-The note body is segmented into overlapping windows of SIZE characters with OVERLAP characters of
-context carried over between windows. Each window is embedded with the note title prepended. A note
-matches if any window ranks in the top-K results.
+The full note text (title + tags + body) is concatenated into a single string, then segmented into
+overlapping windows of SIZE characters with OVERLAP characters of context carried over between
+windows. A note matches if any window ranks in the top-K results.
 
 Common configurations:
 

@@ -426,12 +426,12 @@ raised and the session starts normally with keyword-based context only.
 `summarize_sessions.py` uses semantic search during the backlink-injection step that runs after
 each new vault note is written.
 
-The function `_find_related_by_semantic()` calls `vault_search.py` as a subprocess, passing the
-new note's title and tags as the query. Any returned notes with a score above `embeddings.min_score`
-are injected as bidirectional wikilinks in the `related` frontmatter field.
+The function `vault_links.find_related_by_semantic()` calls `vault_search.py` as a subprocess,
+passing the new note's title and tags as the query. Any returned notes with a score above
+`embeddings.min_score` are injected as bidirectional wikilinks in the `related` frontmatter field.
 
 If the semantic search returns no results (or if `embeddings.db` is absent), the summarizer falls
-back to `_find_related_by_tags()`, which performs the existing tag-overlap scan. The two
+back to `vault_links.find_related_by_tags()`, which performs the existing tag-overlap scan. The two
 strategies are complementary: semantic search catches conceptually related notes that share no
 tags, while tag-overlap catches notes with explicit shared labels.
 

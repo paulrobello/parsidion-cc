@@ -29,7 +29,7 @@ A Claude Code customization toolkit that replaces built-in auto memory with a ma
 - [Obsidian Graph View](#obsidian-graph-view)
 - [Related Documentation](#related-documentation)
 
-> **Table of Contents note:** New components added in the enhancement sprint — `post_compact_hook.py` (PostCompact hook), `vault_links.py` (backlink module), `vault_new.py` / `vault-new` CLI, `vault_stats.py` / `vault-stats` CLI — are documented under [Hook Scripts](#hook-scripts), [Vault Links Library](#vault-links-library), and [CLI Utilities](#cli-utilities) respectively.
+> **Table of Contents note:** New components added in the enhancement sprint — `post_compact_hook.py` (PostCompact hook), `vault_links.py` (backlink module), `vault_new.py` / `vault-new` CLI, `vault_stats.py` / `vault-stats` CLI, `vault_export.py` / `vault-export` CLI, `vault_merge.py` / `vault-merge` CLI, `vault_review.py` / `vault-review` CLI — are documented under [Hook Scripts](#hook-scripts), [Vault Links Library](#vault-links-library), and [CLI Utilities](#cli-utilities) respectively.
 
 ## Overview
 
@@ -715,6 +715,64 @@ Analytics CLI for vault health and activity. All modes output to stdout; Rich fo
 | `--tags` | Tag frequency cloud |
 | `--dashboard` | All modes combined into a full report |
 
+#### vault-export
+
+**Location:** `skills/parsidion-cc/scripts/vault_export.py` · Global command: `vault-export` (after `--install-tools`)
+
+Exports vault notes to different formats. Uses the `note_index` DB when available; falls back to a file walk.
+
+**CLI modes (mutually exclusive; default is `--list`):**
+
+| Flag | Description |
+|------|-------------|
+| `--html [OUTPUT_DIR]` | Export notes as static HTML files |
+| `--zip [OUTPUT_FILE]` | Zip export of `.md` files |
+| `--list` | List what would be exported (default) |
+
+**Filter flags (all modes):**
+
+| Flag | Description |
+|------|-------------|
+| `--project PROJECT` | Only export notes for this project |
+| `--folder FOLDER` | Only export notes from this folder |
+| `--tag TAG` | Only export notes with this tag |
+
+#### vault-merge
+
+**Location:** `skills/parsidion-cc/scripts/vault_merge.py` · Global command: `vault-merge` (after `--install-tools`)
+
+Merges two vault notes into one. Accepts either absolute paths or stem names (case-insensitive search across the vault).
+
+**Usage:** `vault-merge NOTE_A NOTE_B [--output OUTPUT] [--dry-run] [--execute]`
+
+Without `--execute`, prints the proposed merged content and exits. With `--execute`, writes the merged note, moves `NOTE_B` to `.trash/`, and updates all wikilinks across the vault.
+
+#### vault-review
+
+**Location:** `skills/parsidion-cc/scripts/vault_review.py` · Global command: `vault-review` (after `--install-tools`)
+
+Curses TUI for reviewing entries in `pending_summaries.jsonl` before they are processed by the summarizer.
+
+**CLI modes:**
+
+| Flag | Description |
+|------|-------------|
+| (none) | Launch interactive curses TUI |
+| `--list` | Print pending sessions without TUI |
+| `--clear` | Remove all entries from queue (with confirmation) |
+
+**TUI key bindings:**
+
+| Key | Action |
+|-----|--------|
+| `j` / Down | Move selection down |
+| `k` / Up | Move selection up |
+| `d` | Dump transcript excerpt (first 20 lines) |
+| `y` | Approve entry (adds `"status": "approved"`) |
+| `n` | Reject entry (removes from queue) |
+| `s` | Skip entry (no change) |
+| `q` | Quit |
+
 ### Trigger Evaluation
 
 **Location:** `skills/parsidion-cc/scripts/run_trigger_eval.py`, `skills/parsidion-cc/scripts/run_trigger_eval.sh` (macOS/Linux), `skills/parsidion-cc/scripts/run_trigger_eval.bat` (Windows)
@@ -950,6 +1008,9 @@ parsidion-cc/
     │   ├── vault_search.py          # Unified search CLI: semantic (QUERY), metadata (--tag/--folder/...), or body search (--grep)
     │   ├── vault_new.py             # CLI to scaffold vault notes from templates (vault-new)
     │   ├── vault_stats.py           # Analytics CLI for vault health and activity (vault-stats)
+    │   ├── vault_export.py          # CLI to export notes as HTML or zip (vault-export)
+    │   ├── vault_merge.py           # CLI to merge two vault notes (vault-merge)
+    │   ├── vault_review.py          # Curses TUI to review pending_summaries.jsonl (vault-review)
     │   ├── html-to-md.py            # HTML → clean markdown (PEP 723; used by research agent)
     │   ├── session_start_hook.py    # SessionStart hook
     │   ├── session_stop_wrapper.sh  # SessionEnd hook wrapper (immediate ack + nohup detach)

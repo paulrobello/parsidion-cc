@@ -83,6 +83,16 @@ agentchrome --version
 agentchrome --help
 ```
 
+### Install the Claude Code Skill
+
+AgentChrome can install a minimal skill file that tells Claude Code what it is and how to discover its capabilities:
+
+```bash
+agentchrome skill install
+```
+
+This auto-detects the active agentic environment. Use `agentchrome skill list` to see all supported tools and their installation status.
+
 ## Key Capabilities
 
 | Feature | Description |
@@ -90,14 +100,18 @@ agentchrome --help
 | **Page text extraction** | Extracts visible text from the rendered page |
 | **DOM HTML extraction** | Retrieves outer HTML of any element after JavaScript execution |
 | **Accessibility tree snapshots** | Returns stable UIDs for reliable element targeting (`page snapshot`) |
-| **Screenshot capture** | Full-page or viewport PNG screenshots |
-| **Form automation** | Fill form fields by UID or CSS selector (`form fill`, `form fill-many`) |
+| **Screenshot capture** | Full-page, viewport, or element PNG/JPEG/WebP screenshots |
+| **Form automation** | Fill, clear, upload, and submit form fields by UID or CSS selector |
 | **JavaScript execution** | Run arbitrary JS in the page context (`js exec`) |
-| **Network monitoring** | Inspect requests and responses |
+| **Console monitoring** | Read and monitor browser console messages (`console read`) |
+| **Network monitoring** | Inspect and intercept requests and responses (`network list`) |
 | **Cookie management** | List, set, delete, and clear browser cookies (`cookie`) |
-| **Device emulation** | Simulate mobile viewports |
-| **Performance tracing** | Capture Core Web Vitals |
-| **Dialog handling** | Auto-accept or dismiss alerts and confirmations |
+| **Tab management** | List, create, close, and activate tabs (`tabs list`) |
+| **Device emulation** | Simulate mobile viewports and network conditions (`emulate set`) |
+| **Performance tracing** | Capture Core Web Vitals (`perf vitals`) |
+| **Dialog handling** | Auto-accept or dismiss alerts and confirmations (`dialog`) |
+| **Skill management** | Install agentchrome skill files for AI coding tools (`skill install`) |
+| **Configuration** | Manage connection config via config file (`config show`) |
 
 ## Usage in Parsidion CC
 
@@ -155,8 +169,12 @@ The `--url` flag is optional but improves link resolution in the markdown output
 agentchrome connect
 agentchrome connect --launch --headless
 
+# Check current connection status
+agentchrome connect --status
+
 # Navigate to a URL
 agentchrome navigate https://example.com
+agentchrome navigate https://example.com --wait-until networkidle
 
 # Extract visible text from the page
 agentchrome page text
@@ -167,18 +185,36 @@ agentchrome dom get-html "css:html"
 # Take a full-page screenshot
 agentchrome page screenshot --full-page --file screenshot.png
 
-# Get accessibility tree (assigns UIDs to elements)
+# Get accessibility tree (assigns UIDs to elements, e.g. s1, s2, s3)
 agentchrome page snapshot
 
 # Interact with an element (requires UID from page snapshot)
-agentchrome interact click <element-uid>
+agentchrome interact click s5
 agentchrome interact type "hello world"
+
+# Fill a form field
+agentchrome form fill s5 "hello@example.com"
 
 # Execute JavaScript
 agentchrome js exec "document.title"
 
-# List available command examples
+# List all open tabs
+agentchrome tabs list
+
+# Read browser console output
+agentchrome console read
+
+# List recent network requests
+agentchrome network list
+
+# Capture Core Web Vitals
+agentchrome perf vitals
+
+# Show built-in usage examples for all commands
 agentchrome examples
+
+# Install the agentchrome skill for the current AI coding tool
+agentchrome skill install
 ```
 
 ## Troubleshooting
@@ -189,7 +225,7 @@ The binary is not on your `PATH`. Either install via `cargo install agentchrome`
 
 ### Chrome not found
 
-AgentChrome looks for Chrome or Chromium in standard installation paths. If you use a non-standard location, check the agentchrome `--help` output for a `--browser-path` flag or equivalent configuration.
+AgentChrome looks for Chrome or Chromium in standard installation paths. If you use a non-standard location, check `agentchrome connect --help` for the `--channel` flag or set the path via config (`agentchrome config show`).
 
 ### Falls back to curl in the research agent
 
@@ -217,4 +253,5 @@ If agentchrome cannot connect to Chrome, ensure:
 
 - [docs/ARCHITECTURE.md](ARCHITECTURE.md) — System architecture, including the research agent that uses agentchrome
 - [docs/MCPL.md](MCPL.md) — MCP Launchpad CLI: alternative search tools used alongside agentchrome
+- [docs/MCP.md](MCP.md) — MCP server configuration and available tools
 - [README.md](../README.md) — Project overview and prerequisites

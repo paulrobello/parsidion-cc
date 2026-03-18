@@ -289,7 +289,7 @@ By default it produces a compact one-line-per-note index (title, folder, tags) t
 3. Merge both sets, deduplicating by path (project notes appear first)
 4. Format as compact index (default) or full summaries (verbose)
 
-The compact index is truncated at 4000 characters with a "N more notes" indicator.
+The compact index is truncated at 2000 characters with a "N more notes" indicator.
 
 #### Parameters
 
@@ -391,7 +391,7 @@ The server has no authentication layer of its own because it is transport-bound 
 ### Running Tests
 
 ```bash
-cd /Users/probello/Repos/parsidion-cc/parsidion-mcp
+cd parsidion-mcp/
 uv run pytest
 ```
 
@@ -405,7 +405,7 @@ The test suite covers:
 ### Checkall
 
 ```bash
-cd /Users/probello/Repos/parsidion-cc/parsidion-mcp
+cd parsidion-mcp/
 make checkall
 ```
 
@@ -432,5 +432,4 @@ The `parsidion-cc[search]` editable path dependency (declared in `pyproject.toml
 
 ## Related Documentation
 
-- [parsidion-mcp Design Spec](superpowers/specs/2026-03-16-parsidion-mcp-design.md) — approved design specification covering architecture decisions, error handling contracts, and testing strategy
 - [CLAUDE.md](../CLAUDE.md) — project instructions, vault conventions, hook architecture, and script paths
