@@ -181,9 +181,12 @@ def _read_transcript_excerpt(entry: dict, n: int = _EXCERPT_LINES) -> list[str]:
                         raw_content = obj.get("content", "")
                     text = vault_common.extract_text_from_content(raw_content)
                     if text:
-                        lines.append(text[:200])
-                        if len(lines) >= n:
-                            break
+                        for sub in text.splitlines():
+                            lines.append(sub[:200])
+                            if len(lines) >= n:
+                                break
+                    if len(lines) >= n:
+                        break
     except OSError as exc:
         return [f"(error reading transcript: {exc})"]
     return lines if lines else ["(no readable content in transcript)"]
