@@ -74,6 +74,10 @@ uv run install.py --dry-run
 
 # Also install vault-search as a global CLI command
 uv run install.py --force --yes --install-tools
+
+# Schedule nightly auto-summarization (launchd on macOS, cron on Linux)
+uv run install.py --schedule-summarizer
+uv run install.py --schedule-summarizer --summarizer-hour 3   # run at 3 AM instead of default
 ```
 
 **Options:**
@@ -89,12 +93,14 @@ uv run install.py --force --yes --install-tools
 | `--skip-hooks` | Do not modify `settings.json` |
 | `--skip-agent` | Do not install any agents |
 | `--enable-ai` | Enable AI-powered note selection: writes `ai_model` to `config.yaml` and sets SessionStart timeout to 30 s |
-| `--install-tools` | Install `vault-search`, `vault-new`, and `vault-stats` as global CLI commands via `uv tool install` |
-| `--uninstall` | Remove installed skill, agents, and hook registrations |
+| `--install-tools` | Install `vault-search`, `vault-new`, `vault-stats`, `vault-review`, `vault-export`, and `vault-merge` as global CLI commands via `uv tool install` |
+| `--schedule-summarizer` | Generate a launchd plist (macOS) or cron job (Linux) for nightly auto-summarization |
+| `--summarizer-hour N` | Hour (0-23) for the scheduled summarizer job (default: 2) |
+| `--uninstall` | Remove installed skill, agents, hook registrations, and launchd plist / cron job |
 
 During interactive installation, the installer prompts for two optional features:
 
-1. **"Install CLI tools?"** (default: yes) — runs `uv tool install --editable ".[tools]"` to register `vault-search`, `vault-new`, and `vault-stats` as global commands. Use `--install-tools` to enable this non-interactively (e.g. with `--yes`).
+1. **"Install CLI tools?"** (default: yes) — runs `uv tool install --editable ".[tools]"` to register `vault-search`, `vault-new`, `vault-stats`, `vault-review`, `vault-export`, and `vault-merge` as global commands. Use `--install-tools` to enable this non-interactively (e.g. with `--yes`).
 2. **"Enable AI-powered note selection?"** (default: no) — writes `ai_model` to `config.yaml` and sets the SessionStart hook timeout to 30 s, enabling claude-haiku to intelligently select relevant vault notes at session start. Use `--enable-ai` to enable this non-interactively (e.g. with `--yes`).
 
 After installation, restart Claude Code to activate hooks. Optionally, open the vault path in Obsidian for graph visualization and note browsing -- this is not required for the system to work.
@@ -120,9 +126,12 @@ A markdown vault-based knowledge management system that replaces Claude Code's b
 | `pre_compact_hook.py` | PreCompact hook -- snapshots working state before compaction |
 | `post_compact_hook.py` | PostCompact hook -- reads today's daily note, finds the last `## Pre-Compact Snapshot`, and returns it as `additionalContext` to restore context after compaction |
 | `build_embeddings.py` | Builds the semantic search embeddings database (`embeddings.db`) using fastembed and sqlite-vec |
-| `vault_search.py` | Unified search CLI -- semantic mode (natural language query), metadata mode (`--tag`/`--folder`/`--type`/`--project`/`--recent-days`), or full-text body search (`--grep`/`-G`); available as `vault-search` global command with `--install-tools` |
+| `vault_search.py` | Unified search CLI -- semantic mode (natural language query), metadata mode (`--tag`/`--folder`/`--type`/`--project`/`--recent-days`), full-text body search (`--grep`/`-G`), or interactive curses TUI (`--interactive`/`-i`); available as `vault-search` global command with `--install-tools` |
 | `vault_new.py` | CLI to scaffold new vault notes from templates -- `vault-new --type pattern --title "My Note" --project myproj --tags python,vault --open`; available as `vault-new` global command with `--install-tools` |
-| `vault_stats.py` | Analytics CLI for vault health and activity -- modes: `--summary`, `--stale`, `--top-linked`, `--by-project`, `--growth`, `--tags` (tag cloud), `--dashboard` (all modes combined); available as `vault-stats` global command with `--install-tools` |
+| `vault_stats.py` | Analytics CLI for vault health and activity -- modes: `--summary`, `--stale`, `--top-linked`, `--by-project`, `--growth`, `--tags` (tag cloud), `--pending` (pending queue status), `--graph` (knowledge graph metrics), `--hooks N` (last N hook events), `--weekly` (weekly rollup note), `--monthly` (monthly rollup note), `--timeline N` (activity bar chart for last N days), `--summarizer-progress` (live summarizer status), `--dashboard` (all modes combined); available as `vault-stats` global command with `--install-tools` |
+| `vault_review.py` | Interactive TUI for inspecting and approving/rejecting pending sessions before AI summarization; available as `vault-review` global command |
+| `vault_export.py` | Export vault to HTML static site, filtered zip, or PDF via pandoc; available as `vault-export` global command |
+| `vault_merge.py` | AI-assisted merging of near-duplicate notes with automatic backlink updates; available as `vault-merge` global command |
 | `update_index.py` | Rebuilds `~/ClaudeVault/CLAUDE.md` index and populates the `note_index` SQLite table; includes tag cloud and vault health from `doctor_state.json` |
 | `vault_doctor.py` | Scans vault notes for structural issues (missing frontmatter, broken wikilinks, orphan notes, etc.); auto-repairs broken wikilinks via exact stem match or `vault-search` semantic lookup (Python-only, no Claude call); repairs other issues via Claude haiku with semantic candidates from `vault-search`; singleton-guarded via PID in `doctor_state.json`; auto-commits uncommitted vault files ≥ 15 min old before scanning |
 | `check_graph_coverage.py` | Audits vault tags vs graph.json color groups; shows uncovered tags and stale entries |
@@ -143,6 +152,7 @@ A markdown vault-based knowledge management system that replaces Claude Code's b
   config.yaml                # Optional -- hook/summarizer settings (see Configuration)
   pending_summaries.jsonl    # Queue of sessions awaiting AI summarization
   embeddings.db              # SQLite database: note embeddings + note_index metadata table
+  hook_events.log            # Structured JSON log of hook executions (SessionStart/End/SubagentStop/PreCompact)
   Daily/YYYY-MM/DD.md        # Session summaries (e.g. Daily/2026-03/13.md)
   Projects/                  # Per-project context
   Languages/                 # Language-specific knowledge
@@ -289,11 +299,13 @@ session_start_hook:
   debug: false             # Append injected context to debug log in $TMPDIR
   verbose_mode: false      # If true, inject full note summaries instead of compact one-line index
   use_embeddings: true     # Blend semantic search results into context injection
+  track_delta: true        # Show "Since last time" delta of new/modified notes per project
 
 session_stop_hook:
   ai_model: null           # Model for AI classification (null = disabled)
   ai_timeout: 25           # AI call timeout in seconds
   auto_summarize: true     # Auto-launch summarizer when pending entries exist
+  auto_summarize_after: 1  # Queue size threshold before auto-launching summarizer
 
 subagent_stop_hook:
   enabled: true            # Enable/disable subagent transcript capture
@@ -323,6 +335,14 @@ embeddings:
 
 git:
   auto_commit: true        # Auto-commit vault changes after writes
+
+event_log:
+  enabled: true            # Write structured JSON events to hook_events.log
+  max_lines: 10000         # Rotate log after this many lines
+
+adaptive_context:
+  enabled: false           # Track which injected notes were referenced; derank unused ones
+  decay_days: 30           # Half-life in days for deranking unreferenced notes
 ```
 
 ## Vault Git Integration
@@ -356,6 +376,7 @@ If no `.git` directory is present, all git operations are silent no-ops.
 ~/ClaudeVault/                       # Markdown vault (knowledge base; open in Obsidian for graph view)
   config.yaml                        # Optional hook/summarizer settings
   embeddings.db                      # Semantic search DB (note_embeddings + note_index tables)
+  hook_events.log                    # Structured JSON log of hook executions
 ```
 
 ## Usage
@@ -388,6 +409,10 @@ vault-search -p parsidion-cc -k debugging             # by project and type
 vault-search --grep "dedup_threshold"                 # case-insensitive body search
 vault-search --grep "FLOCK" --grep-case               # case-sensitive body search
 vault-search --grep "pattern" -f Patterns             # combine with metadata filters
+
+# Interactive curses TUI (real-time results, navigation, editor integration)
+vault-search --interactive
+vault-search -i
 
 # Environment variables (override config.yaml defaults)
 VAULT_SEARCH_FORMAT=rich vault-search "query"
@@ -422,13 +447,38 @@ vault-new --help
 
 **Vault analytics and health:**
 ```bash
-vault-stats --summary          # note counts, growth, top tags
-vault-stats --stale            # notes with no incoming links, older than 30 days
-vault-stats --top-linked       # most-referenced notes
-vault-stats --by-project       # note counts per project
-vault-stats --growth           # notes added per week
-vault-stats --tags             # tag frequency cloud
-vault-stats --dashboard        # full combined dashboard (all modes)
+vault-stats --summary              # note counts, growth, top tags
+vault-stats --stale                # notes with no incoming links, older than 30 days
+vault-stats --top-linked           # most-referenced notes
+vault-stats --by-project           # note counts per project
+vault-stats --growth               # notes added per week
+vault-stats --tags                 # tag frequency cloud
+vault-stats --pending              # pending queue status: count, sources, oldest entry, estimated cost
+vault-stats --graph                # knowledge graph metrics: avg degree, hubs, isolated clusters, orphans
+vault-stats --hooks 50             # last 50 hook events from hook_events.log
+vault-stats --weekly               # generate weekly rollup note from daily notes
+vault-stats --monthly              # generate monthly rollup note from daily notes
+vault-stats --timeline 90          # activity bar chart for last 90 days
+vault-stats --summarizer-progress  # live feedback from running summarize_sessions.py
+vault-stats --dashboard            # full combined dashboard (all modes)
+```
+
+**Review and approve pending sessions before summarization:**
+```bash
+vault-review                       # interactive TUI: inspect sessions, approve (y) / reject (n) / skip (s)
+summarize_sessions.py --approved-only  # only process sessions approved by vault-review
+```
+
+**Export vault:**
+```bash
+vault-export --html ~/vault-site   # export to HTML static site
+vault-export --zip ~/vault.zip     # export filtered subset as zip
+vault-export --pdf ~/vault.pdf     # export via pandoc to PDF
+```
+
+**Merge near-duplicate notes:**
+```bash
+vault-merge                        # AI-assisted: detect and merge near-duplicate notes, update backlinks
 ```
 
 **Summarize queued sessions** (generates structured vault notes via Claude Agent SDK):
@@ -459,6 +509,12 @@ uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --erro
 
 # Ignore state file, rescan everything
 uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --no-state --dry-run
+
+# Detect 3+ prefix clusters and show candidates for subfolder migration
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migrate-subfolders
+
+# Preview + execute: move files and update all wikilinks
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migrate-subfolders --execute
 ```
 
 The doctor is singleton-guarded -- it stores its PID in `doctor_state.json` and exits if another instance is already running. Before scanning it auto-commits any uncommitted vault files whose mtime is ≥ 15 minutes old. Notes that time out twice are flagged `needs_review` and skipped on future runs. The vault health summary appears in `CLAUDE.md` after running `update_index.py`.
