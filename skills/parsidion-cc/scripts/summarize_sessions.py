@@ -57,6 +57,57 @@ _funlock = vault_common.funlock
 _DEFAULT_MODEL: str = vault_common.get_config(
     "defaults", "sonnet_model", "claude-sonnet-4-6"
 )
+
+# Progress tracking (#13)
+_PROGRESS_FILE = Path("/tmp/parsidion-cc-summarizer-progress.json")
+
+
+def _write_progress(
+    total: int,
+    processed: int,
+    written: int,
+    skipped: int,
+    errors: int,
+    current: str = "",
+) -> None:
+    """Write current summarizer progress to a temp file for vault-stats --summarizer-progress.
+
+    Best-effort — never raises.
+
+    Args:
+        total: Total sessions to process.
+        processed: Sessions completed (written + skipped + errors).
+        written: Notes actually written.
+        skipped: Sessions skipped by write-gate.
+        errors: Sessions that failed.
+        current: Short description of session currently being processed.
+    """
+    try:
+        data = {
+            "total": total,
+            "processed": processed,
+            "written": written,
+            "skipped": skipped,
+            "errors": errors,
+            "current": current,
+            "ts": datetime.now().isoformat(timespec="seconds"),
+        }
+        _PROGRESS_FILE.write_text(json.dumps(data) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _clear_progress() -> None:
+    """Remove the progress file when the summarizer finishes.
+
+    Best-effort — never raises.
+    """
+    try:
+        _PROGRESS_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 _DEFAULT_CLUSTER_MODEL: str = vault_common.get_config(
     "defaults", "haiku_model", "claude-haiku-4-5-20251001"
 )
@@ -960,9 +1011,33 @@ async def run_all(
     semantic_tags = [t for t in existing_tags if t not in project_names]
     semaphore = anyio.Semaphore(max_parallel)
     results: list[tuple[dict[str, object], Path | None]] = []
+    total = len(entries)
+
+    # Initialize progress (#13)
+    _write_progress(total=total, processed=0, written=0, skipped=0, errors=0)
+
+    # Counters for progress tracking (shared across async tasks via list trick)
+    _progress_counters: list[int] = [
+        0,
+        0,
+        0,
+        0,
+    ]  # [processed, written, skipped, errors]
 
     async def _run_one(entry: dict[str, object]) -> None:
         """Wrapper that collects the result of summarize_one into *results*."""
+        project = str(entry.get("project", "?"))
+        session_id = str(entry.get("session_id", ""))[:8]
+        current = f"{project} [{session_id}]"
+        _write_progress(
+            total=total,
+            processed=_progress_counters[0],
+            written=_progress_counters[1],
+            skipped=_progress_counters[2],
+            errors=_progress_counters[3],
+            current=current,
+        )
+
         result = await summarize_one(
             entry,
             model,
@@ -976,6 +1051,19 @@ async def run_all(
             vault_notes=vault_notes,
         )
         results.append(result)
+        _progress_counters[0] += 1  # processed
+        _, written_path = result
+        if written_path is not None:
+            _progress_counters[1] += 1  # written
+        else:
+            _progress_counters[2] += 1  # skipped/error (approximation)
+        _write_progress(
+            total=total,
+            processed=_progress_counters[0],
+            written=_progress_counters[1],
+            skipped=_progress_counters[2],
+            errors=_progress_counters[3],
+        )
 
     async with anyio.create_task_group() as tg:
         for entry in entries:
@@ -1205,6 +1293,7 @@ def main() -> None:
     if failed_count:
         summary_parts.append(f"{failed_count} failed")
     print(f"Done. {len(entries)} session(s) processed: {', '.join(summary_parts)}.")
+    _clear_progress()  # Remove progress file when done (#13)
 
 
 if __name__ == "__main__":

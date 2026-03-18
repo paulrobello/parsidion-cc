@@ -8,13 +8,20 @@
 """vault-stats — analytics over the Claude Vault note_index database.
 
 Modes (mutually exclusive; default is --summary):
-    --summary        Count notes by folder and type
-    --stale          List stale notes (is_stale = 1)
-    --top-linked N   Top N most-linked notes (default: 10)
-    --by-project     Count notes per project
-    --growth N       Notes created per week for the last N weeks (default: 8)
-    --tags           Show tag cloud (top 30 most-used tags)
-    --dashboard      Full-page analytics dashboard (combines all views)
+    --summary              Count notes by folder and type
+    --stale                List stale notes (is_stale = 1)
+    --top-linked N         Top N most-linked notes (default: 10)
+    --by-project           Count notes per project
+    --growth N             Notes created per week for the last N weeks (default: 8)
+    --tags                 Show tag cloud (top 30 most-used tags)
+    --dashboard            Full-page analytics dashboard (combines all views)
+    --pending              Show pending_summaries.jsonl queue stats
+    --graph                Knowledge graph analytics (hubs, isolated, ratios)
+    --hooks N              Show last N hook events from hook_events.log (default: 20)
+    --weekly               Generate/preview weekly rollup note for current ISO week
+    --monthly              Generate/preview monthly rollup note for current month
+    --timeline N           Bar chart of notes created per day for last N days (default: 30)
+    --summarizer-progress  Show current summarizer progress from /tmp
 
 All modes read from ~/ClaudeVault/embeddings.db (note_index table).
 Falls back to a plain-text walk when the DB is absent.
@@ -467,6 +474,589 @@ def run_dashboard(conn: sqlite3.Connection) -> None:
     _CONSOLE.print()
 
 
+def run_pending() -> None:
+    """Print a summary of pending_summaries.jsonl queue.
+
+    Shows total entries queued, breakdown by source (session vs subagent),
+    projects with pending summaries, oldest pending entry timestamp, and a
+    rough token estimate (100 tokens per entry as proxy).
+    """
+    pending_path = vault_common.VAULT_ROOT / "pending_summaries.jsonl"
+    if not pending_path.exists():
+        _CONSOLE.print("[dim]No pending_summaries.jsonl found — queue is empty.[/dim]")
+        return
+
+    entries: list[dict] = []
+    try:
+        with open(pending_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+    except OSError as exc:
+        _CONSOLE.print(f"[red]Cannot read pending_summaries.jsonl: {exc}[/red]")
+        return
+
+    if not entries:
+        _CONSOLE.print("[green]Queue is empty (0 entries).[/green]")
+        return
+
+    total = len(entries)
+    # Source breakdown
+    source_counts: dict[str, int] = {}
+    project_counts: dict[str, int] = {}
+    oldest_ts: str | None = None
+
+    for entry in entries:
+        src = entry.get("source", "session")
+        source_counts[src] = source_counts.get(src, 0) + 1
+        project = entry.get("project", "")
+        if project:
+            project_counts[project] = project_counts.get(project, 0) + 1
+        ts = entry.get("timestamp", "")
+        if ts and (oldest_ts is None or ts < oldest_ts):
+            oldest_ts = ts
+
+    token_estimate = total * 100
+
+    _CONSOLE.print(
+        f"\n[bold cyan]Pending Summaries Queue[/bold cyan] — {total} entries "
+        f"(~{token_estimate:,} tokens estimated)\n"
+    )
+
+    # Source breakdown table
+    src_table = Table(title="By Source", box=box.SIMPLE_HEAD, show_lines=False)
+    src_table.add_column("Source", style="cyan")
+    src_table.add_column("Count", justify="right", style="white")
+    for src, count in sorted(source_counts.items(), key=lambda x: -x[1]):
+        src_table.add_row(src, str(count))
+    _CONSOLE.print(src_table)
+
+    # Projects table
+    if project_counts:
+        _CONSOLE.print()
+        proj_table = Table(title="By Project", box=box.SIMPLE_HEAD, show_lines=False)
+        proj_table.add_column("Project", style="cyan")
+        proj_table.add_column("Count", justify="right", style="white")
+        for proj, count in sorted(project_counts.items(), key=lambda x: -x[1]):
+            proj_table.add_row(proj, str(count))
+        _CONSOLE.print(proj_table)
+
+    if oldest_ts:
+        _CONSOLE.print(f"\n  [dim]Oldest entry:[/dim] {oldest_ts}")
+    _CONSOLE.print()
+
+
+def run_graph(conn: sqlite3.Connection) -> None:
+    """Print knowledge graph analytics from the note_index.
+
+    Shows average incoming_links per note, hub notes (incoming_links >= 5),
+    isolated notes (zero incoming_links AND empty related field), and the
+    total linked vs unlinked ratio.
+
+    Args:
+        conn: Open DB connection.
+    """
+    all_rows = _fetch_all(
+        conn,
+        "SELECT stem, title, folder, incoming_links, related FROM note_index",
+    )
+    if not all_rows:
+        _CONSOLE.print("[dim]No notes in index.[/dim]")
+        return
+
+    total = len(all_rows)
+    total_links = sum(r["incoming_links"] or 0 for r in all_rows)
+    avg_links = total_links / total if total else 0.0
+
+    linked_count = sum(1 for r in all_rows if (r["incoming_links"] or 0) > 0)
+    unlinked_count = total - linked_count
+
+    hub_rows = [r for r in all_rows if (r["incoming_links"] or 0) >= 5]
+    hub_rows.sort(key=lambda r: -(r["incoming_links"] or 0))
+    hub_rows = hub_rows[:10]
+
+    isolated_rows = [
+        r
+        for r in all_rows
+        if (r["incoming_links"] or 0) == 0 and not (r["related"] or "").strip()
+    ]
+
+    _CONSOLE.print("\n[bold cyan]Knowledge Graph Analytics[/bold cyan]\n")
+    _CONSOLE.print(
+        f"  Total notes: [white]{total}[/white]  ·  "
+        f"Avg incoming links: [white]{avg_links:.2f}[/white]  ·  "
+        f"Linked: [green]{linked_count}[/green]  ·  "
+        f"Unlinked: [yellow]{unlinked_count}[/yellow]\n"
+    )
+
+    # Hub notes
+    if hub_rows:
+        hub_table = Table(
+            title="Hub Notes (≥5 incoming links, top 10)",
+            box=box.SIMPLE_HEAD,
+            show_lines=False,
+        )
+        hub_table.add_column("Note", style="cyan")
+        hub_table.add_column("Title", style="white")
+        hub_table.add_column("Folder", style="dim")
+        hub_table.add_column("Incoming", justify="right", style="green")
+        for row in hub_rows:
+            hub_table.add_row(
+                f"[[{row['stem']}]]",
+                (row["title"] or row["stem"])[:45],
+                row["folder"] or "(root)",
+                str(row["incoming_links"]),
+            )
+        _CONSOLE.print(hub_table)
+    else:
+        _CONSOLE.print("[dim]No hub notes (none with ≥5 incoming links).[/dim]")
+
+    _CONSOLE.print()
+
+    # Isolated notes
+    if isolated_rows:
+        iso_table = Table(
+            title=f"Isolated Notes ({len(isolated_rows)} total — no incoming links, no related)",
+            box=box.SIMPLE_HEAD,
+            show_lines=False,
+        )
+        iso_table.add_column("Note", style="yellow")
+        iso_table.add_column("Folder", style="dim")
+        for row in isolated_rows[:20]:
+            iso_table.add_row(f"[[{row['stem']}]]", row["folder"] or "(root)")
+        if len(isolated_rows) > 20:
+            iso_table.add_row(f"[dim]… and {len(isolated_rows) - 20} more[/dim]", "")
+        _CONSOLE.print(iso_table)
+    else:
+        _CONSOLE.print("[green]No isolated notes found.[/green]")
+
+    _CONSOLE.print()
+
+
+def run_hooks(last_n: int = 20) -> None:
+    """Print the last N events from hook_events.log.
+
+    Each line is a JSON object with: hook, ts, project, duration_ms, plus
+    optional extra fields.
+
+    Args:
+        last_n: Number of most-recent events to show.
+    """
+    log_path = vault_common.VAULT_ROOT / "hook_events.log"
+    if not log_path.exists():
+        _CONSOLE.print("[dim]No hook_events.log found.[/dim]")
+        return
+
+    events: list[dict] = []
+    try:
+        with open(log_path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    try:
+                        events.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+    except OSError as exc:
+        _CONSOLE.print(f"[red]Cannot read hook_events.log: {exc}[/red]")
+        return
+
+    if not events:
+        _CONSOLE.print("[dim]hook_events.log is empty.[/dim]")
+        return
+
+    recent = events[-last_n:]
+
+    _CONSOLE.print(
+        f"\n[bold cyan]Hook Events[/bold cyan] — last {len(recent)} of {len(events)} total\n"
+    )
+    t = Table(box=box.SIMPLE_HEAD, show_lines=False)
+    t.add_column("Timestamp", style="dim")
+    t.add_column("Hook", style="cyan")
+    t.add_column("Project", style="white")
+    t.add_column("ms", justify="right", style="green")
+    t.add_column("Extra", style="dim")
+
+    _KNOWN_FIELDS = {"hook", "ts", "project", "duration_ms"}
+    for event in recent:
+        ts = event.get("ts", "")
+        hook = event.get("hook", "")
+        project = event.get("project", "") or ""
+        duration_ms = event.get("duration_ms")
+        dur_str = str(duration_ms) if duration_ms is not None else ""
+        extra_items = {k: v for k, v in event.items() if k not in _KNOWN_FIELDS}
+        extra_str = "  ".join(f"{k}={v}" for k, v in list(extra_items.items())[:3])
+        t.add_row(ts, hook, project[:30], dur_str, extra_str[:60])
+
+    _CONSOLE.print(t)
+
+
+def run_weekly(conn: sqlite3.Connection | None, dry_run: bool = False) -> None:
+    """Generate or preview a weekly rollup note for the current ISO week.
+
+    Reads all daily notes from the current week's directory, extracts
+    ## Sessions sections, and writes a ``Daily/YYYY-MM/week-NN.md`` summary
+    note with project activity, categories mentioned, and links to daily notes.
+
+    Args:
+        conn: Open DB connection (unused currently, reserved for future use).
+        dry_run: If True, print the note content without writing it.
+    """
+    from datetime import date, timedelta
+
+    today = date.today()
+    iso_year, iso_week, iso_weekday = today.isocalendar()
+    # Monday of this ISO week
+    monday = today - timedelta(days=iso_weekday - 1)
+    sunday = monday + timedelta(days=6)
+
+    month_dir = (
+        vault_common.VAULT_ROOT / "Daily" / f"{today.year:04d}-{today.month:02d}"
+    )
+
+    # Collect daily note paths for this week
+    daily_paths: list[Path] = []
+    for delta in range(7):
+        day = monday + timedelta(days=delta)
+        # Daily notes live in their own month directory
+        day_month_dir = (
+            vault_common.VAULT_ROOT / "Daily" / f"{day.year:04d}-{day.month:02d}"
+        )
+        day_path = day_month_dir / f"{day.day:02d}.md"
+        if day_path.exists():
+            daily_paths.append(day_path)
+
+    if not daily_paths:
+        _CONSOLE.print(
+            f"[yellow]No daily notes found for week {iso_week} "
+            f"({monday} – {sunday}).[/yellow]"
+        )
+        return
+
+    # Parse each daily note
+    projects_seen: set[str] = set()
+    categories_seen: set[str] = set()
+    session_lines: list[str] = []
+    links_to_daily: list[str] = []
+
+    for dp in sorted(daily_paths):
+        try:
+            text = dp.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        # Derive wikilink stem: e.g. Daily/2026-03/17 → "17" (relative stem)
+        links_to_daily.append(f"[[{dp.stem}]]")
+
+        in_sessions = False
+        for line in text.splitlines():
+            if line.startswith("## Sessions"):
+                in_sessions = True
+                continue
+            if in_sessions and line.startswith("## "):
+                in_sessions = False
+            if in_sessions:
+                session_lines.append(line)
+            # Look for project mentions
+            if "project:" in line.lower():
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    val = parts[1].strip()
+                    if val and val not in {"", "null"}:
+                        projects_seen.add(val)
+            # Look for category mentions
+            if "categor" in line.lower():
+                import re
+
+                found = re.findall(r"\b[a-zA-Z][\w-]+\b", line)
+                categories_seen.update(found)
+
+    # Build note content
+    week_label = f"Week {iso_week:02d} ({monday.strftime('%b %d')} – {sunday.strftime('%b %d, %Y')})"
+    today_str = today.strftime("%Y-%m-%d")
+
+    related_field = ", ".join(f'"{lnk}"' for lnk in links_to_daily)
+    projects_list = (
+        "\n".join(f"- {p}" for p in sorted(projects_seen)) or "- (none recorded)"
+    )
+    categories_list = ", ".join(sorted(categories_seen)[:20]) or "(none recorded)"
+    daily_links_str = "\n".join(f"- {lnk}" for lnk in links_to_daily)
+    sessions_excerpt = (
+        "\n".join(session_lines[:40]).strip() or "(no sessions content found)"
+    )
+
+    content = f"""---
+date: {today_str}
+type: daily
+tags: [weekly-rollup]
+related: [{related_field}]
+---
+
+# {week_label}
+
+## Projects Active This Week
+{projects_list}
+
+## Categories
+{categories_list}
+
+## Sessions Excerpt
+{sessions_excerpt}
+
+## Daily Notes
+{daily_links_str}
+"""
+
+    output_path = month_dir / f"week-{iso_week:02d}.md"
+
+    if dry_run:
+        _CONSOLE.print(
+            f"\n[bold cyan]Weekly Rollup (dry run)[/bold cyan] — would write to:\n"
+            f"  [dim]{output_path}[/dim]\n"
+        )
+        _CONSOLE.print(content)
+        return
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(content, encoding="utf-8")
+    _CONSOLE.print(
+        f"\n[green]Weekly rollup written:[/green] {output_path}\n"
+        f"  Covered {len(daily_paths)} daily notes, "
+        f"{len(projects_seen)} project(s), "
+        f"{len(links_to_daily)} day link(s).\n"
+    )
+
+
+def run_monthly(conn: sqlite3.Connection | None, dry_run: bool = False) -> None:
+    """Generate or preview a monthly rollup note for the current month.
+
+    Reads all daily notes from the current month's directory, extracts
+    ## Sessions sections, and writes ``Daily/YYYY-MM/monthly.md``.
+
+    Args:
+        conn: Open DB connection (unused currently, reserved for future use).
+        dry_run: If True, print the note content without writing it.
+    """
+    from datetime import date
+    import calendar
+
+    today = date.today()
+    month_dir = (
+        vault_common.VAULT_ROOT / "Daily" / f"{today.year:04d}-{today.month:02d}"
+    )
+
+    # Collect all daily note files in this month's directory
+    daily_paths: list[Path] = []
+    if month_dir.exists():
+        for dp in sorted(month_dir.glob("[0-9][0-9].md")):
+            daily_paths.append(dp)
+
+    if not daily_paths:
+        _CONSOLE.print(
+            f"[yellow]No daily notes found for "
+            f"{today.strftime('%B %Y')} in {month_dir}.[/yellow]"
+        )
+        return
+
+    # Parse each daily note
+    projects_seen: set[str] = set()
+    categories_seen: set[str] = set()
+    session_lines: list[str] = []
+    links_to_daily: list[str] = []
+
+    for dp in daily_paths:
+        try:
+            text = dp.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        links_to_daily.append(f"[[{dp.stem}]]")
+
+        in_sessions = False
+        for line in text.splitlines():
+            if line.startswith("## Sessions"):
+                in_sessions = True
+                continue
+            if in_sessions and line.startswith("## "):
+                in_sessions = False
+            if in_sessions:
+                session_lines.append(line)
+            if "project:" in line.lower():
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    val = parts[1].strip()
+                    if val and val not in {"", "null"}:
+                        projects_seen.add(val)
+            if "categor" in line.lower():
+                import re
+
+                found = re.findall(r"\b[a-zA-Z][\w-]+\b", line)
+                categories_seen.update(found)
+
+    _, days_in_month = calendar.monthrange(today.year, today.month)
+    month_label = today.strftime("%B %Y")
+    today_str = today.strftime("%Y-%m-%d")
+
+    related_field = ", ".join(f'"{lnk}"' for lnk in links_to_daily)
+    projects_list = (
+        "\n".join(f"- {p}" for p in sorted(projects_seen)) or "- (none recorded)"
+    )
+    categories_list = ", ".join(sorted(categories_seen)[:30]) or "(none recorded)"
+    daily_links_str = "\n".join(f"- {lnk}" for lnk in links_to_daily)
+    sessions_excerpt = (
+        "\n".join(session_lines[:60]).strip() or "(no sessions content found)"
+    )
+
+    content = f"""---
+date: {today_str}
+type: daily
+tags: [monthly-rollup]
+related: [{related_field}]
+---
+
+# {month_label} — Monthly Rollup
+
+## Projects Active This Month
+{projects_list}
+
+## Categories
+{categories_list}
+
+## Sessions Excerpt
+{sessions_excerpt}
+
+## Daily Notes ({len(daily_paths)} of {days_in_month} days covered)
+{daily_links_str}
+"""
+
+    output_path = month_dir / "monthly.md"
+
+    if dry_run:
+        _CONSOLE.print(
+            f"\n[bold cyan]Monthly Rollup (dry run)[/bold cyan] — would write to:\n"
+            f"  [dim]{output_path}[/dim]\n"
+        )
+        _CONSOLE.print(content)
+        return
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(content, encoding="utf-8")
+    _CONSOLE.print(
+        f"\n[green]Monthly rollup written:[/green] {output_path}\n"
+        f"  Covered {len(daily_paths)} daily notes, "
+        f"{len(projects_seen)} project(s).\n"
+    )
+
+
+def run_timeline(conn: sqlite3.Connection | None, days: int = 30) -> None:
+    """Print a bar chart of notes created per day for the last N days.
+
+    Uses mtime from note_index. Falls back to a file walk if DB is absent.
+
+    Args:
+        conn: Open DB connection, or None for file-walk fallback.
+        days: Number of days to display (default: 30).
+    """
+    from datetime import date, timedelta
+
+    today = date.today()
+    now_ts = time.time()
+    day_secs = 24 * 3600
+    cutoff_ts = now_ts - days * day_secs
+
+    # Build per-day counts
+    day_counts: dict[int, int] = {i: 0 for i in range(days)}
+
+    if conn is not None:
+        rows = _fetch_all(
+            conn,
+            "SELECT mtime FROM note_index WHERE mtime >= ?",
+            (cutoff_ts,),
+        )
+        for row in rows:
+            age_days = int((now_ts - row["mtime"]) / day_secs)
+            age_days = min(age_days, days - 1)
+            day_counts[age_days] = day_counts.get(age_days, 0) + 1
+    else:
+        vault_root = vault_common.VAULT_ROOT
+        if vault_root.exists():
+            for md in vault_root.rglob("*.md"):
+                try:
+                    mtime = md.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime < cutoff_ts:
+                    continue
+                age_days = int((now_ts - mtime) / day_secs)
+                age_days = min(age_days, days - 1)
+                day_counts[age_days] = day_counts.get(age_days, 0) + 1
+
+    _CONSOLE.print(f"\n[bold cyan]Note Timeline[/bold cyan] — last {days} days\n")
+    t = Table(box=box.SIMPLE_HEAD, show_lines=False)
+    t.add_column("Date", style="dim")
+    t.add_column("Count", justify="right", style="white")
+    t.add_column("Bar", style="green")
+
+    max_count = max(day_counts.values()) if day_counts else 1
+    max_count = max(max_count, 1)
+
+    for d in range(days - 1, -1, -1):
+        day_date = today - timedelta(days=d)
+        n = day_counts.get(d, 0)
+        label = day_date.strftime("%Y-%m-%d")
+        if d == 0:
+            label += " [dim](today)[/dim]"
+        bar = "▄" * max(0, int(n / max_count * 24)) if n else ""
+        t.add_row(label, str(n) if n else "[dim]0[/dim]", bar)
+
+    _CONSOLE.print(t)
+
+
+def run_summarizer_progress() -> None:
+    """Print current summarizer progress from /tmp/parsidion-cc-summarizer-progress.json.
+
+    Shows: total, processed, written, skipped, errors, current.
+    If the file is absent, reports that no summarizer is currently running.
+    """
+    progress_path = Path("/tmp/parsidion-cc-summarizer-progress.json")
+    if not progress_path.exists():
+        _CONSOLE.print("[dim]No summarizer currently running.[/dim]")
+        return
+
+    try:
+        data = json.loads(progress_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _CONSOLE.print(f"[red]Cannot read progress file: {exc}[/red]")
+        return
+
+    total = data.get("total", 0)
+    processed = data.get("processed", 0)
+    written = data.get("written", 0)
+    skipped = data.get("skipped", 0)
+    errors = data.get("errors", 0)
+    current = data.get("current", "")
+
+    pct = f"{processed / total * 100:.1f}%" if total else "—"
+
+    _CONSOLE.print("\n[bold cyan]Summarizer Progress[/bold cyan]\n")
+    t = Table(box=box.SIMPLE_HEAD, show_lines=False)
+    t.add_column("Field", style="cyan")
+    t.add_column("Value", style="white")
+    t.add_row("Total", str(total))
+    t.add_row("Processed", f"{processed} ({pct})")
+    t.add_row("Written", str(written))
+    t.add_row("Skipped", str(skipped))
+    t.add_row("Errors", str(errors) if errors == 0 else f"[red]{errors}[/red]")
+    if current:
+        t.add_row("Current", current[:60])
+    _CONSOLE.print(t)
+    _CONSOLE.print()
+
+
 def run_no_db_summary() -> None:
     """Print a simple file-walk based note count when DB is absent.
 
@@ -563,6 +1153,59 @@ def main() -> None:
         default=False,
         help="Full-page analytics dashboard combining all views",
     )
+    mode.add_argument(
+        "--pending",
+        action="store_true",
+        default=False,
+        help="Show pending_summaries.jsonl queue stats",
+    )
+    mode.add_argument(
+        "--graph",
+        action="store_true",
+        default=False,
+        help="Knowledge graph analytics (hubs, isolated notes, linked ratio)",
+    )
+    mode.add_argument(
+        "--hooks",
+        metavar="N",
+        nargs="?",
+        const=20,
+        type=int,
+        help="Show last N hook events from hook_events.log (default: 20)",
+    )
+    mode.add_argument(
+        "--weekly",
+        action="store_true",
+        default=False,
+        help="Generate (or preview with --dry-run) weekly rollup note for current ISO week",
+    )
+    mode.add_argument(
+        "--monthly",
+        action="store_true",
+        default=False,
+        help="Generate (or preview with --dry-run) monthly rollup note for current month",
+    )
+    mode.add_argument(
+        "--timeline",
+        metavar="N",
+        nargs="?",
+        const=30,
+        type=int,
+        help="Bar chart of notes created per day for last N days (default: 30)",
+    )
+    mode.add_argument(
+        "--summarizer-progress",
+        action="store_true",
+        default=False,
+        help="Show current summarizer progress from /tmp",
+    )
+    parser.add_argument(
+        "--dry-run",
+        "-n",
+        action="store_true",
+        default=False,
+        help="Preview output without writing files (applies to --weekly and --monthly)",
+    )
     args = parser.parse_args()
 
     conn = _open_db()
@@ -576,11 +1219,40 @@ def main() -> None:
         or args.growth is not None
         or args.tags is not None
         or args.dashboard
+        or args.pending
+        or args.graph
+        or args.hooks is not None
+        or args.weekly
+        or args.monthly
+        or args.timeline is not None
+        or args.summarizer_progress
     )
+
+    # Modes that don't require a DB connection
+    if args.pending:
+        run_pending()
+        return
+    if args.hooks is not None:
+        run_hooks(args.hooks)
+        return
+    if args.summarizer_progress:
+        run_summarizer_progress()
+        return
 
     if conn is None:
         if no_mode or args.summary or args.dashboard:
             run_no_db_summary()
+        elif args.graph:
+            _CONSOLE.print(
+                "[yellow]note_index DB not found — run update_index.py first.[/yellow]"
+            )
+            sys.exit(1)
+        elif args.timeline is not None:
+            run_timeline(None, args.timeline)
+        elif args.weekly:
+            run_weekly(None, dry_run=args.dry_run)
+        elif args.monthly:
+            run_monthly(None, dry_run=args.dry_run)
         else:
             _CONSOLE.print(
                 "[yellow]note_index DB not found — run update_index.py first.[/yellow]"
@@ -603,6 +1275,14 @@ def main() -> None:
             run_growth(conn, args.growth)
         elif args.tags is not None:
             run_tags(conn, args.tags)
+        elif args.graph:
+            run_graph(conn)
+        elif args.timeline is not None:
+            run_timeline(conn, args.timeline)
+        elif args.weekly:
+            run_weekly(conn, dry_run=args.dry_run)
+        elif args.monthly:
+            run_monthly(conn, dry_run=args.dry_run)
     finally:
         conn.close()
 

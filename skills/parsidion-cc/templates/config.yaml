@@ -13,12 +13,14 @@ session_start_hook:
   debug: false             # Append injected context to debug log in system temp dir
   verbose_mode: false      # If true, inject full note summaries instead of the default compact one-line-per-note index
   use_embeddings: true     # Blend semantic matches into context; graceful fallback if db absent
+  track_delta: true        # Show "Since last session" delta for new/updated notes (#10)
 
 # Session stop hook (session_stop_hook.py)
 session_stop_hook:
   ai_model: null           # Model for AI classification (null = disabled)
   ai_timeout: 25           # AI call timeout in seconds
   auto_summarize: true     # Auto-launch summarizer when pending entries exist
+  auto_summarize_after: 1  # Queue threshold to trigger auto-summarizer (0 = always, 1 = default)
 
 # Subagent stop hook (subagent_stop_hook.py)
 subagent_stop_hook:
@@ -57,3 +59,13 @@ git:
 defaults:
   haiku_model: claude-haiku-4-5-20251001   # Used by session hooks, vault_doctor repair
   sonnet_model: claude-sonnet-4-6          # Used by summarize_sessions.py
+
+# Hook event log (session_start_hook.py, session_stop_hook.py, subagent_stop_hook.py)
+event_log:
+  enabled: true            # Write structured JSON events to hook_events.log (#1)
+  path: null               # Override log path (null = ~/ClaudeVault/hook_events.log)
+
+# Adaptive context tracking (#17) — derank notes never referenced by Claude
+adaptive_context:
+  enabled: false           # Track per-note usefulness; derank unreferenced notes over time
+  decay_days: 30           # Days without reference before score decays

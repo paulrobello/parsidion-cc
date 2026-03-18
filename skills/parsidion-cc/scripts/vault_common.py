@@ -43,6 +43,7 @@ __all__: list[str] = [
     # Configuration
     "load_config",
     "get_config",
+    "validate_config",
     # File locking
     "flock_exclusive",
     "flock_shared",
@@ -59,6 +60,15 @@ __all__: list[str] = [
     # Utilities
     "slugify",
     "git_commit_vault",
+    "write_hook_event",
+    "get_last_seen_path",
+    "load_last_seen",
+    "save_last_seen",
+    "get_usefulness_path",
+    "load_usefulness_scores",
+    "save_injected_notes",
+    "update_usefulness_scores",
+    "get_injected_stems",
     "EMBEDDINGS_DB_FILENAME",
     "get_embeddings_db_path",
     "ensure_note_index_schema",
@@ -987,6 +997,225 @@ def get_config(section: str, key: str, default: Any = None) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Config validation (#5)
+# ---------------------------------------------------------------------------
+
+# Schema: section → key → expected Python type(s)
+_CONFIG_SCHEMA: dict[str, dict[str, tuple[type, ...]]] = {
+    "session_start_hook": {
+        "ai_model": (str, type(None)),
+        "max_chars": (int,),
+        "ai_timeout": (int, float),
+        "recent_days": (int,),
+        "debug": (bool,),
+        "verbose_mode": (bool,),
+        "use_embeddings": (bool,),
+        "track_delta": (bool,),
+    },
+    "session_stop_hook": {
+        "ai_model": (str, type(None)),
+        "ai_timeout": (int, float),
+        "auto_summarize": (bool,),
+        "auto_summarize_after": (int, type(None)),
+    },
+    "subagent_stop_hook": {
+        "enabled": (bool,),
+        "min_messages": (int,),
+        "excluded_agents": (str,),
+    },
+    "pre_compact_hook": {
+        "lines": (int,),
+    },
+    "summarizer": {
+        "model": (str,),
+        "max_parallel": (int,),
+        "transcript_tail_lines": (int,),
+        "max_cleaned_chars": (int,),
+        "persist": (bool,),
+        "cluster_model": (str,),
+        "dedup_threshold": (float, int),
+    },
+    "embeddings": {
+        "enabled": (bool,),
+        "model": (str,),
+        "min_score": (float, int),
+        "top_k": (int,),
+    },
+    "git": {
+        "auto_commit": (bool,),
+    },
+    "defaults": {
+        "haiku_model": (str,),
+        "sonnet_model": (str,),
+    },
+    "event_log": {
+        "enabled": (bool,),
+        "max_lines": (int,),
+    },
+    "adaptive_context": {
+        "enabled": (bool,),
+        "decay_days": (int, float),
+    },
+}
+
+
+def validate_config() -> list[str]:
+    """Validate config.yaml against the known schema.
+
+    Checks for unknown sections, unknown keys within known sections, and
+    type mismatches. Warnings are informational — never raises.
+
+    Returns:
+        A list of warning strings (empty when config is valid or absent).
+    """
+    config = load_config()
+    if not config:
+        return []
+
+    warnings: list[str] = []
+    known_sections = set(_CONFIG_SCHEMA.keys())
+
+    for section, section_value in config.items():
+        if section not in known_sections:
+            warnings.append(f"config.yaml: unknown section '{section}'")
+            continue
+
+        if not isinstance(section_value, dict):
+            warnings.append(
+                f"config.yaml: section '{section}' should be a mapping, got {type(section_value).__name__}"
+            )
+            continue
+
+        schema_keys = _CONFIG_SCHEMA[section]
+        for key, value in section_value.items():
+            if key not in schema_keys:
+                warnings.append(f"config.yaml: unknown key '{section}.{key}'")
+                continue
+            expected_types = schema_keys[key]
+            if value is not None and not isinstance(value, expected_types):
+                type_names = " | ".join(
+                    t.__name__ for t in expected_types if t is not type(None)
+                )
+                warnings.append(
+                    f"config.yaml: '{section}.{key}' expected {type_names}, "
+                    f"got {type(value).__name__}"
+                )
+
+    return warnings
+
+
+# ---------------------------------------------------------------------------
+# Hook execution event log (#1)
+# ---------------------------------------------------------------------------
+
+_HOOK_EVENTS_FILENAME = "hook_events.log"
+_HOOK_EVENTS_MAX_LINES_DEFAULT = 10000
+
+
+def write_hook_event(
+    hook: str, project: str, duration_ms: float, **extra: object
+) -> None:
+    """Append a structured JSON event line to ``~/ClaudeVault/hook_events.log``.
+
+    Best-effort — never raises. Controlled by ``event_log.enabled`` config
+    (default: ``true``). Rotates (keeps last *max_lines*) when the file
+    exceeds ``event_log.max_lines`` (default: 10 000).
+
+    Args:
+        hook: Hook name, e.g. ``"SessionEnd"``.
+        project: Project name.
+        duration_ms: Hook wall-clock time in milliseconds.
+        **extra: Additional key-value pairs to include in the event object.
+    """
+    if not get_config("event_log", "enabled", True):
+        return
+
+    event: dict[str, object] = {
+        "hook": hook,
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "project": project,
+        "duration_ms": round(duration_ms, 1),
+    }
+    event.update(extra)
+
+    log_path = VAULT_ROOT / _HOOK_EVENTS_FILENAME
+    max_lines: int = int(
+        get_config("event_log", "max_lines", _HOOK_EVENTS_MAX_LINES_DEFAULT)
+    )
+
+    try:
+        VAULT_ROOT.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(event) + "\n"
+
+        # Atomic append with optional rotation
+        with open(log_path, "a+", encoding="utf-8") as f:
+            flock_exclusive(f)
+            try:
+                f.seek(0)
+                existing_lines = f.readlines()
+                if len(existing_lines) >= max_lines:
+                    # Keep the second half of the file to avoid thrashing
+                    keep = existing_lines[max_lines // 2 :]
+                    f.seek(0)
+                    f.truncate()
+                    f.writelines(keep)
+                f.seek(0, 2)
+                f.write(line)
+            finally:
+                funlock(f)
+    except OSError:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Per-project last-seen tracking (#10 cross-session delta)
+# ---------------------------------------------------------------------------
+
+_LAST_SEEN_FILENAME = "last_seen.json"
+
+
+def get_last_seen_path() -> Path:
+    """Return the path to the last-seen tracker JSON file.
+
+    Returns:
+        Path to ``~/.claude/vault_last_seen.json``.
+    """
+    return Path.home() / ".claude" / _LAST_SEEN_FILENAME
+
+
+def load_last_seen() -> dict[str, str]:
+    """Load the per-project last-seen timestamp map.
+
+    Returns:
+        Dict mapping project name → ISO 8601 timestamp string.
+        Returns empty dict when the file is absent or unreadable.
+    """
+    path = get_last_seen_path()
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def save_last_seen(project: str, ts: str | None = None) -> None:
+    """Update and persist the last-seen timestamp for *project*.
+
+    Args:
+        project: Project name to update.
+        ts: ISO 8601 timestamp. Defaults to ``datetime.now().isoformat()``.
+    """
+    if ts is None:
+        ts = datetime.now().isoformat(timespec="seconds")
+    path = get_last_seen_path()
+    try:
+        data = load_last_seen()
+        data[project] = ts
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Cross-platform file locking
 # ---------------------------------------------------------------------------
 
@@ -1335,3 +1564,109 @@ def git_commit_vault(message: str, paths: list[Path] | None = None) -> bool:
         return result.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
+
+
+# ---------------------------------------------------------------------------
+# Adaptive context (#17) — per-note usefulness tracking
+# ---------------------------------------------------------------------------
+
+_NOTE_USEFULNESS_FILENAME = "note_usefulness.json"
+
+
+def get_usefulness_path() -> Path:
+    """Return path to the per-note usefulness scores JSON file.
+
+    Returns:
+        Path to ``~/.claude/note_usefulness.json``.
+    """
+    return Path.home() / ".claude" / _NOTE_USEFULNESS_FILENAME
+
+
+def load_usefulness_scores() -> dict[str, dict]:
+    """Load per-note usefulness stats.
+
+    Each entry has keys: ``hits`` (int), ``misses`` (int),
+    ``last_hit`` (ISO 8601 str | None).
+
+    Returns:
+        Dict mapping note stem → stats dict. Empty when absent or unreadable.
+    """
+    path = get_usefulness_path()
+    try:
+        raw: object = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return raw  # type: ignore[return-value]
+        return {}
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+
+
+def get_injected_stems(project: str) -> list[str]:
+    """Return the list of note stems injected in the previous session for *project*.
+
+    Reads from ``last_seen.json`` where injected stems are stored under the key
+    ``{project}__injected``.
+
+    Args:
+        project: Project name.
+
+    Returns:
+        List of note stem strings, or empty list when not recorded.
+    """
+    data = load_last_seen()
+    raw = data.get(f"{project}__injected", "")
+    if not raw:
+        return []
+    # Stored as comma-separated stems
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def save_injected_notes(project: str, stems: list[str]) -> None:
+    """Persist the list of note stems injected for *project*.
+
+    Stored alongside the last-seen timestamp in ``last_seen.json`` under
+    the key ``{project}__injected`` as a comma-separated string.
+
+    Args:
+        project: Project name.
+        stems: List of note stems that were injected into context.
+    """
+    path = get_last_seen_path()
+    try:
+        data = load_last_seen()
+        data[f"{project}__injected"] = ",".join(stems)
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def update_usefulness_scores(
+    referenced_stems: set[str],
+    injected_stems: list[str],
+) -> None:
+    """Update hit/miss counts for notes based on session references.
+
+    Notes in *injected_stems* that appear in *referenced_stems* get a hit
+    increment; those not referenced get a miss increment.  Best-effort —
+    never raises.
+
+    Args:
+        referenced_stems: Set of note stems mentioned during the session.
+        injected_stems: List of stems that were injected at session start.
+    """
+    if not injected_stems:
+        return
+    path = get_usefulness_path()
+    try:
+        scores = load_usefulness_scores()
+        now_ts = datetime.now().isoformat(timespec="seconds")
+        for stem in injected_stems:
+            entry = scores.setdefault(stem, {"hits": 0, "misses": 0, "last_hit": None})
+            if stem in referenced_stems:
+                entry["hits"] = entry.get("hits", 0) + 1
+                entry["last_hit"] = now_ts
+            else:
+                entry["misses"] = entry.get("misses", 0) + 1
+        path.write_text(json.dumps(scores, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass

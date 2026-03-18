@@ -381,8 +381,12 @@ def _filter_clusters_with_claude(
         return clusters
 
     # Exact-stem clusters pass through unconditionally
-    exact_stem = [(f, p, n, b) for f, p, n, b in clusters if b is not None]
-    first_word = [(f, p, n, b) for f, p, n, b in clusters if b is None]
+    exact_stem: list[tuple[Path, str, list[Path], Path | None]] = [
+        (f, p, n, b) for f, p, n, b in clusters if b is not None
+    ]
+    first_word: list[tuple[Path, str, list[Path], Path | None]] = [
+        (f, p, n, b) for f, p, n, b in clusters if b is None
+    ]
 
     if not first_word:
         return clusters
@@ -428,8 +432,13 @@ def _filter_clusters_with_claude(
             return clusters
 
         accepted: set[str] = set(json.loads(m.group(0)))
-        kept_first_word = [(f, p, n, b) for f, p, n, b in first_word if p in accepted]
-        return exact_stem + kept_first_word
+        kept_first_word: list[tuple[Path, str, list[Path], Path | None]] = [
+            (f, p, n, b) for f, p, n, b in first_word if p in accepted
+        ]
+        result_clusters: list[tuple[Path, str, list[Path], Path | None]] = (
+            exact_stem + kept_first_word
+        )
+        return result_clusters
 
     except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError, ValueError):
         return clusters  # fallback: keep all
@@ -507,6 +516,146 @@ def fix_prefix_cluster(
         _patch(new_path)
 
     return moves
+
+
+def find_subfolder_candidates(
+    vault_root: Path,
+) -> dict[str, list[tuple[str, list[Path]]]]:
+    """Find notes that could be grouped into subfolders by common prefix.
+
+    Scans all top-level vault folders (depth-2 notes only — e.g. Patterns/foo.md).
+    Groups notes within each folder by the first ``-``-delimited word in their stem.
+    Returns only groups with >= PREFIX_CLUSTER_MIN (3) notes.
+
+    Returns:
+        dict mapping folder_name (relative to vault_root) to a list of
+        (prefix, [note_paths]) tuples — one per qualifying prefix group.
+    """
+    by_folder: dict[Path, list[Path]] = {}
+    for note in vault_common.all_vault_notes():
+        rel = note.relative_to(vault_root)
+        parts = rel.parts
+        # Only flat notes (depth 2: folder/note.md) — skip subfolders and root
+        if len(parts) != 2:
+            continue
+        folder_name = parts[0]
+        if folder_name in vault_common.EXCLUDE_DIRS:
+            continue
+        if folder_name == "Daily":
+            continue
+        if parts[1] in ("MANIFEST.md", "CLAUDE.md"):
+            continue
+        by_folder.setdefault(note.parent, []).append(note)
+
+    result: dict[str, list[tuple[str, list[Path]]]] = {}
+    for folder, notes in sorted(by_folder.items()):
+        folder_rel = str(folder.relative_to(vault_root))
+        by_prefix: dict[str, list[Path]] = {}
+        for note in notes:
+            stem_parts = note.stem.split("-")
+            if len(stem_parts) < 2:
+                continue
+            prefix = stem_parts[0]
+            # Skip if the subfolder already exists
+            if (folder / prefix).exists():
+                continue
+            by_prefix.setdefault(prefix, []).append(note)
+
+        groups = [
+            (prefix, sorted(notes_in_group))
+            for prefix, notes_in_group in sorted(by_prefix.items())
+            if len(notes_in_group) >= PREFIX_CLUSTER_MIN
+        ]
+        if groups:
+            result[folder_rel] = groups
+
+    return result
+
+
+def run_migrate_subfolders(vault_root: Path, dry_run: bool = True) -> None:
+    """Detect prefix groups and optionally migrate notes into subfolders.
+
+    Shows all candidate groups (folders with >= 3 notes sharing a first-word prefix).
+    With ``dry_run=True`` (default): prints what would move without touching files.
+    With ``dry_run=False``: moves files, updates wikilinks vault-wide, then calls
+    ``update_index.py`` to rebuild the index.
+
+    Args:
+        vault_root: Root path of the vault.
+        dry_run: When True, only print candidates — do not move any files.
+    """
+    candidates = find_subfolder_candidates(vault_root)
+
+    if not candidates:
+        print("No subfolder migration candidates found.")
+        return
+
+    total_groups = sum(len(groups) for groups in candidates.values())
+    total_notes = sum(
+        len(notes) for groups in candidates.values() for _, notes in groups
+    )
+    print(
+        f"Found {total_groups} prefix group(s) across "
+        f"{len(candidates)} folder(s) ({total_notes} note(s) total):\n"
+    )
+
+    for folder_rel, groups in sorted(candidates.items()):
+        for prefix, notes in groups:
+            subfolder_rel = f"{folder_rel}/{prefix}/"
+            print(f"  {subfolder_rel}  ({len(notes)} notes)")
+            for note in notes:
+                note_rel = note.relative_to(vault_root)
+                # Strip the prefix from the new stem (first-word migration)
+                new_stem = note.stem[len(prefix) + 1 :]
+                new_name = f"{new_stem}.md" if new_stem else note.name
+                print(f"    {note_rel}  →  {folder_rel}/{prefix}/{new_name}")
+        print()
+
+    if dry_run:
+        print(
+            f"[dry-run] {total_notes} note(s) would be moved into "
+            f"{total_groups} subfolder(s). Run with --execute to apply."
+        )
+        return
+
+    # --- Execute migrations ---
+    all_notes = list(vault_common.all_vault_notes())
+    total_moved = 0
+    for folder_rel, groups in sorted(candidates.items()):
+        folder = vault_root / folder_rel
+        for prefix, notes in groups:
+            moves = fix_prefix_cluster(folder, prefix, notes, all_notes, base_note=None)
+            for old_path, new_path in moves:
+                old_rel = old_path.relative_to(vault_root)
+                new_rel = new_path.relative_to(vault_root)
+                print(f"  Moved: {old_rel}  →  {new_rel}")
+                total_moved += 1
+
+    if total_moved:
+        vault_common.git_commit_vault(
+            f"refactor(vault): migrate {total_moved} note(s) into prefix subfolders via vault_doctor --migrate-subfolders",
+        )
+        print(f"\nMoved {total_moved} note(s). Running update_index.py…")
+        update_index_script = Path(__file__).parent / "update_index.py"
+        env = os.environ.copy()
+        env.pop("CLAUDECODE", None)
+        try:
+            subprocess.run(
+                ["uv", "run", "--no-project", str(update_index_script)],
+                check=True,
+                env=env,
+                timeout=60,
+            )
+            print("Index rebuilt.")
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            print(f"Warning: update_index.py failed: {exc}", file=sys.stderr)
+            print("Run manually: uv run --no-project update_index.py", file=sys.stderr)
+    else:
+        print("No files were moved (all subfolders may already exist).")
 
 
 def resolve_wikilink(raw_link: str, note_map: dict[str, list[Path]]) -> bool:
@@ -1070,6 +1219,23 @@ def main() -> None:
         metavar="SECS",
         help=f"Seconds to wait for each Claude repair call (default: {AI_TIMEOUT})",
     )
+    parser.add_argument(
+        "--migrate-subfolders",
+        action="store_true",
+        help=(
+            "Detect notes that share a common filename prefix (>= 3 per folder) "
+            "and show candidates for subfolder migration. "
+            "Use --execute to actually move the files."
+        ),
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help=(
+            "With --migrate-subfolders: move files into subfolders, update wikilinks, "
+            "and rebuild the vault index. Has no effect without --migrate-subfolders."
+        ),
+    )
     args = parser.parse_args()
 
     # Load persistent state
@@ -1090,6 +1256,12 @@ def main() -> None:
     state["pid"] = os.getpid()
     _write_pid(state)  # claim the lock immediately
     atexit.register(_release_pid)  # release on any exit path
+
+    # ── --migrate-subfolders mode (standalone — exits after running) ──────────
+    if args.migrate_subfolders:
+        dry = not args.execute
+        run_migrate_subfolders(vault_common.VAULT_ROOT, dry_run=dry)
+        return
 
     # Auto-commit uncommitted vault files older than STALE_COMMIT_MINUTES
     stale = commit_stale_files(dry_run=args.dry_run)

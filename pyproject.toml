@@ -27,6 +27,9 @@ eval = [
 vault-search = "vault_search:main"
 vault-new = "vault_new:main"
 vault-stats = "vault_stats:main"
+vault-review = "vault_review:main"
+vault-export = "vault_export:main"
+vault-merge = "vault_merge:main"
 
 [build-system]
 requires = ["setuptools>=70"]
@@ -44,7 +47,7 @@ build-backend = "setuptools.build_meta"
 #   uv tool install --editable ".[tools]"
 # A plain ``uv tool install .`` or ``pip install .`` will produce an install
 # where the sys.path.insert pattern in each script resolves incorrectly.
-py-modules = ["vault_search", "vault_common", "vault_new", "vault_stats", "vault_links"]
+py-modules = ["vault_search", "vault_common", "vault_new", "vault_stats", "vault_links", "vault_review", "vault_export", "vault_merge"]
 
 [tool.setuptools.package-dir]
 "" = "skills/parsidion-cc/scripts"
@@ -81,6 +84,7 @@ ignore = ["E501", "B008", "B904"]
 
 [tool.pyright]
 extraPaths = ["skills/parsidion-cc/scripts"]
+exclude = ["parsidion-mcp"]
 
 [tool.ty.environment]
 extra-paths = ["skills/parsidion-cc/scripts"]

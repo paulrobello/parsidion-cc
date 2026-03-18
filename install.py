@@ -23,6 +23,8 @@ Options:
     --uninstall         Remove installed skill, agent, and hooks
     --enable-ai         Enable AI-powered note selection (writes ai_model to config.yaml, sets 30s timeout)
     --install-tools     Install vault-search, vault-new, and vault-stats as global CLI commands
+    --schedule-summarizer  Install nightly cron/launchd job to auto-run summarize_sessions.py
+    --summarizer-hour N    Hour of day (0-23) for the scheduled summarizer (default: 3)
     --help, -h          Show this help message
 """
 
@@ -449,6 +451,202 @@ def install_cli_tools(
             )
         else:
             _ok("vault-search, vault-new, and vault-stats installed globally")
+
+
+# ---------------------------------------------------------------------------
+# Cron / launchd scheduler (#19)
+# ---------------------------------------------------------------------------
+
+_LAUNCHD_PLIST_LABEL = "com.parsidion.summarize-sessions"
+_LAUNCHD_PLIST_NAME = f"{_LAUNCHD_PLIST_LABEL}.plist"
+_CRON_MARKER = "# parsidion-cc: nightly summarizer"
+
+
+def _build_launchd_plist(uv_path: str, scripts_dir: Path, hour: int = 3) -> str:
+    """Generate a macOS launchd plist XML for nightly summarization.
+
+    Args:
+        uv_path: Absolute path to the ``uv`` executable.
+        scripts_dir: Directory containing ``summarize_sessions.py``.
+        hour: Hour of the day (0-23) to run the job. Default 3 = 3 AM.
+
+    Returns:
+        Plist XML string.
+    """
+    script_path = scripts_dir / "summarize_sessions.py"
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{_LAUNCHD_PLIST_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{uv_path}</string>
+        <string>run</string>
+        <string>--no-project</string>
+        <string>{script_path}</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>{hour}</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/parsidion-cc-summarizer.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/parsidion-cc-summarizer.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>{Path.home()}</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
+"""
+
+
+def schedule_summarizer(
+    claude_dir: Path,
+    dry_run: bool = False,
+    hour: int = 3,
+) -> None:
+    """Install a nightly cron job or launchd plist to run the summarizer.
+
+    On macOS: creates a launchd plist in ``~/Library/LaunchAgents/`` and
+    loads it with ``launchctl load``.
+    On Linux/other: adds a crontab entry at the specified hour.
+
+    Args:
+        claude_dir: The ~/.claude directory (contains installed scripts).
+        dry_run: If True, print what would be done without making changes.
+        hour: Hour of the day (0-23) to run. Default 3 = 3 AM.
+    """
+    scripts_dir = claude_dir / "skills" / "parsidion-cc" / "scripts"
+    script_path = scripts_dir / "summarize_sessions.py"
+
+    # Find uv
+    uv_path = shutil.which("uv") or "uv"
+
+    if sys.platform == "darwin":
+        _schedule_summarizer_launchd(scripts_dir, script_path, uv_path, dry_run, hour)
+    else:
+        _schedule_summarizer_cron(script_path, uv_path, dry_run, hour)
+
+
+def _schedule_summarizer_launchd(
+    scripts_dir: Path,
+    script_path: Path,
+    uv_path: str,
+    dry_run: bool,
+    hour: int,
+) -> None:
+    """Install a launchd plist for macOS.
+
+    Args:
+        scripts_dir: Directory containing the script.
+        script_path: Path to summarize_sessions.py.
+        uv_path: Path to the uv executable.
+        dry_run: Preview only when True.
+        hour: Hour of day to run (0-23).
+    """
+    launch_agents = Path.home() / "Library" / "LaunchAgents"
+    plist_path = launch_agents / _LAUNCHD_PLIST_NAME
+    plist_content = _build_launchd_plist(uv_path, scripts_dir, hour)
+
+    _step(f"Schedule nightly summarizer via launchd ({plist_path})", dry_run=dry_run)
+    if dry_run:
+        print(f"    {dim('Would write:')} {plist_path}")
+        print(f"    {dim('Would run:')} launchctl load {plist_path}")
+        return
+
+    launch_agents.mkdir(parents=True, exist_ok=True)
+    try:
+        plist_path.write_text(plist_content, encoding="utf-8")
+        _ok(f"Plist written: {plist_path}")
+    except OSError as exc:
+        _warn(f"Could not write plist: {exc}")
+        return
+
+    # Unload existing job silently (ignore errors if not loaded)
+    subprocess.run(
+        ["launchctl", "unload", str(plist_path)],
+        capture_output=True,
+    )
+    result = subprocess.run(
+        ["launchctl", "load", str(plist_path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        _ok(f"Launchd job loaded — summarizer will run nightly at {hour:02d}:00")
+    else:
+        _warn(
+            f"launchctl load returned {result.returncode}. "
+            f"You may need to run: launchctl load {plist_path}"
+        )
+
+    if not script_path.exists():
+        _warn(
+            f"Summarizer script not found at {script_path}. "
+            "Run 'uv run install.py --force --yes' first."
+        )
+
+
+def _schedule_summarizer_cron(
+    script_path: Path,
+    uv_path: str,
+    dry_run: bool,
+    hour: int,
+) -> None:
+    """Add a crontab entry for Linux/other platforms.
+
+    Args:
+        script_path: Path to summarize_sessions.py.
+        uv_path: Path to the uv executable.
+        dry_run: Preview only when True.
+        hour: Hour of day to run (0-23).
+    """
+    cron_line = (
+        f"0 {hour} * * * {uv_path} run --no-project {script_path} "
+        f">> /tmp/parsidion-cc-summarizer.log 2>&1  {_CRON_MARKER}"
+    )
+    _step(f"Schedule nightly summarizer via cron (hour={hour})", dry_run=dry_run)
+    if dry_run:
+        print(f"    {dim('Would add crontab line:')}")
+        print(f"    {dim(cron_line)}")
+        return
+
+    try:
+        result = subprocess.run(
+            ["crontab", "-l"],
+            capture_output=True,
+            text=True,
+        )
+        existing = result.stdout if result.returncode == 0 else ""
+        # Remove any existing parsidion-cc summarizer entry
+        lines = [ln for ln in existing.splitlines() if _CRON_MARKER not in ln]
+        lines.append(cron_line)
+        new_crontab = "\n".join(lines) + "\n"
+        install_result = subprocess.run(
+            ["crontab", "-"],
+            input=new_crontab,
+            capture_output=True,
+            text=True,
+        )
+        if install_result.returncode == 0:
+            _ok(f"Cron job installed — summarizer will run nightly at {hour:02d}:00")
+        else:
+            _warn(f"crontab install failed: {install_result.stderr.strip()}")
+    except FileNotFoundError:
+        _warn("crontab not found — cannot schedule summarizer automatically.")
+        print(f"  {dim('Add this line manually:')}")
+        print(f"  {dim(cron_line)}")
 
 
 # ---------------------------------------------------------------------------
@@ -998,6 +1196,11 @@ def install(args: argparse.Namespace) -> int:
     print(f"  {dim('Vault path   :')} {vault_root}")
     if install_tools:
         print(f"  {dim('CLI tools    :')} vault-search, vault-new, vault-stats")
+    if args.schedule_summarizer:
+        print(
+            f"  {dim('Scheduler    :')} nightly summarizer at {args.summarizer_hour:02d}:00 "
+            f"({'launchd' if sys.platform == 'darwin' else 'cron'})"
+        )
     if enable_ai:
         print(f"  {dim('AI mode      :')} enabled (SessionStart timeout → 30s)")
     print(f"  {dim('Settings     :')} {settings_file}")
@@ -1074,6 +1277,10 @@ def install(args: argparse.Namespace) -> int:
     if install_tools:
         install_cli_tools(REPO_ROOT, dry_run=dry_run)
 
+    # 12. Schedule nightly summarizer (optional, --schedule-summarizer)
+    if args.schedule_summarizer:
+        schedule_summarizer(claude_dir, dry_run=dry_run, hour=args.summarizer_hour)
+
     print()
     if dry_run:
         _ok("Dry run complete — no changes were made.")
@@ -1121,7 +1328,8 @@ def parse_args() -> argparse.Namespace:
     Returns:
         Parsed argument namespace. Key attributes: ``vault``, ``claude_dir``,
         ``dry_run``, ``verbose``, ``force``, ``yes``, ``skip_hooks``,
-        ``skip_agent``, ``uninstall``, ``enable_ai``, ``install_tools``.
+        ``skip_agent``, ``uninstall``, ``enable_ai``, ``install_tools``,
+        ``schedule_summarizer``, ``summarizer_hour``.
     """
     parser = argparse.ArgumentParser(
         prog="install.py",
@@ -1205,6 +1413,23 @@ def parse_args() -> argparse.Namespace:
             "The interactive installer prompts for this; use this flag to enable "
             "it non-interactively (e.g. with --yes)."
         ),
+    )
+    parser.add_argument(
+        "--schedule-summarizer",
+        action="store_true",
+        help=(
+            "Install a nightly cron job (Linux) or launchd plist (macOS) that runs "
+            "summarize_sessions.py automatically at 3 AM. "
+            "Use --summarizer-hour to change the hour. "
+            "On macOS this creates ~/Library/LaunchAgents/com.parsidion.summarize-sessions.plist."
+        ),
+    )
+    parser.add_argument(
+        "--summarizer-hour",
+        type=int,
+        default=3,
+        metavar="HOUR",
+        help="Hour of day (0-23) to run the scheduled summarizer (default: 3 = 3 AM)",
     )
     parser.add_argument(
         "--help",

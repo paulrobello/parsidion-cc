@@ -23,6 +23,7 @@ Differences from session_stop_hook.py:
 import json
 import os
 import sys
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -110,6 +111,7 @@ def main() -> None:
             sys.stdout.write("{}")
             return
 
+        _hook_start = time.monotonic()
         agent_type = str(input_data.get("agent_type", "unknown"))
 
         # Skip excluded agent types (vault-explorer, research-agent, etc.)
@@ -207,6 +209,15 @@ def main() -> None:
                 f"{_LOG_PREFIX} subagent not queued (no significant categories)",
                 file=sys.stderr,
             )
+
+        # Hook event log (#1)
+        vault_common.write_hook_event(
+            hook="SubagentStop",
+            project=project,
+            duration_ms=(time.monotonic() - _hook_start) * 1000,
+            agent_type=agent_type,
+            categories={k: len(v) for k, v in categories.items()},
+        )
 
         sys.stdout.write("{}")
 

@@ -239,12 +239,120 @@ def _select_context_with_ai(
 build_compact_index = vault_common.build_compact_index
 
 
+def _rank_by_usefulness(notes: list[Path]) -> list[Path]:
+    """Re-rank *notes* by usefulness score (adaptive context #17).
+
+    Notes with a positive hit/miss ratio float to the top; notes that were
+    repeatedly injected but never referenced sink toward the bottom.  Notes
+    with no recorded stats keep their original relative order (stable sort).
+
+    Args:
+        notes: Candidate note paths in their current order.
+
+    Returns:
+        Re-ranked list of the same paths.
+    """
+    scores = vault_common.load_usefulness_scores()
+
+    def _score(path: Path) -> float:
+        entry = scores.get(path.stem)
+        if not entry:
+            return 0.5  # Neutral score for new notes
+        hits: int = entry.get("hits", 0)
+        misses: int = entry.get("misses", 0)
+        total = hits + misses
+        if total == 0:
+            return 0.5
+        # Simple Laplace-smoothed ratio: (hits+1) / (total+2)
+        return (hits + 1) / (total + 2)
+
+    return sorted(notes, key=_score, reverse=True)
+
+
+def _build_pending_notice() -> str:
+    """Return a one-line warning if pending_summaries.jsonl has entries.
+
+    Returns:
+        Warning string like ``⚠ 7 sessions pending summarization (run summarize_sessions.py)``
+        or empty string if queue is empty or file is absent.
+    """
+    pending_path = vault_common.VAULT_ROOT / "pending_summaries.jsonl"
+    if not pending_path.exists():
+        return ""
+    try:
+        with open(pending_path, encoding="utf-8") as f:
+            count = sum(1 for line in f if line.strip())
+    except OSError:
+        return ""
+    if count == 0:
+        return ""
+    return f"⚠ {count} session{'s' if count != 1 else ''} pending summarization (run summarize_sessions.py)"
+
+
+def _build_delta_section(project_name: str, last_seen_ts: str | None) -> str:
+    """Build a 'Since last time' section from notes newer than *last_seen_ts*.
+
+    Args:
+        project_name: Current project name (used to label the section).
+        last_seen_ts: ISO 8601 timestamp of the last session, or None.
+
+    Returns:
+        A formatted section string, or empty string if nothing new.
+    """
+    if last_seen_ts is None:
+        return ""
+    try:
+        last_seen_dt = datetime.fromisoformat(last_seen_ts)
+    except ValueError:
+        return ""
+
+    cutoff_ts = last_seen_dt.timestamp()
+    vault_root = vault_common.VAULT_ROOT
+    new_notes: list[tuple[float, str, str]] = []  # (mtime, stem, folder)
+
+    for note_path in vault_common.all_vault_notes():
+        try:
+            mtime = note_path.stat().st_mtime
+        except OSError:
+            continue
+        if mtime > cutoff_ts:
+            try:
+                rel = note_path.relative_to(vault_root)
+                folder = str(rel.parent) if str(rel.parent) != "." else "root"
+            except ValueError:
+                folder = note_path.parent.name
+            new_notes.append((mtime, note_path.stem, folder))
+
+    if not new_notes:
+        return ""
+
+    # Sort by mtime descending, keep top 10
+    new_notes.sort(key=lambda x: -x[0])
+    new_notes = new_notes[:10]
+
+    # Calculate human-readable age
+    now = datetime.now()
+    age_seconds = (now - last_seen_dt).total_seconds()
+    if age_seconds < 3600:
+        age_str = f"{int(age_seconds / 60)} minutes ago"
+    elif age_seconds < 86400:
+        age_str = f"{int(age_seconds / 3600)} hours ago"
+    else:
+        age_str = f"{int(age_seconds / 86400)} days ago"
+
+    lines = [f"Since last session in {project_name} ({age_str}):"]
+    for _, stem, folder in new_notes:
+        lines.append(f"  NEW/UPDATED: {stem} ({folder})")
+
+    return "\n".join(lines)
+
+
 def build_session_context(
     cwd: str,
     ai_model: str | None = None,
     max_chars: int = _DEFAULT_MAX_CHARS,
     verbose_mode: bool = False,
-) -> str:
+) -> tuple[str, int]:
     """Build a context string from vault notes relevant to the current session.
 
     Args:
@@ -257,7 +365,7 @@ def build_session_context(
             mode always uses full summaries). Defaults to False.
 
     Returns:
-        A formatted context string capped at *max_chars* with project and recent notes.
+        Tuple of (formatted context string, number of notes injected).
     """
     project_name: str = vault_common.get_project_name(cwd)
     today_str: str = date.today().isoformat()
@@ -268,13 +376,33 @@ def build_session_context(
 
     header: str = f"# Vault Context for {project_name}\n**Date:** {today_str}\n\n"
 
+    # --- Pending queue warning (#3) ---
+    pending_notice = _build_pending_notice()
+
+    # --- Cross-session delta (#10) ---
+    delta_section = ""
+    if vault_common.get_config("session_start_hook", "track_delta", True):
+        last_seen_map = vault_common.load_last_seen()
+        last_seen_ts = last_seen_map.get(project_name)
+        delta_section = _build_delta_section(project_name, last_seen_ts)
+    # Update last-seen timestamp for this project
+    vault_common.save_last_seen(project_name)
+
+    notes_injected = 0
+
     if ai_model:
         candidates = _build_candidates(project_name)
         ai_context = _select_context_with_ai(
             project_name, cwd, candidates, ai_model, max_chars
         )
         if ai_context:
-            return header + ai_context
+            notes_injected = ai_context.count("\n### ") + (
+                1 if ai_context.startswith("### ") else 0
+            )
+            context = _assemble_context(
+                header, ai_context, pending_notice, delta_section
+            )
+            return context, notes_injected
         # AI failed — fall through to standard behaviour
 
     # Standard behaviour: project notes + recent notes + today's daily note
@@ -321,8 +449,20 @@ def build_session_context(
     if daily_resolved not in seen:
         all_notes.append(daily_path)
 
+    # Adaptive context (#17): re-rank notes by usefulness when enabled
+    adaptive_enabled: bool = vault_common.get_config(
+        "adaptive_context", "enabled", False
+    )
+    if adaptive_enabled and all_notes:
+        all_notes = _rank_by_usefulness(all_notes)
+
+    notes_injected = len(all_notes)
+
     if not all_notes:
-        return header + "_No relevant vault notes found._"
+        context = _assemble_context(
+            header, "_No relevant vault notes found._", pending_notice, delta_section
+        )
+        return context, 0
 
     # Build context block from collected notes, reserving space for the header
     max_body_chars: int = max_chars - len(header)
@@ -334,9 +474,44 @@ def build_session_context(
         )
 
     if not context_body:
-        return header + "_No relevant vault notes found._"
+        context = _assemble_context(
+            header, "_No relevant vault notes found._", pending_notice, delta_section
+        )
+        return context, 0
 
-    return header + context_body
+    # Save injected stems for usefulness tracking
+    if adaptive_enabled:
+        injected_stems = [p.stem for p in all_notes]
+        vault_common.save_injected_notes(project_name, injected_stems)
+
+    context = _assemble_context(header, context_body, pending_notice, delta_section)
+    return context, notes_injected
+
+
+def _assemble_context(
+    header: str,
+    body: str,
+    pending_notice: str,
+    delta_section: str,
+) -> str:
+    """Combine context parts into the final injected string.
+
+    Args:
+        header: The vault context header line.
+        body: Main note content block.
+        pending_notice: Optional pending queue warning.
+        delta_section: Optional cross-session delta block.
+
+    Returns:
+        Assembled context string.
+    """
+    parts: list[str] = [header]
+    if pending_notice:
+        parts.append(pending_notice + "\n\n")
+    if delta_section:
+        parts.append(delta_section + "\n\n")
+    parts.append(body)
+    return "".join(parts)
 
 
 def _write_debug_log(
@@ -509,14 +684,29 @@ def main() -> None:
             vault_common.get_config("session_start_hook", "debug", False)
         )
 
+        # Config validation (#5) — warn on startup for typos
+        config_warnings = vault_common.validate_config()
+        for warning in config_warnings:
+            print(f"[session_start_hook] {warning}", file=sys.stderr)
+
         start_time = datetime.now()
-        context: str = build_session_context(
+        context, notes_injected = build_session_context(
             cwd, ai_model=ai_model, max_chars=max_chars, verbose_mode=verbose_mode
         )
         elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
 
+        project_name = vault_common.get_project_name(cwd)
+
+        # Hook event log (#1)
+        vault_common.write_hook_event(
+            hook="SessionStart",
+            project=project_name,
+            duration_ms=elapsed_ms,
+            notes_injected=notes_injected,
+            chars=len(context),
+        )
+
         if debug:
-            project_name = vault_common.get_project_name(cwd)
             _write_debug_log(
                 context=context,
                 cwd=cwd,

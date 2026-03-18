@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -224,14 +225,13 @@ def append_session_to_daily(
 
 
 def _launch_summarizer_if_pending() -> None:
-    """Launch summarize_sessions.py as a detached background process if there are pending entries.
+    """Launch summarize_sessions.py as a detached background process if threshold met.
 
-    Checks the pending summaries file for at least one non-empty line before
-    spawning. The process is fully detached (new session, devnull stdio) so the
-    hook exits immediately without waiting. CLAUDECODE is unset so the summarizer
-    can invoke ``claude`` internally without hitting the nesting guard.
+    Checks pending summaries count against ``auto_summarize_after`` threshold.
+    Falls back to ``auto_summarize`` boolean for backwards compatibility.
 
-    Respects ``session_stop_hook.auto_summarize`` in config (default: ``true``).
+    Respects ``session_stop_hook.auto_summarize`` (default: ``true``) and
+    ``session_stop_hook.auto_summarize_after`` (default: ``1``) in config.
     """
     if not vault_common.get_config("session_stop_hook", "auto_summarize", True):
         return
@@ -242,11 +242,23 @@ def _launch_summarizer_if_pending() -> None:
 
     try:
         with open(pending_path, encoding="utf-8") as f:
-            has_pending = any(line.strip() for line in f)
+            pending_count = sum(1 for line in f if line.strip())
     except OSError:
         return
 
-    if not has_pending:
+    if pending_count == 0:
+        return
+
+    # Check threshold — default 1 means "launch whenever there's anything pending"
+    threshold: int = int(
+        vault_common.get_config("session_stop_hook", "auto_summarize_after", 1)
+    )
+    if pending_count < threshold:
+        print(
+            f"[session_stop_hook] {pending_count} pending (threshold={threshold}), "
+            "skipping auto-summarize",
+            file=sys.stderr,
+        )
         return
 
     summarizer = Path(__file__).parent / "summarize_sessions.py"
@@ -267,6 +279,36 @@ def _launch_summarizer_if_pending() -> None:
 
 
 _HOOK_ERROR_LOG = "/tmp/parsidion-cc-hook-errors.log"
+
+
+def _update_adaptive_scores(project: str, all_lines: list[str]) -> None:
+    """Update note usefulness scores based on transcript content (#17).
+
+    Reads the list of stems injected at the previous session start, then scans
+    all assistant text lines for mentions of those stems.  Best-effort — any
+    exception is silently ignored so this never breaks the hook.
+
+    Args:
+        project: Current project name for looking up the injected stems.
+        all_lines: All transcript lines parsed from the JSONL file.
+    """
+    try:
+        if not vault_common.get_config("adaptive_context", "enabled", False):
+            return
+        injected = vault_common.get_injected_stems(project)
+        if not injected:
+            return
+        # Build a lowercase combined text blob from all assistant messages
+        texts = vault_common.parse_transcript_lines(all_lines)
+        combined = " ".join(texts).lower()
+        referenced: set[str] = {stem for stem in injected if stem.lower() in combined}
+        vault_common.update_usefulness_scores(referenced, injected)
+        print(
+            f"[session_stop_hook] adaptive: {len(referenced)}/{len(injected)} notes referenced",
+            file=sys.stderr,
+        )
+    except Exception:  # noqa: BLE001 — best-effort
+        pass
 
 
 def _log_hook_error(hook_name: str) -> None:
@@ -327,6 +369,7 @@ def main() -> None:
             sys.stdout.write("{}")
             return
         os.environ["CLAUDE_VAULT_STOP_ACTIVE"] = "1"
+        _hook_start = time.monotonic()
 
         transcript_path_str = str(input_data.get("transcript_path", ""))
         cwd = str(input_data.get("cwd", ""))
@@ -360,6 +403,9 @@ def main() -> None:
         # Read and parse the last 200 lines of the transcript
         raw_lines: list[str] = read_last_n_lines(transcript_path, 200)
         assistant_texts: list[str] = parse_transcript_lines(raw_lines)
+
+        # Adaptive context: update usefulness scores before we do anything else
+        _update_adaptive_scores(project, raw_lines)
 
         if not assistant_texts:
             print(
@@ -426,6 +472,14 @@ def main() -> None:
                     f"chore(vault): session notes [{safe_project}]"
                 )
                 _launch_summarizer_if_pending()
+                vault_common.write_hook_event(
+                    hook="SessionEnd",
+                    project=project,
+                    duration_ms=(time.monotonic() - _hook_start) * 1000,
+                    queued=bool(should_queue and ai_categories),
+                    categories={k: len(v) for k, v in ai_categories.items()},
+                    mode="ai",
+                )
                 sys.stdout.write("{}")
                 return
             print(
@@ -467,6 +521,15 @@ def main() -> None:
         safe_project = project.replace("\n", " ").replace("\r", "").strip()
         vault_common.git_commit_vault(f"chore(vault): session notes [{safe_project}]")
         _launch_summarizer_if_pending()
+        queued_kw = bool(significant & set(categories.keys()))
+        vault_common.write_hook_event(
+            hook="SessionEnd",
+            project=project,
+            duration_ms=(time.monotonic() - _hook_start) * 1000,
+            queued=queued_kw,
+            categories={k: len(v) for k, v in categories.items()},
+            mode="keyword",
+        )
 
         sys.stdout.write("{}")
 

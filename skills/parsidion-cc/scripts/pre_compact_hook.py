@@ -141,10 +141,61 @@ def extract_file_paths(lines: list[str]) -> list[str]:
     return paths
 
 
+def get_git_context(cwd: str) -> tuple[str | None, list[str]]:
+    """Get current git branch and list of uncommitted files.
+
+    Args:
+        cwd: The working directory to check.
+
+    Returns:
+        Tuple of (branch_name, uncommitted_file_list). Both may be empty/None
+        when not in a git repo or git is unavailable.
+    """
+    import subprocess as _sp
+
+    branch: str | None = None
+    uncommitted: list[str] = []
+
+    if not cwd:
+        return branch, uncommitted
+
+    try:
+        result = _sp.run(
+            ["git", "branch", "--show-current"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            branch = result.stdout.strip() or None
+    except (OSError, _sp.TimeoutExpired):
+        pass
+
+    try:
+        result = _sp.run(
+            ["git", "status", "--short"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                stripped = line.strip()
+                if stripped:
+                    uncommitted.append(stripped[:80])
+    except (OSError, _sp.TimeoutExpired):
+        pass
+
+    return branch, uncommitted
+
+
 def append_snapshot_to_daily(
     project: str,
     task_summary: str,
     recent_files: list[str],
+    cwd: str = "",
 ) -> None:
     """Append a pre-compact snapshot section to today's daily note.
 
@@ -152,16 +203,28 @@ def append_snapshot_to_daily(
         project: The project name.
         task_summary: Brief description of the current task.
         recent_files: List of file paths being worked on.
+        cwd: Working directory for git context extraction.
     """
     daily_path = vault_common.create_daily_note_if_missing()
     now_time = datetime.now().strftime("%H:%M")
 
     files_str = ", ".join(recent_files[:10]) if recent_files else "None detected"
 
+    # Git context (#2)
+    branch, uncommitted = get_git_context(cwd)
+    branch_line = f"- **Branch**: {branch}\n" if branch else ""
+    if uncommitted:
+        uncommitted_str = ", ".join(uncommitted[:10])
+        uncommitted_line = f"- **Uncommitted files**: {uncommitted_str}\n"
+    else:
+        uncommitted_line = ""
+
     section = (
         f"\n## Pre-Compact Snapshot ({now_time})\n"
         f"- **Project**: {project}\n"
+        f"{branch_line}"
         f"- **Working on**: {task_summary}\n"
+        f"{uncommitted_line}"
         f"- **Recent files**: {files_str}\n"
     )
 
@@ -246,7 +309,7 @@ def main() -> None:
                 task_summary = extract_user_task(raw_lines)
                 recent_files = extract_file_paths(raw_lines)
 
-        append_snapshot_to_daily(project, task_summary, recent_files)
+        append_snapshot_to_daily(project, task_summary, recent_files, cwd=cwd)
         # SEC-002: sanitize project name to prevent embedded newlines in commit messages
         safe_project = project.replace("\n", " ").replace("\r", "").strip()
         vault_common.git_commit_vault(
