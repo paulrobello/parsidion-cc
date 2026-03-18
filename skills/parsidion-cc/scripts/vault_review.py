@@ -260,7 +260,7 @@ def _draw_footer(stdscr, msg: str = "") -> None:
     import curses
 
     h, w = stdscr.getmaxyx()
-    keys = "j/k:nav  Enter/d:dump  y:approve  n:reject  s:skip  q:quit"
+    keys = "j/k:nav  Enter/d:dump(y/n inside)  y:approve  n:reject  s:skip  q:quit"
     footer = (msg or keys)[: w - 1].ljust(w - 1)
     stdscr.attron(curses.A_REVERSE)
     try:
@@ -307,13 +307,18 @@ def _draw_list(stdscr, entries: list[dict], selected: int, scroll: int) -> None:
             pass
 
 
-def _show_popup(stdscr, lines: list[str], title: str = "") -> None:
+def _show_popup(stdscr, lines: list[str], title: str = "") -> int:
     """Display a scrollable popup overlay with the given lines.
+
+    Returns the key that closed the popup so the caller can act on y/n presses.
 
     Args:
         stdscr: The curses window.
         lines: Lines of text to display.
         title: Optional title shown in the popup border.
+
+    Returns:
+        The integer key code that closed the popup.
     """
     import curses
 
@@ -332,6 +337,7 @@ def _show_popup(stdscr, lines: list[str], title: str = "") -> None:
     inner_h = pop_h - 2
     inner_w = pop_w - 4
     offset = 0
+    closing_key = ord("q")
     while True:
         win.clear()
         win.box()
@@ -349,7 +355,7 @@ def _show_popup(stdscr, lines: list[str], title: str = "") -> None:
                 win.addstr(i + 1, 2, text)
             except curses.error:
                 pass
-        more = "[↑↓ scroll  any other key: close]"
+        more = "[↑↓:scroll  y:approve  n:reject  any other key:close]"
         try:
             win.addstr(pop_h - 1, 2, more[: pop_w - 4])
         except curses.error:
@@ -363,10 +369,12 @@ def _show_popup(stdscr, lines: list[str], title: str = "") -> None:
             if offset > 0:
                 offset -= 1
         else:
+            closing_key = key
             break
     del win
     stdscr.touchwin()
     stdscr.refresh()
+    return closing_key
 
 
 # ---------------------------------------------------------------------------
@@ -426,9 +434,32 @@ def _run_tui(stdscr) -> None:
 
         # Dump transcript excerpt
         elif key in (ord("d"), ord("\n"), curses.KEY_ENTER, 10, 13):
-            entry = entries[selected]
-            excerpt = _read_transcript_excerpt(entry)
-            _show_popup(stdscr, excerpt, title="Transcript Excerpt")
+            while True:
+                entry = entries[selected]
+                excerpt = _read_transcript_excerpt(entry)
+                closing = _show_popup(stdscr, excerpt, title="Transcript Excerpt")
+
+                if closing == ord("y"):
+                    entries[selected]["status"] = "approved"
+                    _write_entries(entries)
+                    status_msg = f"Entry {selected + 1} approved."
+                    selected = min(selected + 1, len(entries) - 1)
+                    if selected >= len(entries):
+                        break
+                elif closing == ord("n"):
+                    entries.pop(selected)
+                    _write_entries(entries)
+                    if not entries:
+                        break
+                    selected = min(selected, len(entries) - 1)
+                    status_msg = "Entry removed from queue."
+                else:
+                    break  # any other key just closes the popup
+
+                # After y/n: show next entry's transcript automatically
+                if entries:
+                    continue
+                break
 
         # Approve
         elif key == ord("y"):
