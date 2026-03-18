@@ -354,9 +354,9 @@ This is the **current production approach** used by `build_embeddings.py`.
 
 **Strategy name:** `paragraph`
 
-The note body is split on double newlines (`\n\n`). Each paragraph is embedded separately with the
-note title prepended as context. A note is considered a match if **any** of its paragraph chunks
-ranks in the top-K results.
+The note body is split on two or more consecutive newlines (`\n\n+`). Each paragraph is embedded
+separately with the note title prepended as context. A note is considered a match if **any** of its
+paragraph chunks ranks in the top-K results.
 
 - Multiple vectors per note (one per paragraph)
 - Better precision for notes covering multiple distinct techniques
@@ -380,14 +380,15 @@ Common configurations:
 
 ### Deduplication for Multi-Chunk Strategies
 
-For paragraph and sliding strategies, the raw retrieval results contain chunk-level entries —
-multiple entries per note are possible. Before computing metrics, results are **deduplicated by
-stem**: the first occurrence of each stem (i.e., the highest-ranked chunk for that note) is kept,
-and duplicate stems are removed. This converts chunk-level rankings into note-level rankings, which
-is what Recall and MRR measure.
+For paragraph and sliding strategies, the raw cosine-similarity scan returns chunk-level rows —
+multiple rows per note are possible. Deduplication is performed **inline during retrieval** inside
+`retrieve_stems`: the SQL query fetches `top_k * 5` raw results, then a `seen` set filters them to
+the first occurrence of each stem (i.e., the highest-ranked chunk for that note), stopping once
+`top_k` unique stems are collected. This converts chunk-level rankings into note-level rankings,
+which is what Recall and MRR measure.
 
 > **📝 Note:** Deduplication means the effective retrieval list may be shorter than top-K if
-> multiple chunks from the same note appear in the raw results. The harness handles this correctly
+> multiple chunks from the same note dominate the raw results. The harness handles this correctly
 > when computing Recall@K.
 
 ---

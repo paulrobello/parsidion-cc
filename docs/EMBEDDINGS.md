@@ -15,9 +15,12 @@ using the `fastembed` library with a CPU-only embedding model that runs entirely
   - [Model Selection](#model-selection)
 - [Searching the Vault](#searching-the-vault)
   - [CLI Usage](#cli-usage)
-  - [JSON Mode](#json-mode)
+  - [Output Formats](#output-formats)
   - [Filtering by Score](#filtering-by-score)
   - [Controlling Result Count](#controlling-result-count)
+  - [Full-Text Body Search](#full-text-body-search)
+  - [Interactive TUI Mode](#interactive-tui-mode)
+  - [Environment Variables](#environment-variables)
 - [Metadata Index (note_index)](#metadata-index-note_index)
 - [Integration](#integration)
   - [Session Start Hook](#session-start-hook)
@@ -396,6 +399,42 @@ Example:
 ```bash
 VAULT_SEARCH_FORMAT=rich VAULT_SEARCH_MIN_SCORE=0.5 vault-search "sqlite patterns"
 ```
+
+### Full-Text Body Search
+
+Use `--grep` / `-G` to filter notes whose body matches a regular expression. This mode
+scans raw note text rather than using the embedding model, so it does not require
+`embeddings.db` and always returns exact matches.
+
+```bash
+# Case-insensitive body search (default)
+vault-search --grep "dedup_threshold"
+vault-search -G "dedup_threshold"
+
+# Case-sensitive body search
+vault-search --grep "FLOCK" --grep-case
+
+# Combine with metadata filters — search only Patterns notes
+vault-search --folder Patterns --grep "sqlite"
+```
+
+`--grep` can be combined with `--folder`, `--tag`, `--type`, `--project`, and
+`--recent-days` to narrow the candidate set before applying the regex. When used
+standalone (no other flags), it scans all vault notes via the `note_index` table,
+falling back to a file walk when the DB is absent.
+
+### Interactive TUI Mode
+
+Use `--interactive` / `-i` to launch a curses-based real-time search interface:
+
+```bash
+vault-search --interactive
+vault-search -i
+```
+
+Features: type to search, arrow keys (or `j`/`k`) to navigate results, `Enter` to
+open the selected note in `$EDITOR`, `q` or `Esc` to quit. Falls back to a simple
+line-input loop when the terminal does not support curses.
 
 ---
 

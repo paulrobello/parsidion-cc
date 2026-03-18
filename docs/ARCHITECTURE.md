@@ -237,6 +237,7 @@ Fires when a Claude Code session begins. Loads relevant vault context into the c
 | `debug` | `false` | Append injected context + metadata to debug log in `$TMPDIR` |
 | `verbose_mode` | `false` | When true, inject full note summaries; default is compact one-line index |
 | `use_embeddings` | `true` | Blend semantic (embedding) matches into context selection; graceful fallback if `embeddings.db` is absent |
+| `track_delta` | `true` | Prepend a "Since last session" delta of new/modified notes per project |
 
 **Standard behaviour:**
 1. Determines the current project from the working directory
@@ -281,6 +282,7 @@ Registered under the `SessionEnd` hook event — fires once when the session ter
 | `ai_model` | `null` (disabled) | Model for AI classification |
 | `ai_timeout` | `25` | AI call timeout in seconds |
 | `auto_summarize` | `true` | Auto-launch summarizer when pending entries exist |
+| `auto_summarize_after` | `1` | Queue threshold to trigger auto-summarizer (0 = always) |
 
 **Behavior:**
 1. Reads the last 200 lines of the JSONL transcript
@@ -714,6 +716,13 @@ Analytics CLI for vault health and activity. All modes output to stdout; Rich fo
 | `--growth` | Notes added per week (rolling 8-week window) |
 | `--tags` | Tag frequency cloud |
 | `--dashboard` | All modes combined into a full report |
+| `--pending` | Pending queue status (count, source breakdown, estimated token cost) |
+| `--graph` | Knowledge graph metrics (average degree, hub notes, isolated clusters, orphans) |
+| `--hooks N` | Last N hook events from `hook_events.log` (default: 20) |
+| `--weekly` | Generate weekly rollup note from daily notes for the current ISO week |
+| `--monthly` | Generate monthly rollup note from daily notes for the current month |
+| `--timeline N` | Activity bar chart of notes created per day for last N days (default: 30) |
+| `--summarizer-progress` | Live feedback from a running `summarize_sessions.py` |
 
 #### vault-export
 
@@ -843,11 +852,13 @@ session_start_hook:  # session_start_hook.py
   debug: false       # Append injected context + metadata to debug log in $TMPDIR
   verbose_mode: false  # If true, inject full note summaries instead of compact one-line index
   use_embeddings: true  # Blend semantic matches into context; graceful fallback if db absent
+  track_delta: true  # Prepend "Since last session" delta of new/updated notes per project
 
 session_stop_hook:   # session_stop_hook.py
   ai_model: null     # Model for AI classification (null = disabled)
   ai_timeout: 25     # AI call timeout in seconds
   auto_summarize: true  # Auto-launch summarizer when pending entries exist
+  auto_summarize_after: 1  # Queue threshold to trigger auto-summarizer (0 = always)
 
 subagent_stop_hook:  # subagent_stop_hook.py
   enabled: true      # Set false to disable subagent transcript capture
@@ -870,8 +881,22 @@ defaults:            # Centralized model IDs; all scripts fall back to these
   haiku_model: claude-haiku-4-5-20251001
   sonnet_model: claude-sonnet-4-6
 
+embeddings:          # build_embeddings.py, vault_search.py
+  enabled: true                    # Set false to disable embedding builds and note_index writes
+  model: BAAI/bge-small-en-v1.5   # ~67 MB ONNX model, cached after first run
+  min_score: 0.35                  # Minimum cosine similarity for search results
+  top_k: 10                        # Default result count for vault_search.py
+
 git:
   auto_commit: true  # Auto-commit vault changes after writes
+
+event_log:           # all hooks — structured JSON event log
+  enabled: true      # Write hook events to hook_events.log
+  path: null         # Override log path (null = ~/ClaudeVault/hook_events.log)
+
+adaptive_context:    # session_start_hook.py — derank notes never referenced by Claude
+  enabled: false     # Track per-note usefulness; derank unreferenced notes over time
+  decay_days: 30     # Days without reference before score decays
 ```
 
 **Model defaults:** Hook scripts (`session_start_hook.py`, `session_stop_hook.py`) default to `claude-haiku-4-5-20251001` when AI mode is enabled. The summarizer defaults to `claude-sonnet-4-6`. Override any model via the corresponding config key or CLI flag. Setting `ai_model` to a model ID in config enables AI mode without needing the `--ai` CLI flag. The `defaults.haiku_model` and `defaults.sonnet_model` keys provide a centralized place to change model IDs across all scripts at once.

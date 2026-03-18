@@ -172,7 +172,7 @@ All tools return plain strings. On failure, the string begins with `ERROR:` foll
 | Vault root directory missing | `ERROR: vault root not found at <path>` |
 | Embeddings DB missing (semantic search) | `ERROR: embeddings DB not found — run rebuild_index first` |
 | Subprocess timeout | `ERROR: command timed out after <N>s` |
-| Subprocess non-zero exit | `ERROR: <stderr from subprocess>` |
+| Subprocess non-zero exit | `ERROR: <combined stdout+stderr from subprocess>` |
 
 ### vault_search
 
@@ -416,6 +416,8 @@ This runs formatting (`ruff format`), linting (`ruff check`), type checking (`py
 ```
 parsidion-mcp/
 ├── pyproject.toml
+├── Makefile
+├── tests/
 └── src/
     └── parsidion_mcp/
         ├── __init__.py
