@@ -316,6 +316,7 @@ def _show_popup(stdscr, lines: list[str], title: str = "") -> None:
     left = (w - pop_w) // 2
 
     win = curses.newwin(pop_h, pop_w, top, left)
+    win.keypad(True)
     win.box()
     if title:
         win.addstr(0, 2, f" {title[: pop_w - 6]} ")
