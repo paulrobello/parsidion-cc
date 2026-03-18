@@ -18,6 +18,7 @@ import re
 import shutil
 import struct
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -422,6 +423,40 @@ def _scan_duplicates(threshold: float = _DEFAULT_SCAN_THRESHOLD, top: int = _DEF
 
 
 # ---------------------------------------------------------------------------
+# Index rebuild
+# ---------------------------------------------------------------------------
+
+
+def _rebuild_index() -> None:
+    """Run update_index.py to rebuild the vault index after a merge."""
+    index_script = Path(__file__).parent / "update_index.py"
+    if not index_script.exists():
+        index_script = (
+            Path.home()
+            / ".claude"
+            / "skills"
+            / "parsidion-cc"
+            / "scripts"
+            / "update_index.py"
+        )
+    if not index_script.exists():
+        print("Warning: update_index.py not found, skipping index rebuild.", file=sys.stderr)
+        return
+    try:
+        subprocess.run(
+            ["uv", "run", str(index_script)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        print("Vault index rebuilt.")
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: index rebuild failed: {e.stderr}", file=sys.stderr)
+    except OSError as e:
+        print(f"Warning: could not run update_index.py: {e}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -482,6 +517,11 @@ def main() -> None:
         default=_DEFAULT_SCAN_TOP,
         metavar="N",
         help=f"Maximum number of pairs to report in --scan (default: {_DEFAULT_SCAN_TOP}).",
+    )
+    parser.add_argument(
+        "--no-index",
+        action="store_true",
+        help="Skip rebuilding the vault index after a successful merge.",
     )
     args = parser.parse_args()
 
@@ -555,6 +595,10 @@ def main() -> None:
         vault_common.git_commit_vault(
             f"refactor(vault): merge {path_b.stem} into {output_path.stem}",
         )
+
+        # Rebuild index
+        if not args.no_index:
+            _rebuild_index()
 
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)

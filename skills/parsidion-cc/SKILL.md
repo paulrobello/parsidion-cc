@@ -294,6 +294,33 @@ injects bidirectional `[[wikilinks]]` — updating both the new note's `related`
 adding back-references in matching existing notes. This builds the link graph automatically
 rather than requiring manual maintenance.
 
+## Vault Merge
+
+`vault-merge` is a global CLI command for AI-assisted note merging. It detects near-duplicate notes, merges their content via Claude haiku, and updates all bidirectional backlinks.
+
+### Usage
+
+```bash
+# Find near-duplicate pairs using embedding similarity (scan only, no merge)
+vault-merge --scan
+
+# Merge two specific notes (NOTE_A survives, NOTE_B is trashed)
+vault-merge NOTE_A NOTE_B --execute
+
+# Merge without rebuilding the index (for batch merges — rebuild once at the end)
+vault-merge NOTE_A NOTE_B --no-index --execute
+```
+
+### Key Flags
+
+| Flag | Description |
+|---|---|
+| `--scan` | List near-duplicate pairs sorted by cosine similarity; no merge performed |
+| `--execute` | Actually perform the merge (default is dry-run preview) |
+| `--no-index` | Skip rebuilding the vault index after the merge; use during batch operations and run `update_index.py` once when all merges are done |
+
+> Use `--no-index` on every individual merge during a batch deduplication run; run `update_index.py` once at the end. The `vault-deduplicator` agent handles this automatically.
+
 ## Vault Doctor
 
 `vault_doctor.py` scans all vault notes for structural issues and repairs them via Claude haiku.
@@ -458,6 +485,14 @@ If `config.yaml` is missing or unreadable, all `get_config()` calls return the d
 - Use `vault_common.py` functions for programmatic search from scripts.
 - Use Obsidian's built-in search for interactive visual exploration.
 - Use `Grep` or `Glob` tools only for targeted investigation when you know the specific file or exact pattern you need.
+
+### Agents
+
+| Agent | Trigger | Description |
+|---|---|---|
+| `vault-explorer` | "what do we know about X", "check our notes", "prior art" | Semantic vault search — returns a synthesized answer with source paths |
+| `research-agent` | "research X and save to vault", no vault results found | External research via Brave Search + Web Fetch; saves findings to vault |
+| `vault-deduplicator` | "deduplicate the vault", "find duplicate notes", "merge duplicate vault notes" | Scans for near-duplicate note pairs by embedding similarity, evaluates each pair, merges confirmed duplicates, and rebuilds the index |
 
 ### Linking Notes
 

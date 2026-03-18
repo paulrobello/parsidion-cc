@@ -133,7 +133,7 @@ uv tool install --editable .
 
 `uv tool install` places the `parsidion-mcp` binary in `~/.local/bin/` (or the equivalent `uv` tool bin directory on your platform).
 
-> **📝 Note:** On the first `vault_search` call with a query, `fastembed` downloads the `BAAI/bge-small-en-v1.5` ONNX model (~67 MB) and caches it. This initial download can take 30–60 seconds. Subsequent calls are fast. If the embeddings database does not yet exist, the tool returns a clear error message prompting you to run `rebuild_index` first.
+> **📝 Note:** On the first `vault_search` call with a query, `fastembed` downloads the configured ONNX embedding model and caches it. This initial download can take 30–60 seconds. Subsequent calls are fast. If the embeddings database does not yet exist, the tool returns a clear error message prompting you to run `rebuild_index` first.
 
 ### Verify Installation
 
@@ -354,7 +354,7 @@ Scans all vault notes for structural issues — missing frontmatter fields, inva
 | `errors_only` | `bool` | `False` | When `True`, suppress warnings and report errors only |
 | `limit` | `int \| None` | `None` | Maximum notes to repair (only relevant when `fix=True`) |
 
-The following `vault_doctor.py` flags are not exposed: `--dry-run`, `--model`, `--no-state`, `--jobs`, `--timeout`. The server uses the defaults (3 parallel workers, 120-second per-repair timeout).
+The following `vault_doctor.py` flags are not exposed: `--dry-run`, `--model`, `--no-state`, `--jobs`, `--timeout`, `--migrate-subfolders`, `--execute`. The server uses the defaults (3 parallel workers, 120-second per-repair timeout).
 
 #### Return Value
 

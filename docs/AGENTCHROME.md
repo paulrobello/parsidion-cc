@@ -46,7 +46,7 @@ graph LR
     style Vault fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#ffffff
 ```
 
-Without AgentChrome, the research agent falls back to `curl` — which works but returns raw HTML that is noisier and harder for an LLM to parse. AgentChrome returns the fully rendered DOM after JavaScript execution, which is essential for single-page applications and documentation sites that rely on client-side rendering.
+Without AgentChrome, the research agent falls back to `curl` or the built-in Claude Code Web Fetch tool, piping the raw HTML through `html-to-md.py` — which works but skips JavaScript rendering. AgentChrome returns the fully rendered DOM after JavaScript execution, which is essential for single-page applications and documentation sites that rely on client-side rendering.
 
 ## Installation
 
@@ -233,7 +233,7 @@ AgentChrome looks for Chrome or Chromium in standard installation paths. If you 
 
 ### Falls back to curl in the research agent
 
-If you see curl being used instead of agentchrome, it means `agentchrome` is not found on the `PATH` that Claude Code uses. Verify:
+If you see curl or the Web Fetch tool being used instead of agentchrome, it means `agentchrome` is not found on the `PATH` that Claude Code uses. Verify:
 
 ```bash
 # Check if agentchrome is accessible

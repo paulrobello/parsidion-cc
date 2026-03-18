@@ -16,6 +16,7 @@ A Claude Code customization toolkit that replaces built-in auto memory with a ma
   - [Research Agent](#research-agent)
   - [Vault Explorer Agent](#vault-explorer-agent)
   - [Project Explorer Agent](#project-explorer-agent)
+  - [Vault Deduplicator Agent](#vault-deduplicator-agent)
   - [Vault Common Library](#vault-common-library)
   - [Index Generator](#index-generator)
   - [Metadata Query CLI](#metadata-query-cli)
@@ -71,6 +72,7 @@ graph TB
         Agent[Research Agent]
         VE[Vault Explorer Agent]
         PE[Project Explorer Agent]
+        DD[Vault Deduplicator Agent]
         VC[vault_common.py]
         SSH[session_start_hook.py]
         STH[session_stop_hook.py]
@@ -109,6 +111,7 @@ graph TB
     CC -->|invokes| Agent
     CC -->|invokes| VE
     CC -->|invokes| PE
+    CC -->|invokes| DD
 
     SSH -->|reads| VC
     STH -->|reads| VC
@@ -127,6 +130,7 @@ graph TB
     PE -->|dispatches| VE
     PE -->|writes to| Projects
     PE -->|writes to| Patterns
+    DD -->|scans| VC
 
     SSH -->|loads context from| Daily
     SSH -->|loads context from| Projects
@@ -156,6 +160,7 @@ graph TB
     style Agent fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
     style VE fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
     style PE fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#ffffff
+    style DD fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
     style VC fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#ffffff
     style SSH fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#ffffff
     style STH fill:#880e4f,stroke:#c2185b,stroke-width:2px,color:#ffffff
@@ -540,6 +545,26 @@ A Claude Code agent definition (runs on Sonnet) that deeply analyzes a software 
 - Search before create — updates existing pattern notes rather than creating duplicates
 
 **Relationship to other agents:** Dispatches `vault-explorer` as sub-step 1 for the vault check. Pattern notes written in step 7 become available to future `vault-explorer` queries, closing the cross-project knowledge loop.
+
+### Vault Deduplicator Agent
+
+**Location:** `agents/vault-deduplicator.md`
+
+A Claude Code agent definition (runs on Haiku) that scans `~/ClaudeVault/` for near-duplicate note pairs, evaluates each pair, merges confirmed duplicates, and rebuilds the vault index when done.
+
+**Trigger phrases:** "deduplicate the vault", "find duplicate notes", "merge duplicate vault notes", "clean up vault duplicates", "vault has duplicates", "run vault-merge --scan", any request to find or consolidate near-duplicate notes.
+
+**Scope:** Read-only scan followed by selective vault writes (merges) and trash moves. Does not modify project source files. Does not handle single targeted merges — use `vault-merge` directly for those.
+
+**Workflow (4 steps):**
+1. **Scan** — runs `vault-merge --scan` to list near-duplicate pairs sorted by cosine similarity
+2. **Identify chains** — inspects for chain dependencies (a stem appearing as both NOTE_A in one pair and NOTE_B in another); chains must be processed sequentially within a single agent
+3. **Batch into parallel groups** — groups independent pairs (no shared stems) into batches of up to 5, dispatched as parallel subagents (Haiku); for each pair: reads both notes, evaluates overlap (same `session_id`, timestamped variant, body subset), executes `vault-merge NOTE_A NOTE_B --no-index --execute` if confirmed, or skips if content is genuinely distinct
+4. **Rebuild index** — after all subagents complete, runs `update_index.py` once
+
+**Default scan threshold:** `0.92` (higher than the `vault-merge --scan` default of `0.85` to avoid false positives).
+
+**Relationship to other tools:** Delegates the actual merge and index operations to `vault-merge` and `update_index.py`. Preferred NOTE_A is the base name (no timestamp suffix) so it survives the merge.
 
 ### Vault Common Library
 
@@ -1027,7 +1052,8 @@ parsidion-cc/
 ├── agents/
 │   ├── research-agent.md
 │   ├── vault-explorer.md                # Read-only vault search agent (Haiku)
-│   └── project-explorer.md              # Project analysis + vault pattern capture (Sonnet)
+│   ├── project-explorer.md              # Project analysis + vault pattern capture (Sonnet)
+│   └── vault-deduplicator.md            # Near-duplicate note scanner and merger (Haiku)
 ├── tests/
 │   └── test_vault_common.py
 └── skills/parsidion-cc/
@@ -1081,7 +1107,8 @@ parsidion-cc/
 ├── agents/
 │   ├── research-agent.md
 │   ├── vault-explorer.md                # Read-only vault search agent (Haiku)
-│   └── project-explorer.md              # Project analysis + vault pattern capture (Sonnet)
+│   ├── project-explorer.md              # Project analysis + vault pattern capture (Sonnet)
+│   └── vault-deduplicator.md            # Near-duplicate note scanner and merger (Haiku)
 └── skills/parsidion-cc/
     ├── SKILL.md
     ├── eval_results.json            # Trigger eval results

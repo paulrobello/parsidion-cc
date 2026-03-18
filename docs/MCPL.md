@@ -201,8 +201,8 @@ When you work across projects with different MCP server sets, use `mcpl config f
 ```bash
 mcpl config files               # View all discovered configs and their active status
 mcpl config files --select      # Interactive prompt to pick which configs to use
-mcpl config files --activate 1  # Activate config by index number
-mcpl config files --deactivate 2
+mcpl config files --activate 1  # Activate config by index number or path
+mcpl config files --deactivate 2  # Deactivate config by index number or path
 mcpl config files --all         # Activate every discovered config
 mcpl config files --reset       # Clear saved preferences; re-prompts on next run
 ```

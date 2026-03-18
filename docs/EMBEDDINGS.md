@@ -292,9 +292,10 @@ The default model is `BAAI/bge-small-en-v1.5`. Override it via config (see
 uv run ~/.claude/skills/parsidion-cc/scripts/build_embeddings.py --model BAAI/bge-small-en-v1.5
 ```
 
-> **⚠️ Warning:** Switching models invalidates all stored vectors — the cosine similarity scores
-> across models are not comparable. Run a full rebuild (without `--incremental`) after changing
-> the model.
+> **Note:** Switching models invalidates all stored vectors — the cosine similarity scores
+> across models are not comparable. When `--incremental` is used after a model change,
+> `build_embeddings.py` detects the dimension mismatch automatically and performs a full
+> rebuild. You can also pass `--incremental` directly — the script will self-correct.
 
 ---
 
@@ -659,7 +660,12 @@ the `embeddings.model` config key.
 **Cause:** Old vectors in the database were encoded with the previous model. The stored vectors
 are not compatible with the new model's embedding space.
 
-**Fix:** Run a full rebuild (not incremental) after any model change:
+**Auto-detection:** When `--incremental` is passed, `build_embeddings.py` compares the stored
+vector dimension against the new model's output dimension before processing any notes. If they
+differ, it automatically falls back to a full rebuild and prints a "Model dimension mismatch"
+warning.
+
+**Fix:** You can also force a full rebuild manually:
 
 ```bash
 uv run ~/.claude/skills/parsidion-cc/scripts/build_embeddings.py

@@ -486,7 +486,7 @@ to render the charts.
   - Index time bar chart (all combos)
   - Quality vs Speed scatter plot (MRR on Y-axis, Q/s on X-axis) — lets you identify the
     Pareto-optimal combo for your use case
-- **Full results table** — all metrics for every combo, sortable by column
+- **Full results table** — all metrics for every combo, pre-sorted by MRR descending
 
 ---
 
