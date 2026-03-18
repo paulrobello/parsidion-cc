@@ -131,7 +131,7 @@ A markdown vault-based knowledge management system that replaces Claude Code's b
 | `vault_stats.py` | Analytics CLI for vault health and activity -- modes: `--summary`, `--stale`, `--top-linked`, `--by-project`, `--growth`, `--tags` (tag cloud), `--pending` (pending queue status), `--graph` (knowledge graph metrics), `--hooks N` (last N hook events), `--weekly` (weekly rollup note), `--monthly` (monthly rollup note), `--timeline N` (activity bar chart for last N days), `--summarizer-progress` (live summarizer status), `--dashboard` (all modes combined); available as `vault-stats` global command with `--install-tools` |
 | `vault_review.py` | Interactive TUI for inspecting and approving/rejecting pending sessions before AI summarization; available as `vault-review` global command |
 | `vault_export.py` | Export vault to HTML static site, filtered zip, or PDF via pandoc; available as `vault-export` global command |
-| `vault_merge.py` | AI-assisted merging of near-duplicate notes with automatic backlink updates; available as `vault-merge` global command |
+| `vault_merge.py` | AI-assisted merging of near-duplicate notes with automatic backlink updates; `--scan` finds near-duplicate pairs via embedding similarity; `--no-index` skips per-merge index rebuild for batch workflows; available as `vault-merge` global command |
 | `update_index.py` | Rebuilds `~/ClaudeVault/CLAUDE.md` index and populates the `note_index` SQLite table; includes tag cloud and vault health from `doctor_state.json` |
 | `vault_doctor.py` | Scans vault notes for structural issues (missing frontmatter, broken wikilinks, orphan notes, etc.); auto-repairs broken wikilinks via exact stem match or `vault-search` semantic lookup (Python-only, no Claude call); repairs other issues via Claude haiku with semantic candidates from `vault-search`; singleton-guarded via PID in `doctor_state.json`; auto-commits uncommitted vault files ≥ 15 min old before scanning |
 | `check_graph_coverage.py` | Audits vault tags vs graph.json color groups; shows uncovered tags and stale entries |
@@ -209,6 +209,10 @@ A Haiku-powered read-only subagent that isolates vault lookups from the main ses
 ### Research Agent (`~/.claude/agents/research-agent.md`)
 
 Technical research agent that searches the vault first, conducts web research, and saves findings to the appropriate vault folder with proper YAML frontmatter. Fetches pages via `agentchrome page html` piped through `html-to-md.py` for noise-free markdown (curl fallback if agentchrome unavailable). Uses `mcpl` as a fallback search gateway when Brave Search hits rate limits -- see [docs/MCPL.md](docs/MCPL.md) for mcpl setup.
+
+### Vault Deduplicator Agent (`~/.claude/agents/vault-deduplicator.md`)
+
+A Haiku-powered agent that scans the vault for near-duplicate note pairs via `vault-merge --scan`, batches them into parallel subagents for evaluation and merging with `--no-index`, and runs one final index rebuild. See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ### HTML to Markdown (`skills/parsidion-cc/scripts/html-to-md.py`)
 
