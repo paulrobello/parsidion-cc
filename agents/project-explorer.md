@@ -83,7 +83,13 @@ Look for project-level patterns worth documenting:
 - **Testing approach**: unit vs integration, fixtures, mocking conventions
 - **CLI conventions**: argument parsing, subcommands, output formatting
 
-## Step 6 — Write Project Root Note
+## Step 6 — Load Existing Tags
+
+Before writing any vault notes, read the `## Existing Tags` section from `~/ClaudeVault/CLAUDE.md`
+to get the authoritative tag list. Reuse existing tags wherever possible — this avoids tag sprawl
+and duplicate tags. Never invent a new tag when an existing one fits.
+
+## Step 7 — Write Project Root Note
 
 All notes for this project go into a dedicated subfolder: `~/ClaudeVault/Projects/{project-slug}/`.
 Create the folder if it does not exist.
@@ -140,7 +146,7 @@ Key modules:
 feature notes you are about to create. If those notes don't exist yet, still include
 the wikilinks — they become valid once you write the feature notes in Step 7.
 
-## Step 7 — Write Feature Pattern Notes
+## Step 8 — Write Feature Pattern Notes
 
 For each significant feature, write `~/ClaudeVault/Projects/{project-slug}/{feature-slug}.md`.
 All feature notes go in the **same project subfolder** as the overview — do NOT use the
@@ -180,7 +186,7 @@ Numbered steps to reproduce this pattern in another project.
 **Minimum**: Write at least 3 feature notes. If fewer than 3 features are reusable,
 include the most distinctive architectural choice even if it is project-specific.
 
-## Step 8 — Rebuild Vault Index
+## Step 9 — Rebuild Vault Index
 
 After all notes are written:
 
@@ -190,7 +196,7 @@ uv run --no-project ~/.claude/skills/parsidion-cc/scripts/update_index.py
 
 Report the exit code. If non-zero, surface the error message.
 
-## Step 9 — Summary Report
+## Step 10 — Summary Report
 
 Return a structured summary:
 
