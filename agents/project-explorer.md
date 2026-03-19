@@ -27,7 +27,9 @@ uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_search.py "proje
 
 Also dispatch the `vault-explorer` agent with `"project {name} architecture features"`.
 
-- If notes exist: read them, identify gaps, and only add/update — never delete existing content.
+- If a project folder already exists at `~/ClaudeVault/Projects/{project-slug}/`: read existing notes,
+  identify gaps, and only add/update — never delete existing content. Also check for orphaned flat
+  files in `~/ClaudeVault/Projects/` prefixed with the project slug and move them into the folder.
 - If no notes exist: proceed to full analysis.
 
 ## Step 2 — Project Metadata Discovery
@@ -81,10 +83,18 @@ Look for project-level patterns worth documenting:
 - **Testing approach**: unit vs integration, fixtures, mocking conventions
 - **CLI conventions**: argument parsing, subcommands, output formatting
 
-## Step 6 — Write Project Overview Note
+## Step 6 — Write Project Root Note
 
 All notes for this project go into a dedicated subfolder: `~/ClaudeVault/Projects/{project-slug}/`.
-Create the folder if it does not exist. Write the overview to `overview.md` inside it:
+Create the folder if it does not exist.
+
+**Root note**: Write the project root note as **`{project-slug}.md`** inside the folder.
+This filename is critical — it ensures `[[{project-slug}]]` wikilinks resolve correctly
+across the entire vault. Do NOT use `overview.md` (that name is ambiguous when multiple
+projects each have one).
+
+If a `{project-slug}.md` already exists as a flat file in `Projects/`, move it into the
+subfolder. If an `overview.md` exists from a previous run, rename it to `{project-slug}.md`.
 
 ```markdown
 ---
@@ -97,7 +107,7 @@ sources: ["{/absolute/path/to/project}"]
 related: ["[[{feature-1-slug}]]", "[[{feature-2-slug}]]"]
 ---
 
-## {Project Name} Overview
+## {Project Name}
 
 ## Summary
 2-3 sentence description of what the project does and its key value.
@@ -144,7 +154,7 @@ tags: [{feature-tag}, {project-name}, {language}]
 project: {project-name}
 confidence: high
 sources: ["{/absolute/path/to/implementing/file}"]
-related: ["[[overview]]"]
+related: ["[[{project-slug}]]"]
 ---
 
 ## {Feature Name}
@@ -191,7 +201,7 @@ Return a structured summary:
 **Path**: {/absolute/path}
 
 ### Notes Written
-- `~/ClaudeVault/Projects/{project-slug}/overview.md` — [created|updated]
+- `~/ClaudeVault/Projects/{project-slug}/{project-slug}.md` — [created|updated]
 - `~/ClaudeVault/Projects/{project-slug}/{feature-slug}.md` — [created|updated]
 - ...
 
@@ -207,8 +217,9 @@ update_index.py: {success|failed — error message}
 1. **No orphan notes**: every note's `related` field must contain at least one `[[wikilink]]`.
 2. **No empty sections**: omit a section heading rather than leaving it blank.
 3. **Absolute source paths**: `sources` field must use the full filesystem path, not `~`.
-4. **Subfolder per project**: all notes for a project go under `Projects/{project-slug}/`. Use clean
-   filenames without the project prefix (`overview.md`, `{feature-slug}.md`) — the folder provides context.
+4. **Subfolder per project**: every project MUST have its own folder at `Projects/{project-slug}/`
+   with a root note named `{project-slug}.md`. All direct notes about the project go in this folder.
+   Use clean filenames without the project prefix (`{feature-slug}.md`) — the folder provides context.
 5. **Search before create**: if a pattern note already exists for this concept, update it
    instead of creating a duplicate. Add a `related` link back to the project overview.
 6. **Related field format**: inline quoted array — `related: ["[[note-a]]", "[[note-b]]"]`
@@ -217,3 +228,7 @@ update_index.py: {success|failed — error message}
    already used on related notes and reuse them where they fit. Prefer short single-word or
    minimal-hyphen tags — e.g. `swift` not `swift-language`, `arkit` not `arkit-tracking`.
    Invent new tags only when no existing tag accurately describes the concept.
+8. **Consolidate orphaned flat files**: after writing notes, check for flat files in
+   `~/ClaudeVault/Projects/` that are prefixed with this project's slug (e.g.
+   `{project-slug}-*.md`). Move them into the project subfolder. This prevents project
+   notes from accumulating outside their folder over time.
