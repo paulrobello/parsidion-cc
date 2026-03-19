@@ -346,26 +346,35 @@ Daily notes (`type: daily` or path under `Daily/`) are exempt from `confidence`,
 # Scan and report only (no writes)
 uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --dry-run
 
-# Scan and repair repairable issues via Claude haiku (3 parallel workers by default)
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix
+# Fix everything in one pass (frontmatter + tags + subfolders) — used by nightly cron
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix-all
 
-# Repair with more parallelism (e.g. 5 workers)
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix --jobs 5
+# Individual fix modes:
+# Repair frontmatter issues via Claude haiku (3 parallel workers by default)
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix-frontmatter
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix-frontmatter --jobs 5 --timeout 180
 
-# Extend per-repair timeout (default 120s) when running many parallel workers
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix --jobs 5 --timeout 180
+# Detect and merge duplicate tags (plural/singular, hyphen/underscore, collapsed)
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix-tags           # dry-run
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix-tags --execute # apply
+
+# Detect and migrate prefix clusters into subfolders
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migrate-subfolders           # dry-run
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migrate-subfolders --execute # apply
 
 # Repair up to 20 notes at a time
-env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix --limit 20
+env -u CLAUDECODE uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix-frontmatter --limit 20
 
 # Errors only (skip warnings)
 uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --errors-only --dry-run
 ```
 
+`--fix-all` is equivalent to `--fix-frontmatter --fix-tags --migrate-subfolders --execute`. The nightly cron via `summarize_sessions.py --run-doctor` uses `--fix-all`.
+
 Repairs run in parallel (`--jobs N`, default 3). Each `claude -p` subprocess is independent so parallelism is safe; state updates and console output are guarded by a lock so lines are never interleaved. The per-call timeout (`--timeout SECS`) defaults to 120s — increase it when running many parallel workers to avoid spurious timeouts.
 
 Repairable codes (Claude can fix): `MISSING_FRONTMATTER`, `MISSING_FIELD`, `INVALID_TYPE`, `INVALID_DATE`, `ORPHAN_NOTE`.
-Auto-repairable without Claude (Python-only): `BROKEN_WIKILINK` (exact/semantic match).
+Auto-repairable without Claude (Python-only): `BROKEN_WIKILINK` (exact/semantic match), `DUPLICATE_TAG` (merge via `--fix-tags`).
 Auto-repairable via Python + Claude filter: `PREFIX_CLUSTER` — candidates are detected by Python, then Claude haiku filters out generic-word false positives (e.g. 'fixing', 'missing'), keeping only specific subject names (project, library, OS, tool). Files are then moved and wikilinks patched by Python.
 Not auto-repairable (require manual fix): `FLAT_DAILY`.
 
@@ -590,4 +599,14 @@ python ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py --threshold
 python ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py --json
 ```
 
-Run this script after a batch of session summarizations or whenever the vault index is rebuilt, then update `graph.json` accordingly.
+### Full Graph Colorizer Workflow
+
+Run this workflow after batch summarizations, vault doctor runs, or whenever the tag taxonomy changes significantly:
+
+1. **Merge duplicate tags first** — run `vault_doctor.py --fix-tags --execute` to merge plural/singular, hyphen/underscore, and collapsed duplicates. This reduces tag sprawl before colorizing.
+2. **Rebuild the index** — run `update_index.py` so the tag cloud reflects the current state.
+3. **Audit coverage** — run `check_graph_coverage.py --threshold 2` to see which tags are uncovered and what groups they should belong to.
+4. **Update `graph.json`** — read `~/ClaudeVault/.obsidian/graph.json`, add uncovered tags to the appropriate `colorGroups` entry by appending `OR tag:#newtag` to the query string.
+5. **Verify** — re-run the audit to confirm coverage is ≥ 90%. Obsidian picks up `graph.json` changes automatically.
+
+The `--json` output from `check_graph_coverage.py` includes a `stats` object with `total_vault_tags`, `covered`, `uncovered`, and `stale` counts for scripting.

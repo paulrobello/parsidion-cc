@@ -1475,9 +1475,24 @@ def main() -> None:
         help="Specific notes to check (default: all vault notes)",
     )
     parser.add_argument(
+        "--fix-frontmatter",
+        action="store_true",
+        help="Apply Claude-suggested frontmatter repairs (writes files)",
+    )
+    # Legacy alias preserved for backwards compatibility
+    parser.add_argument(
         "--fix",
         action="store_true",
-        help="Apply Claude-suggested repairs (writes files)",
+        dest="fix_frontmatter",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--fix-all",
+        action="store_true",
+        help=(
+            "Run all fix steps: frontmatter repair, tag dedup, and subfolder "
+            "migration. Equivalent to --fix-frontmatter --fix-tags --execute."
+        ),
     )
     parser.add_argument(
         "--dry-run",
@@ -1536,7 +1551,7 @@ def main() -> None:
         action="store_true",
         help=(
             "With --migrate-subfolders or --fix-tags: apply changes. "
-            "Has no effect without one of those flags."
+            "Implied by --fix-all."
         ),
     )
     parser.add_argument(
@@ -1568,17 +1583,26 @@ def main() -> None:
     _write_pid(state)  # claim the lock immediately
     atexit.register(_release_pid)  # release on any exit path
 
-    # ── --migrate-subfolders mode (standalone — exits after running) ──────────
-    if args.migrate_subfolders:
-        dry = not args.execute
-        run_migrate_subfolders(vault_common.VAULT_ROOT, dry_run=dry)
-        return
+    # --fix-all implies all fix flags + execute
+    if args.fix_all:
+        args.fix_frontmatter = True
+        args.fix_tags = True
+        args.migrate_subfolders = True
+        args.execute = True
 
-    # ── --fix-tags mode (standalone — exits after running) ─────────────────
+    # ── --fix-tags mode ────────────────────────────────────────────────────
     if args.fix_tags:
         dry = not args.execute
         run_fix_tags(dry_run=dry)
-        return
+        if not args.fix_all:
+            return
+
+    # ── --migrate-subfolders mode ──────────────────────────────────────────
+    if args.migrate_subfolders:
+        dry = not args.execute
+        run_migrate_subfolders(vault_common.VAULT_ROOT, dry_run=dry)
+        if not args.fix_all:
+            return
 
     # Auto-fix legacy pending paths (silent when nothing to fix)
     fixed_paths = vault_common.migrate_pending_paths(dry_run=args.dry_run)
@@ -1661,7 +1685,7 @@ def main() -> None:
                 print(f"    {note_rel}  →  {folder_rel}/{prefix}/{new_name}")
         print()
 
-        if not args.dry_run and args.fix:
+        if not args.dry_run and args.fix_frontmatter:
             print("Reorganizing prefix clusters…\n")
             for cluster_folder, prefix, cluster_notes, base_note in clusters:
                 moves = fix_prefix_cluster(
@@ -1765,10 +1789,10 @@ def main() -> None:
         save_state(state)
         return
 
-    if not args.fix:
+    if not args.fix_frontmatter:
         print(
             f"{len(repair_candidates)} note(s) have repairable issues.\n"
-            f"Run with --fix to repair them via Claude ({args.model})."
+            f"Run with --fix-frontmatter to repair them via Claude ({args.model})."
         )
         save_state(state)
         return

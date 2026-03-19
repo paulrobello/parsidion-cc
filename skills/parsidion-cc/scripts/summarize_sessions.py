@@ -1240,14 +1240,14 @@ def main() -> None:
         _DEFAULT_CLUSTER_MODEL,
     )
 
-    # Optionally run vault_doctor first (fixes legacy paths, commits stale files)
+    # Optionally run vault_doctor first (--fix-all: frontmatter, tags, subfolders)
     if args.run_doctor:
         import subprocess as _sp
         import sys as _sys
 
         _doctor = Path(__file__).parent / "vault_doctor.py"
-        print("Running vault_doctor before summarizing…")
-        _sp.run([_sys.executable, str(_doctor)], check=False)
+        print("Running vault_doctor --fix-all before summarizing…")
+        _sp.run([_sys.executable, str(_doctor), "--fix-all"], check=False)
 
     # Determine source file
     if args.sessions:
