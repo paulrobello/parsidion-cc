@@ -812,7 +812,11 @@ def _find_link_replacement(
     Strategy:
     1. Exact case-insensitive stem match — if exactly one vault note matches,
        return its stem.
-    2. Semantic fallback via vault-search — take the top result above min_score
+    2. Prefix-strip match — if the link is ``prefix-rest`` and ``rest`` resolves
+       to a note inside a ``prefix/`` subfolder, return ``rest``.  This handles
+       links that broke when notes were migrated into subfolders and the prefix
+       was stripped from the filename.
+    3. Semantic fallback via vault-search — take the top result above min_score
        that isn't exclude_path.
     Returns None if no match is found (caller should remove the link).
     """
@@ -821,9 +825,19 @@ def _find_link_replacement(
     matches = note_map.get(key, [])
     if len(matches) == 1:
         return matches[0].stem
-    # Multiple exact matches — ambiguous, fall through to semantic search
+    # Multiple exact matches — ambiguous, fall through
 
-    # 2. Semantic fallback
+    # 2. Prefix-strip match: "prefix-rest-of-stem" → "rest-of-stem" in prefix/ subfolder
+    parts = link_text.split("-", 1)
+    if len(parts) == 2:
+        prefix, rest = parts[0].lower(), parts[1].lower()
+        rest_matches = note_map.get(rest, [])
+        for m in rest_matches:
+            # Verify the note lives inside a folder named after the prefix
+            if any(p.lower() == prefix for p in m.parent.parts):
+                return m.stem
+
+    # 3. Semantic fallback
     env = os.environ.copy()
     env.pop("CLAUDECODE", None)
     try:
