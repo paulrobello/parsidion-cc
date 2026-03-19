@@ -329,13 +329,13 @@ def build_prompt(
         tags_instruction = (
             f"  tags (2-4 tags — STRONGLY prefer existing tags: {tags_str};\n"
             "  only introduce a new tag if none of the existing ones fit;\n"
-            "  when creating new tags prefer short single-word or minimal-hyphen tags\n"
-            "  e.g. 'voxel' not 'voxel-engine', 'terminal' not 'terminal-emulator')"
+            "  NEVER use underscores — always kebab-case (hyphens);\n"
+            "  prefer short singular tags: 'voxel' not 'voxel-engine', 'hook' not 'hooks')"
         )
     else:
         tags_instruction = (
-            "  tags (2-4 relevant tags; prefer short single-word or minimal-hyphen tags,\n"
-            "  e.g. 'voxel' not 'voxel-engine', 'terminal' not 'terminal-emulator')"
+            "  tags (2-4 relevant tags; NEVER use underscores — always kebab-case;\n"
+            "  prefer short singular tags: 'voxel' not 'voxel-engine', 'hook' not 'hooks')"
         )
     # Build optional dedup block when similar notes are found
     dedup_block = ""

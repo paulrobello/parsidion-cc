@@ -42,7 +42,7 @@ Determine the current working directory, then read the following files if they e
 - `Makefile` — available commands
 
 Extract:
-- Project name and slug (kebab-case)
+- Project name and slug (kebab-case — convert underscores to hyphens, e.g. `par_ai_core` → `par-ai-core`)
 - Language + version
 - Framework(s) used
 - Key dependencies (top 5–10)
@@ -225,8 +225,9 @@ update_index.py: {success|failed — error message}
 6. **Related field format**: inline quoted array — `related: ["[[note-a]]", "[[note-b]]"]`
    (not bare wikilinks, not YAML block sequence with `-`).
 7. **Reuse existing tags**: before choosing tags, scan `~/ClaudeVault/CLAUDE.md` for tags
-   already used on related notes and reuse them where they fit. Prefer short single-word or
-   minimal-hyphen tags — e.g. `swift` not `swift-language`, `arkit` not `arkit-tracking`.
+   already used on related notes and reuse them where they fit. **NEVER use underscores in
+   tags or the project field — always use kebab-case (hyphens).** Prefer short singular
+   tags — e.g. `swift` not `swift-language`, `hook` not `hooks`, `fractal` not `fractals`.
    Invent new tags only when no existing tag accurately describes the concept.
 8. **Consolidate orphaned flat files**: after writing notes, check for flat files in
    `~/ClaudeVault/Projects/` that are prefixed with this project's slug (e.g.

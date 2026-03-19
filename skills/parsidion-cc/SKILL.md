@@ -164,7 +164,8 @@ related: []                  # [[wikilinks]] to other vault notes
 **Field rules:**
 - `date`: The date the note was created or last substantially updated.
 - `type`: Must be one of the enumerated values. Drives folder placement.
-- `tags`: Freeform but prefer existing tags. Check the vault index first. When creating new tags, prefer short single-word or minimal-hyphen tags — e.g. `voxel` not `voxel-engine`, `terminal` not `terminal-emulator`. Longer compound tags are acceptable only when the shorter form would be ambiguous.
+- `tags`: Freeform but prefer existing tags. Check the vault index first. **NEVER use underscores — always kebab-case (hyphens).** Convert repo names like `par_ai_core` to `par-ai-core`. Prefer short singular tags — e.g. `voxel` not `voxel-engine`, `hook` not `hooks`, `fractal` not `fractals`. Longer compound tags are acceptable only when the shorter form would be ambiguous.
+- `project`: Optional. Must also be kebab-case (no underscores). Convert repo names: `par_ai_core` → `par-ai-core`.
 - `confidence`: `high` = verified across multiple interactions or sources. `medium` = likely correct, single source. `low` = hypothesis or unverified.
 - `related`: Must contain at least one wikilink in inline quoted array format: `["[[note-one]]", "[[note-two]]"]`. No orphan notes.
 

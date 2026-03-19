@@ -147,7 +147,7 @@ related: ["[[related-note-name]]"]
 
 **CRITICAL**: `related: []` is NEVER acceptable. Every note must link to at least one other vault note via `[[wikilink]]`. If no specific note exists yet, link to the primary topic or technology name (e.g. `"[[qdrant]]"`, `"[[fastapi]]"`). A note with an empty `related` field is an orphan and fails vault validation.
 
-**Tag reuse**: Before choosing tags, scan the vault index (`~/ClaudeVault/CLAUDE.md`) for existing tags on related notes and reuse them where they fit. Prefer short single-word or minimal-hyphen tags — e.g. `swift` not `swift-language`, `arkit` not `arkit-framework`. Longer compound tags are only acceptable when the shorter form is ambiguous. Invent new tags only when no existing tag accurately describes the topic.
+**Tag reuse**: Before choosing tags, scan the vault index (`~/ClaudeVault/CLAUDE.md`) for existing tags on related notes and reuse them where they fit. **NEVER use underscores in tags or the project field — always use kebab-case (hyphens).** Prefer short singular tags — e.g. `swift` not `swift-language`, `hook` not `hooks`, `fractal` not `fractals`. Longer compound tags are only acceptable when the shorter form is ambiguous. Invent new tags only when no existing tag accurately describes the topic.
 
 ### Documentation Structure
 

@@ -271,7 +271,7 @@ session_id: <uuid>      # optional — set by summarize_sessions.py on AI-genera
 - **Daily notes**: stored as `Daily/YYYY-MM/DD.md` (e.g. `Daily/2026-03/13.md`) — the hook writes them there automatically; never create flat `Daily/YYYY-MM-DD.md` files
 - No orphan notes — every note must link to at least one other note via `related`
 - Search before create — update existing notes rather than creating duplicates
-- **Tag brevity**: prefer short single-word or minimal-hyphen tags — e.g. `voxel` not `voxel-engine`, `terminal` not `terminal-emulator`. Use a longer form only when the short form would be genuinely ambiguous.
+- **Tag brevity**: prefer short singular kebab-case tags — e.g. `voxel` not `voxel-engine`, `hook` not `hooks`, `fractal` not `fractals`. **Never use underscores** in tags or the `project` field — convert repo names like `par_ai_core` to `par-ai-core`. Use a longer form only when the short form would be genuinely ambiguous.
 - `Templates/` is a symlink to `skills/parsidion-cc/templates/` — never edit template files directly from the vault side
 - **Subfolder rule**: when 3 or more notes share a common subject prefix, move them into a subfolder named after that subject. Drop the redundant prefix from filenames inside the subfolder. Only one level of subfolder is allowed — never nest subfolders within subfolders. Update all wikilinks and run `update_index.py` after reorganizing.
 
