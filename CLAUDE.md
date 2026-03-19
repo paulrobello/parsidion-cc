@@ -98,6 +98,19 @@ vault-merge                        # AI-assisted note merging with backlink upda
 uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migrate-subfolders
 uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migrate-subfolders --execute
 
+# Tag deduplication in vault doctor (merges plural/singular, hyphen/underscore, collapsed)
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix-tags
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix-tags --execute
+
+# Obsidian Graph Category Colorizer workflow
+# 1. Run audit to find uncovered tags:
+python3 ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py
+python3 ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py --threshold 2  # only tags used 2+ times
+python3 ~/.claude/skills/parsidion-cc/scripts/check_graph_coverage.py --json          # machine-readable
+# 2. Update ~/ClaudeVault/.obsidian/graph.json colorGroups to cover uncovered tags
+# 3. Re-run audit to verify coverage
+# Tip: run --fix-tags first to merge duplicates, then colorize
+
 # Run the skill trigger accuracy eval (MUST be from a separate terminal, not inside Claude Code)
 bash ~/.claude/skills/parsidion-cc/scripts/run_trigger_eval.sh
 ```

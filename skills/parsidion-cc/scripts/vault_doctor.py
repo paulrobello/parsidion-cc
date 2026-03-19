@@ -1149,6 +1149,315 @@ def _repair_one(
 
 
 # ---------------------------------------------------------------------------
+# Tag deduplication
+# ---------------------------------------------------------------------------
+
+# Regex to find the tags line in frontmatter (inline or block).
+# We operate on raw file text to preserve formatting of other fields.
+_TAGS_INLINE_RE = re.compile(
+    r"^(tags:\s*)\[([^\]]*)\]\s*$", re.MULTILINE
+)
+_TAGS_BLOCK_START_RE = re.compile(r"^tags:\s*$", re.MULTILINE)
+
+
+def _collect_all_tags(notes: list[Path]) -> dict[str, int]:
+    """Return tag → usage count across all vault notes."""
+    counts: dict[str, int] = {}
+    for note in notes:
+        try:
+            content = note.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        fm = vault_common.parse_frontmatter(content)
+        tags = fm.get("tags", [])
+        if isinstance(tags, list):
+            for t in tags:
+                tag = str(t).strip()
+                if tag:
+                    counts[tag] = counts.get(tag, 0) + 1
+    return counts
+
+
+def _find_tag_duplicates(
+    tag_counts: dict[str, int],
+) -> list[tuple[str, str, str]]:
+    """Find duplicate tag pairs that should be merged.
+
+    Returns list of (keep, merge_away, reason).
+    The tag with higher usage count is kept; ties prefer kebab-case.
+    """
+    tags = sorted(tag_counts.keys())
+    pairs: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+
+    for i, t1 in enumerate(tags):
+        for t2 in tags[i + 1 :]:
+            pair_key = (min(t1, t2), max(t1, t2))
+            if pair_key in seen:
+                continue
+
+            reason: str | None = None
+
+            # Hyphen vs underscore (exact match after normalization)
+            if t1.replace("-", "_") == t2 or t1.replace("_", "-") == t2:
+                reason = "hyphen/underscore"
+
+            # Plural/singular (simple -s suffix)
+            elif t1 + "s" == t2 or t2 + "s" == t1:
+                reason = "plural/singular"
+
+            # Exact duplicate with different casing
+            elif t1.lower() == t2.lower() and t1 != t2:
+                reason = "case"
+
+            # Hyphenated vs single-word (e.g. real-time vs realtime)
+            elif t1.replace("-", "") == t2 or t2.replace("-", "") == t1:
+                reason = "hyphenated/collapsed"
+
+            if reason:
+                seen.add(pair_key)
+                c1 = tag_counts.get(t1, 0)
+                c2 = tag_counts.get(t2, 0)
+                # Pick canonical form.  Vault convention: prefer short,
+                # singular, kebab-case tags.  So:
+                # 1. Plural/singular → always keep singular
+                # 2. Hyphen/underscore → always keep kebab-case
+                # 3. Hyphenated/collapsed → keep hyphenated (more readable)
+                # 4. Fallback: higher count wins
+                if reason == "plural/singular":
+                    # Singular is the shorter one (without trailing -s)
+                    if t1 + "s" == t2:
+                        keep, away = t1, t2
+                    else:
+                        keep, away = t2, t1
+                elif reason == "hyphen/underscore":
+                    if "-" in t1 and "_" in t2:
+                        keep, away = t1, t2
+                    else:
+                        keep, away = t2, t1
+                elif reason == "hyphenated/collapsed":
+                    # Keep the hyphenated form (more readable)
+                    if "-" in t1:
+                        keep, away = t1, t2
+                    else:
+                        keep, away = t2, t1
+                elif c1 >= c2:
+                    keep, away = t1, t2
+                else:
+                    keep, away = t2, t1
+                pairs.append((keep, away, reason))
+
+    return pairs
+
+
+def _replace_tag_in_note(path: Path, old_tag: str, new_tag: str) -> bool:
+    """Replace *old_tag* with *new_tag* in a note's frontmatter tags field.
+
+    Handles inline lists ``[a, b]``, inline quoted ``["a", "b"]``, and
+    block sequence (``- item``) formats.  Returns True if the file was modified.
+    """
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    # Find frontmatter boundaries
+    fm_match = re.match(r"^---\n(.*?\n)---", content, re.DOTALL)
+    if not fm_match:
+        return False
+
+    fm_text = fm_match.group(1)
+    original_fm = fm_text
+
+    # Strategy: find the tags field and do targeted replacement within it.
+    # This avoids corrupting other frontmatter fields.
+
+    # Inline list: tags: [tag1, tag2]
+    inline_m = _TAGS_INLINE_RE.search(fm_text)
+    if inline_m:
+        prefix = inline_m.group(1)
+        items_str = inline_m.group(2)
+        # Parse items, respecting quotes
+        items: list[str] = []
+        for item in re.findall(r'"([^"]*)"', items_str):
+            items.append(item)
+        if not items:
+            # Unquoted inline: [a, b, c]
+            items = [i.strip().strip('"').strip("'") for i in items_str.split(",")]
+
+        new_items: list[str] = []
+        replaced = False
+        for item in items:
+            if item == old_tag:
+                if new_tag not in new_items:
+                    new_items.append(new_tag)
+                replaced = True
+            elif item not in new_items:
+                new_items.append(item)
+
+        if not replaced:
+            return False
+
+        # Detect quoting style from original
+        has_quotes = '"' in items_str
+        if has_quotes:
+            formatted = ", ".join(f'"{t}"' for t in new_items)
+        else:
+            formatted = ", ".join(new_items)
+        new_line = f"{prefix}[{formatted}]"
+        fm_text = fm_text[: inline_m.start()] + new_line + fm_text[inline_m.end() :]
+
+    else:
+        # Block sequence: tags:\n  - item
+        block_m = _TAGS_BLOCK_START_RE.search(fm_text)
+        if block_m:
+            # Find all "  - tag" lines after "tags:"
+            pos = block_m.end()
+            lines = fm_text[pos:].split("\n")
+            new_lines: list[str] = []
+            replaced = False
+            seen_tags: set[str] = set()
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith("- "):
+                    tag_val = stripped[2:].strip().strip('"').strip("'")
+                    if tag_val == old_tag:
+                        if new_tag not in seen_tags:
+                            new_lines.append(f"  - {new_tag}")
+                            seen_tags.add(new_tag)
+                        replaced = True
+                    elif tag_val not in seen_tags:
+                        new_lines.append(line)
+                        seen_tags.add(tag_val)
+                    else:
+                        # Duplicate after merge — skip
+                        replaced = True
+                else:
+                    new_lines.append(line)
+                    break  # End of block sequence
+
+            if not replaced:
+                return False
+
+            # Reconstruct: everything before block items + new items + rest
+            remaining_lines = lines[len(new_lines) + (1 if replaced else 0) :]
+            fm_text = (
+                fm_text[: block_m.end()]
+                + "\n".join(new_lines)
+                + ("\n" + "\n".join(remaining_lines) if remaining_lines else "")
+            )
+        else:
+            return False
+
+    if fm_text == original_fm:
+        return False
+
+    new_content = content[: fm_match.start(1)] + fm_text + content[fm_match.end(1) :]
+    path.write_text(new_content, encoding="utf-8")
+    return True
+
+
+def _update_graph_json_tags(merges: list[tuple[str, str, str]]) -> int:
+    """Update graph.json to replace merged-away tags with their canonical form.
+
+    Returns the number of substitutions made.
+    """
+    graph_path = vault_common.VAULT_ROOT / ".obsidian" / "graph.json"
+    if not graph_path.is_file():
+        return 0
+
+    try:
+        data = json.loads(graph_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+
+    subs = 0
+    for keep, away, _ in merges:
+        for group in data.get("colorGroups", []):
+            query = group.get("query", "")
+            old_ref = f"tag:#{away}"
+            if old_ref in query:
+                # Replace with canonical, but only add if not already present
+                new_ref = f"tag:#{keep}"
+                if new_ref in query:
+                    # Already has canonical — just remove the old one
+                    query = query.replace(f" OR {old_ref}", "")
+                    query = query.replace(f"{old_ref} OR ", "")
+                    query = query.replace(old_ref, "")
+                else:
+                    query = query.replace(old_ref, new_ref)
+                group["query"] = query
+                subs += 1
+
+    if subs:
+        graph_path.write_text(
+            json.dumps(data, indent=2) + "\n", encoding="utf-8"
+        )
+
+    return subs
+
+
+def run_fix_tags(dry_run: bool = True) -> None:
+    """Detect and merge duplicate tags across the vault.
+
+    Finds duplicate tag pairs (plural/singular, hyphen/underscore,
+    collapsed hyphens) and merges them to a canonical form.
+
+    Args:
+        dry_run: When True, only report — do not modify any files.
+    """
+    all_notes = list(vault_common.all_vault_notes())
+    tag_counts = _collect_all_tags(all_notes)
+    duplicates = _find_tag_duplicates(tag_counts)
+
+    if not duplicates:
+        print("No duplicate tags found.")
+        return
+
+    print(f"\nFound {len(duplicates)} duplicate tag pair(s):\n")
+    print(f"  {'Keep':<30} {'#':>4}  {'Merge away':<30} {'#':>4}  Reason")
+    print(f"  {'─' * 80}")
+    for keep, away, reason in sorted(duplicates, key=lambda x: -tag_counts.get(x[1], 0)):
+        ck = tag_counts.get(keep, 0)
+        ca = tag_counts.get(away, 0)
+        print(f"  {keep:<30} {ck:>4}  {away:<30} {ca:>4}  {reason}")
+    print()
+
+    total_affected = sum(tag_counts.get(away, 0) for _, away, _ in duplicates)
+    print(f"Total note edits needed: ~{total_affected}")
+
+    if dry_run:
+        print("\n[dry-run] Run with --execute to apply tag merges.")
+        return
+
+    # Apply merges
+    notes_modified = 0
+    for keep, away, reason in duplicates:
+        count = 0
+        for note in all_notes:
+            if _replace_tag_in_note(note, away, keep):
+                count += 1
+                notes_modified += 1
+        if count:
+            print(f"  Merged '{away}' → '{keep}' in {count} note(s)")
+
+    # Update graph.json
+    graph_subs = _update_graph_json_tags(duplicates)
+    if graph_subs:
+        print(f"  Updated {graph_subs} graph.json color group(s)")
+
+    if notes_modified:
+        vault_common.git_commit_vault(
+            f"refactor(vault): merge {len(duplicates)} duplicate tag pair(s) "
+            f"across {notes_modified} note(s)",
+        )
+        print(f"\nMerged {len(duplicates)} tag pair(s) across {notes_modified} note(s).")
+        print("Run update_index.py to rebuild the vault index.")
+    else:
+        print("\nNo files were modified.")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1226,8 +1535,16 @@ def main() -> None:
         "--execute",
         action="store_true",
         help=(
-            "With --migrate-subfolders: move files into subfolders, update wikilinks, "
-            "and rebuild the vault index. Has no effect without --migrate-subfolders."
+            "With --migrate-subfolders or --fix-tags: apply changes. "
+            "Has no effect without one of those flags."
+        ),
+    )
+    parser.add_argument(
+        "--fix-tags",
+        action="store_true",
+        help=(
+            "Detect and merge duplicate tags (plural/singular, hyphen/underscore, "
+            "collapsed hyphens). Shows candidates by default; use --execute to apply."
         ),
     )
     args = parser.parse_args()
@@ -1255,6 +1572,12 @@ def main() -> None:
     if args.migrate_subfolders:
         dry = not args.execute
         run_migrate_subfolders(vault_common.VAULT_ROOT, dry_run=dry)
+        return
+
+    # ── --fix-tags mode (standalone — exits after running) ─────────────────
+    if args.fix_tags:
+        dry = not args.execute
+        run_fix_tags(dry_run=dry)
         return
 
     # Auto-fix legacy pending paths (silent when nothing to fix)
