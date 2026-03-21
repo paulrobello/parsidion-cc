@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt typecheck checkall clean install
+.PHONY: build test lint fmt typecheck checkall clean install graph graph-with-daily visualizer stop-visualizer build-visualizer visualizer-setup
 
 # Format code with ruff
 fmt:
@@ -31,3 +31,22 @@ clean:
 # Install skill to ~/.claude (shortcut for uv run install.py --force --yes)
 install:
 	uv run install.py --force --yes
+
+## Vault Visualizer
+graph:
+	uv run scripts/build_graph.py
+
+graph-with-daily:
+	uv run scripts/build_graph.py --include-daily
+
+visualizer:
+	cd visualizer && bun dev
+
+stop-visualizer:
+	@lsof -ti:3999 | xargs kill -9 2>/dev/null && echo "Visualizer stopped" || echo "Nothing running on port 3999"
+
+build-visualizer:
+	cd visualizer && bun run build
+
+visualizer-setup:
+	cd visualizer && bun install
