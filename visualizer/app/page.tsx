@@ -1,27 +1,16 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { useLocalStorage } from '@/lib/useLocalStorage'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
-import { loadGraphData, filterEdges } from '@/lib/graph'
-import { HUDPanel } from '@/components/HUDPanel'
-import { NotePanel } from '@/components/NotePanel'
-import { SearchBox } from '@/components/SearchBox'
-import type { GraphData, GraphSource } from '@/lib/graph'
+import { loadGraphData } from '@/lib/graph'
+import type { GraphData } from '@/lib/graph'
 import type { GraphCanvasHandle } from '@/components/GraphCanvas'
-import { TYPE_COLORS } from '@/lib/sigma-colors'
+import { useVisualizerState } from '@/lib/useVisualizerState'
+import { FileExplorer } from '@/components/FileExplorer'
+import { Toolbar } from '@/components/Toolbar'
+import { ReadingPane } from '@/components/ReadingPane'
+import { HUDPanel } from '@/components/HUDPanel'
 
-// Simulation setting defaults — used by useLocalStorage and the reset button
-const SIM_DEFAULTS = {
-  scalingRatio: 10,
-  gravity: 1,
-  slowDown: 0.5,
-  edgeWeightInfluence: 2,
-  startTemperature: 0.8,
-  stopThreshold: 0.01,
-}
-
-// Dynamic import for the graph canvas (browser-only)
 const GraphCanvas = dynamic(() => import('@/components/GraphCanvas').then(m => m.GraphCanvas), {
   ssr: false,
   loading: () => (
@@ -34,48 +23,16 @@ const GraphCanvas = dynamic(() => import('@/components/GraphCanvas').then(m => m
         <div>INITIALIZING GRAPH...</div>
       </div>
     </div>
-  )
+  ),
 })
 
 export default function Home() {
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  // Controls — persisted to localStorage
-  const [threshold, setThreshold] = useLocalStorage('vv:threshold', 0.8)
-  const [graphSource, setGraphSource] = useLocalStorage<GraphSource>('vv:graphSource', 'semantic')
-  const [showOverlayEdges, setShowOverlayEdges] = useLocalStorage('vv:showOverlayEdges', false)
-  const [filterNodesBySimilarity, setFilterNodesBySimilarity] = useLocalStorage('vv:filterNodesBySimilarity', false)
-  const [activeTypesArr, setActiveTypesArr] = useLocalStorage<string[]>(
-    'vv:activeTypes',
-    Object.keys(TYPE_COLORS).filter(t => t !== 'daily')
-  )
-  const activeTypes = useMemo(() => new Set(activeTypesArr), [activeTypesArr])
-  const setActiveTypes = useCallback((updater: Set<string> | ((prev: Set<string>) => Set<string>)) => {
-    setActiveTypesArr(prev => {
-      const prevSet = new Set(prev)
-      const next = typeof updater === 'function' ? updater(prevSet) : updater
-      return [...next]
-    })
-  }, [setActiveTypesArr])
-  const [showDaily, setShowDaily] = useLocalStorage('vv:showDaily', false)
-  const [hideIsolated, setHideIsolated] = useLocalStorage('vv:hideIsolated', false)
-  const [labelsOnHoverOnly, setLabelsOnHoverOnly] = useLocalStorage('vv:labelsOnHoverOnly', false)
-  const [selectedNode, setSelectedNode] = useState<string | null>(null)
-  const [scalingRatio, setScalingRatio] = useLocalStorage('vv:scalingRatio', SIM_DEFAULTS.scalingRatio)
-  const [gravityRaw, setGravity] = useLocalStorage('vv:gravity', SIM_DEFAULTS.gravity)
-  const gravity = Math.min(gravityRaw, 5)
-  const [slowDown, setSlowDown] = useLocalStorage('vv:slowDown', SIM_DEFAULTS.slowDown)
-  const [edgeWeightInfluence, setEdgeWeightInfluence] = useLocalStorage('vv:edgeWeightInfluence', SIM_DEFAULTS.edgeWeightInfluence)
-  const [startTemperature, setStartTemperature] = useLocalStorage('vv:startTemperature', SIM_DEFAULTS.startTemperature)
-  const [stopThreshold, setStopThreshold] = useLocalStorage('vv:stopThreshold', SIM_DEFAULTS.stopThreshold)
-  const [isLayoutRunning, setIsLayoutRunning] = useState(true)
-
   const graphCanvasRef = useRef<GraphCanvasHandle>(null)
 
   useEffect(() => {
-    // Clear stale persisted keys that have new defaults
     localStorage.removeItem('vv:isLayoutRunning')
     if (!localStorage.getItem('vv:threshold_v2')) {
       localStorage.removeItem('vv:threshold')
@@ -87,83 +44,75 @@ export default function Home() {
       .finally(() => setLoading(false))
   }, [])
 
-  const selectedNodeData = useMemo(() => {
-    if (!graphData || !selectedNode) return null
-    return graphData.nodes.find(n => n.id === selectedNode) ?? null
-  }, [graphData, selectedNode])
+  const state = useVisualizerState(graphData)
 
-  const handleNodeClick = useCallback((stem: string) => {
-    setSelectedNode(stem)
+  // Auto-collapse sidebar on narrow viewports
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)')
+    const handler = (e: MediaQueryListEvent) => {
+      if (e.matches) state.setSidebarCollapsed(true)
+    }
+    if (mq.matches) state.setSidebarCollapsed(true)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleBackgroundClick = useCallback(() => {
-    setSelectedNode(null)
-  }, [])
+  const handleSearchSelect = useCallback((stem: string, newTab: boolean) => {
+    state.openNote(stem, newTab)
+    if (state.viewMode === 'graph') {
+      graphCanvasRef.current?.flyToNode(stem)
+      graphCanvasRef.current?.selectNode(stem)
+    }
+  }, [state])
 
-  const handleWikiNav = useCallback((stem: string) => {
-    setSelectedNode(stem)
-    graphCanvasRef.current?.flyToNode(stem)
-  }, [])
+  const handleGraphNodeClick = useCallback((stem: string, newTab: boolean) => {
+    state.openNote(stem, newTab)
+    state.setSelectedNode(stem)
+  }, [state])
 
-  const handleToggleType = useCallback((type: string) => {
-    setActiveTypes(prev => {
-      const next = new Set(prev)
-      if (next.has(type)) next.delete(type)
-      else next.add(type)
-      return next
-    })
-  }, [setActiveTypes])
+  const handleNavigate = useCallback((stem: string, newTab: boolean) => {
+    const resolved = state.resolveWikilink(stem) ?? stem
+    state.openNote(resolved, newTab)
+    if (state.viewMode === 'graph') {
+      graphCanvasRef.current?.flyToNode(resolved)
+    }
+  }, [state])
 
-  // Stats for HUD
-  const stats = useMemo(() => {
-    if (!graphData) return { nodeCount: 0, edgeCount: 0, avgScore: 0 }
-    const qualifying = (filterNodesBySimilarity && graphSource === 'wiki')
-      ? new Set(graphData.edges.filter(e => e.kind === 'semantic' && e.w >= threshold).flatMap(e => [e.s, e.t]))
-      : null
-    const visibleNodes = new Set(
-      graphData.nodes
-        .filter(n => (showDaily || n.folder !== 'Daily') && activeTypes.has(n.type) && (!qualifying || qualifying.has(n.id)))
-        .map(n => n.id)
-    )
-    const edges = filterEdges(graphData.edges, graphSource, threshold)
-      .filter(e => visibleNodes.has(e.s) && visibleNodes.has(e.t))
-    const semEdges = edges.filter(e => e.kind === 'semantic')
-    const avg = semEdges.length > 0
-      ? semEdges.reduce((sum, e) => sum + e.w, 0) / semEdges.length
-      : 0
-    return { nodeCount: visibleNodes.size, edgeCount: edges.length, avgScore: avg }
-  }, [graphData, threshold, graphSource, activeTypes, showDaily, filterNodesBySimilarity])
-
-  const panelOpen = !!selectedNode
+  // Determine neighborhood center for graph mode
+  const neighborhoodCenter = state.graphScope === 'local' ? state.activeTab : null
 
   return (
     <main style={{
       position: 'fixed', inset: 0,
       background: 'radial-gradient(ellipse at 50% 50%, #0C0F1E 0%, #060608 70%)',
+      display: 'flex', flexDirection: 'column',
       overflow: 'hidden',
+      // CSS variable for toolbar height
+      ['--toolbar-height' as string]: '42px',
     }}>
       {/* Star field */}
       <div style={{
         position: 'absolute', inset: 0,
         backgroundImage: 'radial-gradient(1px 1px at 10% 15%, rgba(255,255,255,0.15) 0%, transparent 100%), radial-gradient(1px 1px at 35% 60%, rgba(255,255,255,0.1) 0%, transparent 100%), radial-gradient(1px 1px at 75% 25%, rgba(255,255,255,0.12) 0%, transparent 100%), radial-gradient(1px 1px at 90% 80%, rgba(255,255,255,0.08) 0%, transparent 100%)',
-        pointerEvents: 'none',
+        pointerEvents: 'none', zIndex: 0,
       }} />
 
       {loading && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: 'Oxanium, sans-serif', color: '#00FFC8', fontSize: 14, letterSpacing: '0.12em',
-          flexDirection: 'column', gap: 12,
+          flexDirection: 'column', gap: 12, zIndex: 10,
         }}>
           <div style={{ fontSize: 24 }}>◈</div>
           <div>LOADING GRAPH DATA...</div>
         </div>
       )}
 
-      {error && (
+      {error && !loading && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontFamily: 'Oxanium, sans-serif', color: '#ef4444', fontSize: 13, flexDirection: 'column', gap: 8,
+          fontFamily: 'Oxanium, sans-serif', color: '#ef4444', fontSize: 13, flexDirection: 'column', gap: 8, zIndex: 10,
         }}>
           <div>⚠ Failed to load graph.json</div>
           <div style={{ color: '#6B7A99', fontSize: 11 }}>{error}</div>
@@ -171,108 +120,149 @@ export default function Home() {
         </div>
       )}
 
-      {/* Graph canvas — compressed when panel open */}
-      <div style={{
-        position: 'absolute',
-        left: 0, top: 0, bottom: 0,
-        right: panelOpen ? 'min(42%, 680px)' : 0,
-        transition: 'right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-      }}>
-        {graphData && !loading && (
-          <GraphCanvas
-            ref={graphCanvasRef}
-            data={graphData}
-            threshold={threshold}
-            graphSource={graphSource}
-            activeTypes={activeTypes}
-            showDaily={showDaily}
-            hideIsolated={hideIsolated}
-            labelsOnHoverOnly={labelsOnHoverOnly}
-            showOverlayEdges={showOverlayEdges}
-            filterNodesBySimilarity={filterNodesBySimilarity}
-            selectedNode={selectedNode}
-            onNodeClick={handleNodeClick}
-            onBackgroundClick={handleBackgroundClick}
-            scalingRatio={scalingRatio}
-            gravity={gravity}
-            slowDown={slowDown}
-            edgeWeightInfluence={edgeWeightInfluence}
-            startTemperature={startTemperature}
-            stopThreshold={stopThreshold}
-            isLayoutRunning={isLayoutRunning}
-            onLayoutStop={() => setIsLayoutRunning(false)}
-            onLayoutRestart={() => setIsLayoutRunning(true)}
+      {!loading && !error && graphData && (
+        <>
+          {/* Toolbar */}
+          <Toolbar
+            onToggleSidebar={() => state.setSidebarCollapsed(c => !c)}
+            tabs={state.openTabs}
+            activeTab={state.activeTab}
+            nodeMap={state.nodeMap}
+            onSwitchTab={state.switchTab}
+            onCloseTab={state.closeTab}
+            nodes={graphData.nodes}
+            onSearchSelect={handleSearchSelect}
+            viewMode={state.viewMode}
+            onViewModeChange={state.setViewMode}
           />
-        )}
-      </div>
 
-      {/* HUD Panel */}
-      {graphData && (
-        <HUDPanel
-          threshold={threshold}
-          onThresholdChange={setThreshold}
-          graphSource={graphSource}
-          onGraphSourceChange={setGraphSource}
-          showOverlayEdges={showOverlayEdges}
-          onToggleOverlayEdges={() => setShowOverlayEdges(s => !s)}
-          filterNodesBySimilarity={filterNodesBySimilarity}
-          onToggleFilterNodesBySimilarity={() => setFilterNodesBySimilarity(s => !s)}
-          activeTypes={activeTypes}
-          onToggleType={handleToggleType}
-          showDaily={showDaily}
-          onToggleDaily={() => setShowDaily(s => !s)}
-          hideIsolated={hideIsolated}
-          onToggleHideIsolated={() => setHideIsolated(s => !s)}
-          labelsOnHoverOnly={labelsOnHoverOnly}
-          onToggleLabelsOnHoverOnly={() => setLabelsOnHoverOnly(s => !s)}
-          nodeCount={stats.nodeCount}
-          edgeCount={stats.edgeCount}
-          avgScore={stats.avgScore}
-          scalingRatio={scalingRatio}
-          onScalingRatioChange={setScalingRatio}
-          gravity={gravity}
-          onGravityChange={setGravity}
-          slowDown={slowDown}
-          onSlowDownChange={setSlowDown}
-          edgeWeightInfluence={edgeWeightInfluence}
-          onEdgeWeightInfluenceChange={setEdgeWeightInfluence}
-          startTemperature={startTemperature}
-          onStartTemperatureChange={setStartTemperature}
-          stopThreshold={stopThreshold}
-          onStopThresholdChange={setStopThreshold}
-          isLayoutRunning={isLayoutRunning}
-          onToggleLayout={() => setIsLayoutRunning(r => !r)}
-          onResetSimSettings={() => {
-            setScalingRatio(SIM_DEFAULTS.scalingRatio)
-            setGravity(SIM_DEFAULTS.gravity)
-            setSlowDown(SIM_DEFAULTS.slowDown)
-            setEdgeWeightInfluence(SIM_DEFAULTS.edgeWeightInfluence)
-            setStartTemperature(SIM_DEFAULTS.startTemperature)
-            setStopThreshold(SIM_DEFAULTS.stopThreshold)
-          }}
-          canvasRef={graphCanvasRef}
-        />
+          {/* Body: sidebar + content */}
+          <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+            {/* File Explorer */}
+            <FileExplorer
+              fileTree={state.fileTree}
+              activeTab={state.activeTab}
+              onSelectNote={(stem, newTab) => state.openNote(stem, newTab)}
+              width={state.sidebarWidth}
+              onWidthChange={state.setSidebarWidth}
+              collapsed={state.sidebarCollapsed}
+              totalNotes={graphData.nodes.length}
+            />
+
+            {/* Content area */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
+              {state.viewMode === 'read' ? (
+                <ReadingPane
+                  node={state.activeNode}
+                  fetchContent={state.fetchNoteContent}
+                  onNavigate={handleNavigate}
+                />
+              ) : (
+                /* Graph mode */
+                <div style={{ flex: 1, position: 'relative' }}>
+                  {/* Scope indicator */}
+                  <div style={{
+                    position: 'absolute', top: 12, left: 12,
+                    display: 'flex', gap: 6, zIndex: 10,
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                  }}>
+                    {state.activeTab && state.graphScope === 'local' && (
+                      <div style={{
+                        background: 'rgba(15,23,42,0.92)',
+                        border: '1px solid #1e293b', borderRadius: 5,
+                        padding: '4px 10px',
+                        display: 'flex', gap: 8, alignItems: 'center',
+                      }}>
+                        <span style={{ color: '#f97316' }}>●</span>
+                        <span style={{ color: '#e8e8f0' }}>{state.activeTab}</span>
+                        <span style={{ color: '#6b7a99' }}>· 2 hops</span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => state.setGraphScope(state.graphScope === 'local' ? 'full' : 'local')}
+                      style={{
+                        background: 'rgba(15,23,42,0.92)',
+                        border: '1px solid #1e293b', borderRadius: 5,
+                        padding: '4px 10px',
+                        color: '#7b61ff', cursor: 'pointer',
+                        fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                      }}
+                    >
+                      {state.graphScope === 'local' ? 'Show Full Vault ⤢' : 'Show Neighborhood ⤡'}
+                    </button>
+                  </div>
+
+                  <GraphCanvas
+                    ref={graphCanvasRef}
+                    data={graphData}
+                    threshold={state.threshold}
+                    graphSource={state.graphSource}
+                    activeTypes={state.activeTypes}
+                    showDaily={state.showDaily}
+                    hideIsolated={state.hideIsolated}
+                    labelsOnHoverOnly={state.labelsOnHoverOnly}
+                    showOverlayEdges={state.showOverlayEdges}
+                    filterNodesBySimilarity={state.filterNodesBySimilarity}
+                    selectedNode={state.selectedNode}
+                    onNodeClick={handleGraphNodeClick}
+                    onBackgroundClick={() => state.setSelectedNode(null)}
+                    scalingRatio={state.scalingRatio}
+                    gravity={state.gravity}
+                    slowDown={state.slowDown}
+                    edgeWeightInfluence={state.edgeWeightInfluence}
+                    startTemperature={state.startTemperature}
+                    stopThreshold={state.stopThreshold}
+                    isLayoutRunning={state.isLayoutRunning}
+                    onLayoutStop={() => state.setIsLayoutRunning(false)}
+                    onLayoutRestart={() => state.setIsLayoutRunning(true)}
+                    neighborhoodCenter={neighborhoodCenter}
+                    neighborhoodHops={2}
+                  />
+
+                  {/* HUD Panel — graph mode only */}
+                  <HUDPanel
+                    threshold={state.threshold}
+                    onThresholdChange={state.setThreshold}
+                    graphSource={state.graphSource}
+                    onGraphSourceChange={state.setGraphSource}
+                    showOverlayEdges={state.showOverlayEdges}
+                    onToggleOverlayEdges={state.toggleOverlayEdges}
+                    filterNodesBySimilarity={state.filterNodesBySimilarity}
+                    onToggleFilterNodesBySimilarity={state.toggleFilterNodesBySimilarity}
+                    activeTypes={state.activeTypes}
+                    onToggleType={state.handleToggleType}
+                    showDaily={state.showDaily}
+                    onToggleDaily={state.toggleShowDaily}
+                    hideIsolated={state.hideIsolated}
+                    onToggleHideIsolated={state.toggleHideIsolated}
+                    labelsOnHoverOnly={state.labelsOnHoverOnly}
+                    onToggleLabelsOnHoverOnly={state.toggleLabelsOnHoverOnly}
+                    nodeCount={state.stats.nodeCount}
+                    edgeCount={state.stats.edgeCount}
+                    avgScore={state.stats.avgScore}
+                    scalingRatio={state.scalingRatio}
+                    onScalingRatioChange={state.setScalingRatio}
+                    gravity={state.gravity}
+                    onGravityChange={state.setGravity}
+                    slowDown={state.slowDown}
+                    onSlowDownChange={state.setSlowDown}
+                    edgeWeightInfluence={state.edgeWeightInfluence}
+                    onEdgeWeightInfluenceChange={state.setEdgeWeightInfluence}
+                    startTemperature={state.startTemperature}
+                    onStartTemperatureChange={state.setStartTemperature}
+                    stopThreshold={state.stopThreshold}
+                    onStopThresholdChange={state.setStopThreshold}
+                    isLayoutRunning={state.isLayoutRunning}
+                    onToggleLayout={() => state.setIsLayoutRunning(r => !r)}
+                    onResetSimSettings={state.resetSimSettings}
+                    canvasRef={graphCanvasRef}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
-
-      {/* Search Box */}
-      {graphData && (
-        <SearchBox
-          nodes={graphData.nodes}
-          panelOpen={panelOpen}
-          onSelect={(stem) => {
-            setSelectedNode(stem)
-            graphCanvasRef.current?.flyToNode(stem)
-            graphCanvasRef.current?.selectNode(stem)
-          }}
-        />
-      )}
-
-      {/* Note Panel */}
-      <NotePanel
-        node={selectedNodeData}
-        onClose={() => setSelectedNode(null)}
-        onNavigate={handleWikiNav}
-      />
     </main>
   )
 }
