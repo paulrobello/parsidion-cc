@@ -3,6 +3,7 @@ export interface NoteNode {
   title: string
   type: string
   folder: string
+  path: string
   tags: string[]
   incoming_links: number
   mtime: number

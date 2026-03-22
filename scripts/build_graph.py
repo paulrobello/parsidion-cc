@@ -80,14 +80,14 @@ def load_note_metadata(
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT stem, title, note_type, folder, tags, incoming_links, related, mtime
+        SELECT stem, title, note_type, folder, tags, incoming_links, related, mtime, path
         FROM note_index
         """
     )
     rows = cursor.fetchall()
     notes = []
     for row in rows:
-        stem, title, note_type, folder, tags, incoming_links, related, mtime = row
+        stem, title, note_type, folder, tags, incoming_links, related, mtime, path = row
         if not include_daily and folder == "Daily":
             continue
         notes.append(
@@ -100,6 +100,7 @@ def load_note_metadata(
                 "incoming_links": incoming_links or 0,
                 "related": related or "",
                 "mtime": mtime or 0,
+                "path": path or "",
             }
         )
     return notes
@@ -280,14 +281,19 @@ def main() -> None:
     total_edges = len(all_edges)
 
     # Build nodes list
+    vault_root_str = str(vault_root) + "/"
     nodes = []
     for note in filtered_notes:
+        rel_path = note["path"]
+        if rel_path.startswith(vault_root_str):
+            rel_path = rel_path[len(vault_root_str):]
         nodes.append(
             {
                 "id": note["stem"],
                 "title": note["title"],
                 "type": note["type"],
                 "folder": note["folder"],
+                "path": rel_path,
                 "tags": parse_tags(note["tags"]),
                 "incoming_links": note["incoming_links"],
                 "mtime": note["mtime"],
