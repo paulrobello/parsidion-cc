@@ -192,7 +192,13 @@ def inject_related_links(note_path: Path, new_links: list[str]) -> None:
     # Normalise existing entries to strings
     existing_strs: list[str] = [str(r) for r in existing_related]
 
-    merged = existing_strs + [lnk for lnk in new_links if lnk not in existing_strs]
+    # Deduplicate existing + new, preserving order
+    seen: set[str] = set()
+    merged: list[str] = []
+    for lnk in existing_strs + new_links:
+        if lnk not in seen:
+            seen.add(lnk)
+            merged.append(lnk)
     if merged == existing_strs:
         # Nothing new to add
         return
