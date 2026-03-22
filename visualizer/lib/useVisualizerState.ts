@@ -80,11 +80,12 @@ export function useVisualizerState(graphData: GraphData | null) {
     if (!nodeMap.has(resolvedStem)) return
 
     setOpenTabStems(prev => {
+      // Already open — just switch to it
+      if (prev.includes(resolvedStem)) {
+        setActiveTabStem(resolvedStem)
+        return prev
+      }
       if (newTab || prev.length === 0) {
-        if (prev.includes(resolvedStem)) {
-          setActiveTabStem(resolvedStem)
-          return prev
-        }
         let next = [...prev, resolvedStem]
         if (next.length > MAX_TABS) {
           const oldest = next.find(s => s !== resolvedStem)
