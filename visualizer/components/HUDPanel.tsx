@@ -91,7 +91,7 @@ export function HUDPanel({
   canvasRef,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
-  const [pos, setPos] = useState({ x: 16, y: 16 })
+  const [pos, setPos] = useState({ x: 16, y: 58 })
   const dragging = useRef(false)
   const dragOffset = useRef({ x: 0, y: 0 })
   const panelRef = useRef<HTMLDivElement>(null)
@@ -155,7 +155,7 @@ export function HUDPanel({
     <div
       ref={panelRef}
       style={{
-        position: 'fixed',
+        position: 'absolute',
         left: pos.x,
         top: pos.y,
         zIndex: 100,
