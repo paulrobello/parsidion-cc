@@ -90,19 +90,31 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   const dragHasMovedRef = useRef(false)
   const dragPositionRef = useRef<{ x: number; y: number } | null>(null)
 
-  // Compute neighborhood BFS when in local mode
+  // Compute neighborhood BFS when in local mode.
+  // Uses wiki edges only — semantic edges are too dense (19K+) and would
+  // reach ~70% of the graph in 2 hops, defeating the purpose of local view.
+  // All edge types are still rendered for nodes within the neighborhood.
   const neighborhoodInfo = useMemo(() => {
     if (!neighborhoodCenter || !data) return null
     const hops = neighborhoodHops ?? 2
+    // Pre-build wiki adjacency list for O(1) neighbor lookup
+    const wikiAdj = new Map<string, string[]>()
+    for (const edge of data.edges) {
+      if (edge.kind !== 'wiki') continue
+      if (!wikiAdj.has(edge.s)) wikiAdj.set(edge.s, [])
+      if (!wikiAdj.has(edge.t)) wikiAdj.set(edge.t, [])
+      wikiAdj.get(edge.s)!.push(edge.t)
+      wikiAdj.get(edge.t)!.push(edge.s)
+    }
     const distances = new Map<string, number>()
     distances.set(neighborhoodCenter, 0)
     let frontier = [neighborhoodCenter]
     for (let h = 1; h <= hops; h++) {
       const nextFrontier: string[] = []
       for (const nodeId of frontier) {
-        for (const edge of data.edges) {
-          const other = edge.s === nodeId ? edge.t : edge.t === nodeId ? edge.s : null
-          if (other && !distances.has(other)) {
+        const neighbors = wikiAdj.get(nodeId) ?? []
+        for (const other of neighbors) {
+          if (!distances.has(other)) {
             distances.set(other, h)
             nextFrontier.push(other)
           }
