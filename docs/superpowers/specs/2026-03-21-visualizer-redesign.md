@@ -30,9 +30,11 @@ Redesign the vault visualizer from a graph-first app with a slide-in note sideba
 - Files show as clickable items; the currently active note is highlighted with an indigo left border and background tint
 - Header shows "Vault" label and total note count
 - No search box — all search goes through the unified ⌘K in the toolbar
-- Resizable via drag handle on the right edge; width persisted to localStorage
-- Collapsible via ☰ hamburger button in the toolbar; collapsed state persisted
+- Resizable via drag handle on the right edge (4px transparent hit zone, `cursor: col-resize`, indigo highlight during drag); width persisted to localStorage
+- Collapsible via ☰ hamburger button in the toolbar or ⌘B; collapsed state persisted
 - Minimum width ~180px, maximum ~400px
+- Auto-collapses below 768px viewport width
+- Mobile/responsive beyond auto-collapse is out of scope
 
 ### Toolbar
 
@@ -69,7 +71,8 @@ Fills all remaining space. In Read mode, renders the selected note's markdown. I
 - Tabs can be closed via ✕ button; closing the last tab shows an empty state
 - Tab order is maintained; new tabs append to the right
 - Active tab state (which note is open) persisted to localStorage
-- Each tab has a colored dot matching the note's type (same color mapping as graph nodes)
+- Each tab has a colored dot matching the note's type (reuse `TYPE_COLORS` from `lib/sigma-colors.ts`)
+- Maximum 20 open tabs; attempting to open more closes the oldest inactive tab
 
 ## Graph Mode
 
@@ -88,9 +91,15 @@ Fills all remaining space. In Read mode, renders the selected note's markdown. I
 
 ### Graph Controls (HUD Panel)
 
-- Existing draggable HUD panel preserved as-is, overlaying the graph canvas
+- Existing draggable HUD panel preserved, overlaying the graph canvas
+- Only rendered when in Graph mode (hidden in Read mode)
+- Default position offset below the toolbar (top: `var(--toolbar-height)` + 16px)
 - All current controls retained: similarity threshold, graph source toggle (semantic/wiki), overlay edges, node type filters, show daily toggle, hide isolated toggle, labels on hover, physics sliders (repulsion, gravity, cooling, edge strength, start temp, auto-stop), pause/run, reset
 - Temperature bar at bottom of HUD
+
+### Neighborhood + Filter Interaction
+
+The neighborhood subgraph is computed from the **full unfiltered graph** (all edges, all types). Then HUD filters (type filters, similarity threshold, hide isolated, etc.) are applied to the resulting subgraph. This ensures the neighborhood always includes structurally relevant nodes even if they would be filtered out in full vault mode.
 
 ### Graph Interactions
 
@@ -115,7 +124,7 @@ Fills all remaining space. In Read mode, renders the selected note's markdown. I
 |--------|------|---------|
 | (none) | Title search | Fuzzy match on note titles |
 | `#` | Tag search | Exact match on note tags |
-| `/` | Folder search | Prefix match on folder path |
+| `/` | Folder search | Prefix match on vault-relative path (e.g., `/Patterns/fastapi` matches all notes under that subfolder) |
 
 ### Dropdown
 
@@ -132,13 +141,36 @@ Search operates against the pre-loaded `graph.json` node data (titles, tags, fol
 
 ## File Tree Data
 
-### Loading
+### Graph Schema Change
 
-The file tree is built from the `graph.json` nodes array. Each node has a `folder` field — group nodes by folder to build the tree structure. Subfolders within folders are derived from node paths if available, otherwise flat per-folder listing.
+Add a `path` field to `NoteNode` in `graph.json` containing the vault-relative path (e.g., `"Patterns/fastapi-middleware/basics.md"`). Update `build_graph.py` to emit this field from the `note_index` table. The `folder` field is retained for backward compatibility.
 
-### API Enhancement
+The `path` field enables:
+- Building a proper nested file tree (one level of subfolders per vault conventions)
+- Folder prefix search (`/Patterns/fastapi` matches notes in that subfolder)
+- Resolving wikilinks that reference subfolder notes by short stem
 
-The existing `/api/note?stem=<stem>` endpoint is sufficient for loading note content. No new API endpoints needed. The file tree is purely client-side from graph.json data.
+### Tree Construction
+
+The file tree is built client-side from `graph.json` nodes:
+1. Parse each node's `path` to extract folder and optional subfolder
+2. Group into a tree structure: `{ folder: { subfolder?: { notes[] } } }`
+3. Sort folders alphabetically, notes alphabetically within each folder
+
+### Wikilink Resolution
+
+Wikilinks in note bodies (e.g., `[[basics]]`) are resolved to `NoteNode.id` using:
+1. Exact match on `NoteNode.id` (most common case)
+2. If no exact match, suffix match against node IDs (handles subfolder notes where the wikilink uses the short name)
+3. Build a lookup map at load time: `Map<string, string>` mapping all possible stems to canonical node IDs
+
+### API
+
+The existing `/api/note?stem=<stem>` endpoint is sufficient for loading note content. No new API endpoints needed.
+
+### Tab Content Caching
+
+Note content fetched via `/api/note` is cached in a `Map<string, string>` keyed by stem. When switching between already-opened tabs, the cached content is used immediately (no loading spinner). Cache is cleared only on page reload.
 
 ## State Persistence (localStorage)
 
@@ -148,8 +180,8 @@ All UI state persisted with `vv:` prefix (existing convention):
 |-----|------|---------|
 | `vv:sidebarWidth` | number | 240 |
 | `vv:sidebarCollapsed` | boolean | false |
-| `vv:openTabs` | string[] | [] |
-| `vv:activeTab` | string | null |
+| `vv:openTabs` | string[] | [] (validated against graph.json on load; stale stems pruned) |
+| `vv:activeTab` | string \| null | null (reset if not in openTabs) |
 | `vv:viewMode` | "read" \| "graph" | "read" |
 | `vv:graphScope` | "local" \| "full" | "local" |
 | (existing graph settings) | various | (unchanged) |
@@ -173,7 +205,8 @@ All UI state persisted with `vv:` prefix (existing convention):
 |-----------|---------|
 | `page.tsx` | New layout: sidebar + toolbar + content area; manages view mode state, open tabs, active note |
 | `GraphCanvas.tsx` | Add local neighborhood mode (filter to N-hop subgraph from center node); add "Show Full Vault" button; node click opens tab instead of NotePanel |
-| `HUDPanel.tsx` | No structural changes; may need z-index adjustment for new layout |
+| `HUDPanel.tsx` | Only render in Graph mode; offset default position below toolbar |
+| `lib/graph.ts` | Add `path` field to `NoteNode` interface |
 
 ### Removed Components
 
@@ -187,7 +220,7 @@ All UI state persisted with `vv:` prefix (existing convention):
 | Component | Reason |
 |-----------|--------|
 | `TemperatureBar.tsx` | Still used in HUD |
-| `lib/graph.ts` | Type definitions and data loading unchanged |
+| `lib/sigma-colors.ts` | Node color mapping unchanged |
 | `lib/sigma-colors.ts` | Node color mapping unchanged |
 | `lib/useLocalStorage.ts` | Persistence hook unchanged |
 
@@ -199,7 +232,7 @@ For local neighborhood mode, given a center node and hop count N:
 2. For each hop 1..N, find all nodes connected to the current `visited` set via visible edges
 3. Add those nodes to `visited`
 4. Filter the graph to only show nodes in `visited` and edges between them
-5. Outer-hop nodes (hop N) render at reduced opacity to show the boundary
+5. Outer-hop nodes (hop N) render at 0.4 opacity to show the boundary
 
 This is computed client-side from the Graphology graph instance. No server call needed.
 
@@ -209,9 +242,18 @@ This is computed client-side from the Graphology graph instance. No server call 
 |----------|--------|
 | ⌘K / Ctrl+K | Focus search |
 | Esc | Close search dropdown / deselect graph node |
-| ⌘W / Ctrl+W | Close active tab |
-| ⌘[ / Ctrl+[ | Toggle sidebar |
+| ⌘B / Ctrl+B | Toggle sidebar (matches VS Code/Obsidian) |
 | ⌘\\ / Ctrl+\\ | Toggle Read/Graph mode |
+
+Note: `⌘W` is not used (conflicts with browser close-tab). Tabs are closed via the ✕ button only.
+
+## Error & Empty States
+
+- **graph.json fails to load**: Sidebar and toolbar render but are empty/disabled. Content area shows a centered error message with instructions to run `make graph`.
+- **graph.json loads with zero nodes**: Sidebar shows empty tree. Content area shows "No notes in vault" message.
+- **No open tabs**: Content area shows a welcome/empty state: "Open a note from the sidebar or press ⌘K to search."
+- **Note content fetch fails**: Tab shows an error inline: "Could not load note: {stem}".
+- **Graph mode with no active note**: Shows the full vault graph regardless of `defaultScope` setting (no center node to compute neighborhood from).
 
 ## Non-Goals
 
