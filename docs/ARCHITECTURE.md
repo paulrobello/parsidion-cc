@@ -6,8 +6,8 @@ A Claude Code customization toolkit that replaces built-in auto memory with a ma
 - [Overview](#overview)
 - [System Architecture](#system-architecture)
 - [Component Details](#component-details)
-  - [CLAUDE-VAULT.md — Always-On Guidance](#parsidion-ccmd--always-on-guidance)
-  - [Claude Vault Skill](#parsidion-cc-skill)
+  - [CLAUDE-VAULT.md — Always-On Guidance](#claude-vaultmd--always-on-guidance)
+  - [Claude Vault Skill](#claude-vault-skill)
   - [Hook Scripts](#hook-scripts)
   - [SubagentStop Hook](#subagent-stop-hook)
   - [Session Summarizer](#session-summarizer)
@@ -438,6 +438,7 @@ An on-demand diagnostic and repair tool that scans vault notes for structural is
 | `BROKEN_WIKILINK` | warning | Link target not found in vault; auto-repaired via exact stem match or `vault-search` semantic lookup; removed if no match found |
 | `FLAT_DAILY` | warning | `Daily/YYYY-MM-DD.md` instead of `Daily/YYYY-MM/DD.md` |
 | `PREFIX_CLUSTER` | info | 3+ flat notes share a common prefix and could be reorganized into a subfolder |
+| `MISSING_H1` | warning | No `# heading` in body; first `##` heading promoted to `#` when `--fix-headings` is enabled (default) |
 
 Daily notes are exempt from `confidence`, `related`, and orphan checks.
 

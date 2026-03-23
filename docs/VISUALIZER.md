@@ -198,6 +198,7 @@ Floating overlay in the bottom-left of the graph canvas.
 - Overlay edges (show opposite type at low opacity)
 - Node type filter checkboxes
 - Show daily notes toggle
+- Filter nodes by similarity toggle (show only nodes connected by semantic edges above threshold)
 - Hide isolated nodes toggle
 - Labels on hover only toggle
 
@@ -447,17 +448,20 @@ All application state is managed by the `useVisualizerState` hook (`lib/useVisua
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `threshold` | `0.70` | Semantic similarity cutoff |
+| `threshold` | `0.80` | Semantic similarity cutoff |
 | `graphSource` | `'semantic'` | Primary edge type to display |
 | `showOverlayEdges` | `false` | Show opposite edge type at low opacity |
-| `activeTypes` | all types | Visible note type filters |
+| `filterNodesBySimilarity` | `false` | Show only nodes connected by semantic edges above threshold |
+| `activeTypes` | all types (excluding daily) | Visible note type filters |
 | `showDaily` | `false` | Show Daily folder notes |
 | `hideIsolated` | `false` | Hide unconnected nodes |
-| `labelsOnHoverOnly` | `true` | Only show labels on hover |
-| `scalingRatio` | `2` | Node repulsion multiplier |
-| `gravity` | `0.1` | Attraction to center |
-| `slowDown` | `1` | Cooling rate |
-| `edgeWeightInfluence` | `1` | Edge attraction multiplier |
+| `labelsOnHoverOnly` | `false` | Only show labels on hover |
+| `scalingRatio` | `10` | Node repulsion multiplier |
+| `gravity` | `1` | Attraction to center |
+| `slowDown` | `0.5` | Cooling rate |
+| `edgeWeightInfluence` | `2` | Edge attraction multiplier |
+| `startTemperature` | `0.8` | Initial simulation energy |
+| `stopThreshold` | `0.01` | Energy level below which layout pauses |
 
 **Computed State**
 
@@ -553,11 +557,13 @@ parsidion-cc/
 │   │   ├── ViewToggle.tsx            # Read / Graph pill toggle
 │   │   ├── TemperatureBar.tsx        # Simulation energy indicator
 │   │   ├── NewNoteDialog.tsx         # Dialog for creating new vault notes
-│   │   └── ConfirmDialog.tsx         # Reusable confirmation prompt
+│   │   ├── ConfirmDialog.tsx         # Reusable confirmation prompt
+│   │   └── FrontmatterEditor.tsx    # Structured YAML frontmatter editor
 │   ├── lib/
 │   │   ├── graph.ts                  # Data types and fetch helpers
 │   │   ├── useVisualizerState.ts     # Central state management hook
 │   │   ├── sigma-colors.ts           # Note type → color mapping
+│   │   ├── frontmatter.ts           # Frontmatter parse/serialize helpers
 │   │   └── useLocalStorage.ts        # localStorage persistence hook
 │   ├── public/
 │   │   └── graph.json                # Pre-computed graph (generated)
@@ -573,6 +579,6 @@ parsidion-cc/
 
 ## Related Documentation
 
-- [Architecture Inventory](architecture-inventory.md) — Full system component map
-- [Local Embeddings for Vault Semantic Search](../ClaudeVault/Research/local-embeddings-for-vault-semantic-search.md) — How embeddings are built
+- [Architecture](ARCHITECTURE.md) — Full system component map
+- [Embeddings](EMBEDDINGS.md) — How embeddings are built and evaluated
 - [CLAUDE.md](../CLAUDE.md) — Project conventions and script reference
