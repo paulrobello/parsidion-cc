@@ -1,7 +1,5 @@
 # Parsidion CC -- Persistent Memory for Claude Code via a Markdown Vault
 
-**GitHub:** https://github.com/paulrobello/parsidion-cc
-**License:** MIT | **Python 3.13+** | **Requires:** Claude Code + uv
 
 ---
 
@@ -99,6 +97,9 @@ uv run install.py --schedule-summarizer
 
 ---
 
-I've been using this daily for a few months now across multiple projects. The difference is noticeable -- Claude stops re-solving problems it already solved, picks up patterns from other projects, and the vault becomes genuinely useful as a searchable knowledge base over time.
+I've been using this daily for a few weeks now across multiple projects. The difference is noticeable -- Claude stops re-solving problems it already solved, picks up patterns from other projects, and the vault becomes genuinely useful as a searchable knowledge base over time.
+
+**GitHub:** https://github.com/paulrobello/parsidion-cc
+**License:** MIT | **Python 3.13+** | **Requires:** Claude Code + uv
 
 Happy to answer questions or take feedback. Issues and PRs welcome on GitHub.
