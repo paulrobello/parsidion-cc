@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { NoteNode } from '@/lib/graph'
 import { TabBar } from './TabBar'
 import { UnifiedSearch } from './UnifiedSearch'
+import { VaultSelector } from './VaultSelector'
 import type { WsStatus } from '@/lib/useVaultFiles'
 
 interface Props {
@@ -19,6 +20,8 @@ interface Props {
   onGraphTabClick: () => void
   onNewNote: () => void
   wsStatus: WsStatus
+  selectedVault: string | null
+  onSelectVault: (vault: string | null) => void
 }
 
 export function Toolbar({
@@ -28,6 +31,8 @@ export function Toolbar({
   graphTabActive, onGraphTabClick,
   onNewNote,
   wsStatus,
+  selectedVault,
+  onSelectVault,
 }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -84,6 +89,8 @@ export function Toolbar({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        {/* Vault selector */}
+        <VaultSelector selectedVault={selectedVault} onSelect={onSelectVault} />
         {/* WebSocket status indicator */}
         <div
           style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0 }}

@@ -23,6 +23,9 @@ export interface TabInfo {
 }
 
 export function useVisualizerState(graphData: GraphData | null) {
+  // --- Vault selection ---
+  const [selectedVault, setSelectedVaultInternal] = useLocalStorage<string | null>('vv:selectedVault', null)
+
   // --- Tab state ---
   const [openTabStems, setOpenTabStems] = useLocalStorage<string[]>('vv:openTabs', [])
   const [activeTabStem, setActiveTabStem] = useLocalStorage<string | null>('vv:activeTab', null)
@@ -42,6 +45,18 @@ export function useVisualizerState(graphData: GraphData | null) {
 
   // --- Note content cache ---
   const contentCache = useRef<Map<string, string>>(new Map())
+
+  // Wrapper that clears cache/tabs when vault changes
+  const setSelectedVault = useCallback((vault: string | null) => {
+    if (vault !== selectedVault) {
+      // Clear content cache
+      contentCache.current.clear()
+      // Clear tabs
+      setOpenTabStems([])
+      setActiveTabStem(null)
+    }
+    setSelectedVaultInternal(vault)
+  }, [selectedVault, setSelectedVaultInternal, setOpenTabStems, setActiveTabStem])
 
   // --- Wikilink resolution map ---
   const stemLookup = useMemo(() => {
@@ -298,6 +313,8 @@ export function useVisualizerState(graphData: GraphData | null) {
   }, [graphData, threshold, graphSource, activeTypes, showDaily, filterNodesBySimilarity])
 
   return {
+    // Vault state
+    selectedVault, setSelectedVault,
     // Tab state
     openTabs: validTabs, activeTab: validActiveTab, activeNode,
     openNote, closeTab, switchTab,

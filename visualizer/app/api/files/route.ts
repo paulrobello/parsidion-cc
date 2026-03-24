@@ -1,13 +1,10 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 import type { VaultFile } from '@/lib/vaultFile'
+import { resolveVault } from '@/lib/vaultResolver'
 
 const EXCLUDED_DIRS = new Set(['.obsidian', 'Templates', '.git', '.trash', 'TagsRoutes'])
-
-function getVaultRoot() {
-  return process.env.VAULT_ROOT || path.join(process.env.HOME || '~', 'ClaudeVault')
-}
 
 function parseFrontmatterType(content: string): string | undefined {
   const match = content.match(/^---\n[\s\S]*?^type:\s*(.+)$/m)
@@ -42,8 +39,9 @@ function walkVault(dir: string, vaultRoot: string, results: VaultFile[]): void {
   }
 }
 
-export async function GET() {
-  const vaultRoot = getVaultRoot()
+export async function GET(req: NextRequest) {
+  const vault = req.nextUrl.searchParams.get('vault')
+  const vaultRoot = resolveVault(vault)
   const files: VaultFile[] = []
   walkVault(vaultRoot, vaultRoot, files)
   return NextResponse.json({ files })

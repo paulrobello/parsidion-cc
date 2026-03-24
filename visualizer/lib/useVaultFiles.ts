@@ -12,6 +12,8 @@ interface Opts {
   onNoteModified: (notePath: string) => void
   /** Called when the server emits graph:rebuilt — caller should refetch graph.json. */
   onGraphRebuilt: () => void
+  /** Vault name or path to connect to. If not specified, uses default vault. */
+  vault?: string | null
 }
 
 function buildTree(files: VaultFile[]): VaultFileTree {
@@ -54,15 +56,16 @@ export function useVaultFiles(opts: Opts): {
   // Ref to hold the connect function so ws.onclose can reference it without TDZ issues
   const connectRef = useRef<(() => void) | null>(null)
 
-  // Fetch initial file list once on mount
+  // Fetch initial file list when vault changes
   useEffect(() => {
-    fetch('/api/files')
+    const url = opts.vault ? `/api/files?vault=${encodeURIComponent(opts.vault)}` : '/api/files'
+    fetch(url)
       .then(r => r.json())
       .then((data: { files?: VaultFile[] }) => {
         if (mountedRef.current) setFiles(data.files ?? [])
       })
       .catch(err => console.warn('[useVaultFiles] /api/files failed:', err))
-  }, [])
+  }, [opts.vault])
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return
@@ -70,7 +73,8 @@ export function useVaultFiles(opts: Opts): {
 
     const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = typeof window !== 'undefined' ? window.location.host : 'localhost:3999'
-    const ws = new WebSocket(`${protocol}//${host}/ws/vault`)
+    const vaultQuery = opts.vault ? `?vault=${encodeURIComponent(opts.vault)}` : ''
+    const ws = new WebSocket(`${protocol}//${host}/ws/vault${vaultQuery}`)
     wsRef.current = ws
 
     ws.onopen = () => {
@@ -132,7 +136,7 @@ export function useVaultFiles(opts: Opts): {
     }
 
     ws.onerror = () => ws.close()
-  }, []) // stable — no deps change after mount
+  }, [opts.vault]) // reconnect when vault changes
 
   useEffect(() => {
     mountedRef.current = true

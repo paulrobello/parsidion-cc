@@ -1,15 +1,20 @@
 // app/api/graph/rebuild/route.ts
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import path from 'path'
 import { vaultBroadcast } from '@/lib/vaultBroadcast.server'
+import { resolveVault } from '@/lib/vaultResolver'
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  const vault = req.nextUrl.searchParams.get('vault')
+  const vaultPath = resolveVault(vault)
   const repoRoot = path.join(process.cwd(), '..')
   const scriptPath = path.join(repoRoot, 'scripts', 'build_graph.py')
 
+  const args = ['run', '--no-project', scriptPath, '--vault', vaultPath]
+
   return new Promise<NextResponse>(resolve => {
-    const proc = spawn('uv', ['run', '--no-project', scriptPath], {
+    const proc = spawn('uv', args, {
       cwd: repoRoot,
       stdio: 'pipe',
     })

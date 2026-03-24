@@ -76,6 +76,7 @@ export default function Home() {
   const { fileTree, wsStatus, totalFiles } = useVaultFiles({
     onNoteModified: handleNoteModified,
     onGraphRebuilt: handleGraphRebuilt,
+    vault: state.selectedVault,
   })
 
   // Flat stem→VaultFile lookup for notes not in graph.json (e.g. daily notes)
@@ -259,6 +260,8 @@ export default function Home() {
             onGraphTabClick={handleGraphTabClick}
             onNewNote={() => setShowNewNote(true)}
             wsStatus={wsStatus}
+            selectedVault={state.selectedVault}
+            onSelectVault={state.setSelectedVault}
           />
 
           {/* Body: sidebar + content */}

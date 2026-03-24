@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
-
-function getVaultRoot() {
-  return process.env.VAULT_ROOT || path.join(process.env.HOME || '~', 'ClaudeVault')
-}
+import { resolveVault } from '@/lib/vaultResolver'
 
 function findNote(dir: string, stemToFind: string): string | null {
   try {
@@ -27,9 +24,10 @@ function findNote(dir: string, stemToFind: string): string | null {
 export async function GET(req: NextRequest) {
   const stem = req.nextUrl.searchParams.get('stem')
   const relPath = req.nextUrl.searchParams.get('path')
+  const vault = req.nextUrl.searchParams.get('vault')
   if (!stem && !relPath) return NextResponse.json({ error: 'stem or path required' }, { status: 400 })
 
-  const vaultRoot = getVaultRoot()
+  const vaultRoot = resolveVault(vault)
   let notePath: string | null
   if (relPath) {
     // Direct path lookup — avoids stem collision across folders
@@ -59,6 +57,7 @@ function guardPath(notePath: string, vaultRoot: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  const vault = req.nextUrl.searchParams.get('vault')
   const body = await req.json()
   const { stem, content, lastModified } = body as {
     stem?: string
@@ -69,7 +68,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'stem and content required' }, { status: 400 })
   }
 
-  const vaultRoot = getVaultRoot()
+  const vaultRoot = resolveVault(vault)
   const notePath = findNote(vaultRoot, stem)
   if (!notePath) return NextResponse.json({ error: `Note not found: ${stem}` }, { status: 404 })
 
@@ -100,13 +99,14 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const vault = req.nextUrl.searchParams.get('vault')
   const body = await req.json()
   const { path: relPath, content } = body as { path?: string; content?: string }
   if (!relPath || content === undefined) {
     return NextResponse.json({ error: 'path and content required' }, { status: 400 })
   }
 
-  const vaultRoot = getVaultRoot()
+  const vaultRoot = resolveVault(vault)
   const notePath = path.join(vaultRoot, relPath)
 
   if (!guardPath(notePath, vaultRoot)) {
@@ -128,9 +128,10 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const stem = req.nextUrl.searchParams.get('stem')
+  const vault = req.nextUrl.searchParams.get('vault')
   if (!stem) return NextResponse.json({ error: 'stem required' }, { status: 400 })
 
-  const vaultRoot = getVaultRoot()
+  const vaultRoot = resolveVault(vault)
   const notePath = findNote(vaultRoot, stem)
   if (!notePath) return NextResponse.json({ error: `Note not found: ${stem}` }, { status: 404 })
 

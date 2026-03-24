@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-
-function getVaultRoot() {
-  return process.env.VAULT_ROOT || path.join(process.env.HOME || '~', 'ClaudeVault')
-}
+import { resolveVault } from '@/lib/vaultResolver'
 
 function findNote(dir: string, stemToFind: string): string | null {
   try {
@@ -35,6 +32,7 @@ export async function GET(req: NextRequest) {
   const notePathParam = req.nextUrl.searchParams.get('path')
   const from = req.nextUrl.searchParams.get('from')
   const to = req.nextUrl.searchParams.get('to')
+  const vault = req.nextUrl.searchParams.get('vault')
 
   if ((!stem && !notePathParam) || !from || !to) {
     return NextResponse.json({ error: 'stem or path, from, and to are required' }, { status: 400 })
@@ -46,7 +44,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid commit reference' }, { status: 400 })
   }
 
-  const vaultRoot = getVaultRoot()
+  const vaultRoot = resolveVault(vault)
   // Prefer explicit vault-relative path (avoids stem collision for MANIFEST.md etc.)
   const notePath = notePathParam
     ? path.join(vaultRoot, notePathParam)

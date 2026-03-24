@@ -7,15 +7,12 @@ import chokidar from 'chokidar'
 import fs from 'fs'
 import path from 'path'
 import { vaultBroadcast } from './lib/vaultBroadcast.server'
+import { resolveVault } from './lib/vaultResolver'
 
 const dev = process.env.NODE_ENV !== 'production'
 const PORT = parseInt(process.env.PORT ?? '3999', 10)
 
 const EXCLUDED_DIRS = new Set(['.obsidian', 'Templates', '.git', '.trash', 'TagsRoutes'])
-
-function getVaultRoot(): string {
-  return process.env.VAULT_ROOT || path.join(process.env.HOME || '~', 'ClaudeVault')
-}
 
 function parseFrontmatterType(filePath: string): string | undefined {
   try {
@@ -44,11 +41,93 @@ app.prepare().then(() => {
 
   const wss = new WebSocketServer({ noServer: true })
 
+  // Track live clients with their vault subscription
+  type AliveWS = WebSocket & { isAlive: boolean; vaultPath?: string }
+  const clients = new Set<AliveWS>()
+
+  // Track watchers by vault path (lazy creation)
+  const watchers = new Map<string, ReturnType<typeof chokidar.watch>>()
+
+  function createVaultWatcher(vaultRoot: string): ReturnType<typeof chokidar.watch> {
+    const watcher = chokidar.watch(vaultRoot, {
+      ignored: (filePath: string) => {
+        const rel = path.relative(vaultRoot, filePath)
+        const parts = rel.split(path.sep)
+        // Exclude configured directories
+        if (parts.some(p => EXCLUDED_DIRS.has(p))) return true
+        // Exclude dot-files
+        if (path.basename(filePath).startsWith('.')) return true
+        // Only watch .md files (chokidar calls ignored on dirs too; allow dirs)
+        const ext = path.extname(filePath)
+        if (ext !== '' && ext !== '.md') return true
+        return false
+      },
+      persistent: true,
+      ignoreInitial: true,
+      // Wait for the file write to finish before emitting
+      awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
+    })
+
+    watcher.on('add', (filePath: string) => {
+      if (!filePath.endsWith('.md')) return
+      const relPath = path.relative(vaultRoot, filePath)
+      const stem = path.basename(filePath, '.md')
+      const noteType = parseFrontmatterType(filePath)
+      broadcastToVault(vaultRoot, { type: 'file:created', path: relPath, stem, noteType })
+    })
+
+    watcher.on('unlink', (filePath: string) => {
+      if (!filePath.endsWith('.md')) return
+      broadcastToVault(vaultRoot, { type: 'file:deleted', path: path.relative(vaultRoot, filePath) })
+    })
+
+    watcher.on('change', (filePath: string) => {
+      if (!filePath.endsWith('.md')) return
+      broadcastToVault(vaultRoot, { type: 'file:modified', path: path.relative(vaultRoot, filePath) })
+    })
+
+    watcher.on('error', (err: unknown) => console.error('[chokidar]', vaultRoot, err))
+
+    return watcher
+  }
+
+  function getOrCreateWatcher(vaultPath: string): ReturnType<typeof chokidar.watch> {
+    let watcher = watchers.get(vaultPath)
+    if (!watcher) {
+      watcher = createVaultWatcher(vaultPath)
+      watchers.set(vaultPath, watcher)
+    }
+    return watcher
+  }
+
+  function broadcastToVault(vaultPath: string, msg: object): void {
+    const payload = JSON.stringify(msg)
+    for (const ws of clients) {
+      if (ws.vaultPath === vaultPath && ws.readyState === WebSocket.OPEN) {
+        ws.send(payload)
+      }
+    }
+  }
+
+  function broadcast(msg: object): void {
+    const payload = JSON.stringify(msg)
+    for (const ws of clients) {
+      if (ws.readyState === WebSocket.OPEN) ws.send(payload)
+    }
+  }
+
   // Only upgrade requests targeting /ws/vault; forward everything else to Next.js (HMR etc.)
   const nextUpgradeHandler = app.getUpgradeHandler()
   server.on('upgrade', (req, socket, head) => {
-    if (req.url === '/ws/vault') {
+    const parsedUrl = parse(req.url ?? '/', true)
+    if (parsedUrl.pathname === '/ws/vault') {
+      // Extract vault from query params
+      const vaultParam = parsedUrl.query.vault as string | undefined
+      const vaultPath = resolveVault(vaultParam)
+
       wss.handleUpgrade(req, socket as import('net').Socket, head, ws => {
+        const aWs = ws as AliveWS
+        aWs.vaultPath = vaultPath
         wss.emit('connection', ws)
       })
     } else {
@@ -56,14 +135,15 @@ app.prepare().then(() => {
     }
   })
 
-  // Track live clients
-  type AliveWS = WebSocket & { isAlive: boolean }
-  const clients = new Set<AliveWS>()
-
   wss.on('connection', ws => {
     const aWs = ws as AliveWS
     aWs.isAlive = true
     clients.add(aWs)
+
+    // Ensure watcher exists for this vault
+    if (aWs.vaultPath) {
+      getOrCreateWatcher(aWs.vaultPath)
+    }
 
     aWs.on('message', data => {
       try {
@@ -89,65 +169,22 @@ app.prepare().then(() => {
     }
   }, 30_000)
 
-  function broadcast(msg: object): void {
-    const payload = JSON.stringify(msg)
-    for (const ws of clients) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(payload)
-    }
-  }
-
   // ── Forward vaultBroadcast events to WebSocket clients ────────────────────
 
   vaultBroadcast.on('graph:rebuilt', () => broadcast({ type: 'graph:rebuilt' }))
 
-  // ── Vault filesystem watcher ───────────────────────────────────────────────
+  // ── Initial vault watcher (default vault, for backward compatibility) ─────
 
-  const vaultRoot = getVaultRoot()
-
-  const watcher = chokidar.watch(vaultRoot, {
-    ignored: (filePath: string) => {
-      const rel = path.relative(vaultRoot, filePath)
-      const parts = rel.split(path.sep)
-      // Exclude configured directories
-      if (parts.some(p => EXCLUDED_DIRS.has(p))) return true
-      // Exclude dot-files
-      if (path.basename(filePath).startsWith('.')) return true
-      // Only watch .md files (chokidar calls ignored on dirs too; allow dirs)
-      const ext = path.extname(filePath)
-      if (ext !== '' && ext !== '.md') return true
-      return false
-    },
-    persistent: true,
-    ignoreInitial: true,
-    // Wait for the file write to finish before emitting
-    awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
-  })
-
-  watcher.on('add', (filePath: string) => {
-    if (!filePath.endsWith('.md')) return
-    const relPath = path.relative(vaultRoot, filePath)
-    const stem = path.basename(filePath, '.md')
-    const noteType = parseFrontmatterType(filePath)
-    broadcast({ type: 'file:created', path: relPath, stem, noteType })
-  })
-
-  watcher.on('unlink', (filePath: string) => {
-    if (!filePath.endsWith('.md')) return
-    broadcast({ type: 'file:deleted', path: path.relative(vaultRoot, filePath) })
-  })
-
-  watcher.on('change', (filePath: string) => {
-    if (!filePath.endsWith('.md')) return
-    broadcast({ type: 'file:modified', path: path.relative(vaultRoot, filePath) })
-  })
-
-  watcher.on('error', (err: unknown) => console.error('[chokidar]', err))
+  const defaultVaultPath = resolveVault()
+  getOrCreateWatcher(defaultVaultPath)
 
   // ── Clean up on server close ───────────────────────────────────────────────
 
   server.on('close', () => {
     clearInterval(heartbeat)
-    watcher.close()
+    for (const watcher of watchers.values()) {
+      watcher.close()
+    }
   })
 
   // ── Start listening ────────────────────────────────────────────────────────
