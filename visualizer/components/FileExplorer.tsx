@@ -8,6 +8,8 @@ import { getNodeColor } from '@/lib/sigma-colors'
 interface Props {
   fileTree: Map<string, Map<string, VaultFile[]>>
   activeTab: string | null
+  /** Vault-relative path of the active note — used for highlighting when stems collide */
+  activePath: string | null
   onSelectNote: (stem: string, newTab: boolean) => void
   onOpenHistory: (stem: string) => void
   onDeleteNote?: (stem: string) => void
@@ -17,7 +19,7 @@ interface Props {
   totalNotes: number
 }
 
-export function FileExplorer({ fileTree, activeTab, onSelectNote, onOpenHistory, onDeleteNote, width, onWidthChange, collapsed, totalNotes }: Props) {
+export function FileExplorer({ fileTree, activeTab, activePath, onSelectNote, onOpenHistory, onDeleteNote, width, onWidthChange, collapsed, totalNotes }: Props) {
   const [expandedFolders, setExpandedFolders] = useLocalStorage<string[]>('vv:expandedFolders', [])
   const expandedSet = new Set(expandedFolders)
   const isDragging = useRef(false)
@@ -105,7 +107,7 @@ export function FileExplorer({ fileTree, activeTab, onSelectNote, onOpenHistory,
             <NoteItem
               key={file.path}
               file={file}
-              isActive={file.stem === activeTab}
+              isActive={activePath ? file.path === activePath : file.stem === activeTab}
               indent={12}
               onSelect={onSelectNote}
               onContextMenu={(stem, x, y) => setContextMenu({ stem, x, y })}
@@ -168,7 +170,7 @@ export function FileExplorer({ fileTree, activeTab, onSelectNote, onOpenHistory,
                         <NoteItem
                           key={file.path}
                           file={file}
-                          isActive={file.stem === activeTab}
+                          isActive={activePath ? file.path === activePath : file.stem === activeTab}
                           indent={38}
                           onSelect={onSelectNote}
                           onContextMenu={(stem, x, y) => setContextMenu({ stem, x, y })}
@@ -184,7 +186,7 @@ export function FileExplorer({ fileTree, activeTab, onSelectNote, onOpenHistory,
                       <NoteItem
                         key={file.path}
                         file={file}
-                        isActive={file.stem === activeTab}
+                        isActive={activePath ? file.path === activePath : file.stem === activeTab}
                         indent={24}
                         onSelect={onSelectNote}
                         onContextMenu={(stem, x, y) => setContextMenu({ stem, x, y })}

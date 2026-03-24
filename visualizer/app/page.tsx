@@ -232,6 +232,7 @@ export default function Home() {
             <FileExplorer
               fileTree={fileTree}
               activeTab={state.activeTab}
+              activePath={activeNode?.path ?? null}
               onSelectNote={(stem, newTab) => {
                 state.openNote(stem, newTab)
                 if (state.viewMode === 'graph') {
