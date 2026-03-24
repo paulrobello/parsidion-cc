@@ -1704,7 +1704,6 @@ This is the final wiring task. Changes:
 
 ```typescript
 import { useVaultFiles } from '@/lib/useVaultFiles'
-import path from 'path'
 ```
 
 - [ ] **Step 2: Add `noteRefreshTrigger` state**
@@ -1769,13 +1768,9 @@ onSave={state.saveNote}
 ```
 This already works because `state.saveNote` now matches the new signature.
 
-- [ ] **Step 8: Remove `path` import if it causes browser issues**
+- [ ] **Step 8: Verify no `path` import is present in page.tsx**
 
-The `path` module import in step 1 is only needed for `handleNoteModified`. If bundler warnings appear, replace:
-```typescript
-const stem = notePath.replace(/\.md$/, '').split('/').pop() ?? notePath
-```
-(no `path` import needed — the split is just string manipulation).
+`handleNoteModified` uses only `string.split('/')` — no Node.js `path` module is needed. Confirm there is no `import path from 'path'` in `page.tsx` after these edits.
 
 - [ ] **Step 9: Verify TypeScript compiles with zero errors**
 
