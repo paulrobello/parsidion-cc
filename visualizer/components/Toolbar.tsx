@@ -5,6 +5,7 @@ import type { NoteNode } from '@/lib/graph'
 import { TabBar } from './TabBar'
 import { UnifiedSearch } from './UnifiedSearch'
 import { ViewToggle } from './ViewToggle'
+import type { WsStatus } from '@/lib/useVaultFiles'
 
 interface Props {
   onToggleSidebar: () => void
@@ -18,6 +19,7 @@ interface Props {
   viewMode: 'read' | 'graph'
   onViewModeChange: (mode: 'read' | 'graph') => void
   onNewNote: () => void
+  wsStatus: WsStatus
 }
 
 export function Toolbar({
@@ -26,6 +28,7 @@ export function Toolbar({
   nodes, onSearchSelect,
   viewMode, onViewModeChange,
   onNewNote,
+  wsStatus,
 }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -78,6 +81,21 @@ export function Toolbar({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        {/* WebSocket status indicator */}
+        <div
+          title={
+            wsStatus === 'connected' ? 'Vault sync connected' :
+            wsStatus === 'connecting' ? 'Vault sync reconnecting…' :
+            'Vault sync disconnected'
+          }
+          style={{
+            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+            background:
+              wsStatus === 'connected' ? '#10b981' :
+              wsStatus === 'connecting' ? '#f59e0b' : '#ef4444',
+            animation: wsStatus === 'connecting' ? 'vault-pulse 1.2s ease-in-out infinite' : 'none',
+          }}
+        />
         <button
           onClick={onNewNote}
           title="New note"
