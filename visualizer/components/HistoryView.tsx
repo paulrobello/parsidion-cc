@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, type CSSProperties } from 'react'
+import { useState, useEffect, useCallback, useMemo, type CSSProperties } from 'react'
 import { CommitList } from './CommitList'
 import { DiffViewer } from './DiffViewer'
 import type { DiffMode } from './DiffViewer'
@@ -57,24 +57,26 @@ export function HistoryView({ stem, node, onClose }: Props) {
       .finally(() => setLoadingCommits(false))
   }, [stem])
 
-  // Fetch diff whenever from/to changes
+  // Fetch diff whenever from/to changes; abort stale in-flight requests
   useEffect(() => {
     if (!fromHash || !toHash) { setRawDiff(''); return }
+    const controller = new AbortController()
     setLoadingDiff(true)
     setDiffError(null)
-    fetch(`/api/note/diff?stem=${encodeURIComponent(stem)}&from=${encodeURIComponent(fromHash)}&to=${encodeURIComponent(toHash)}`)
+    fetch(`/api/note/diff?stem=${encodeURIComponent(stem)}&from=${encodeURIComponent(fromHash)}&to=${encodeURIComponent(toHash)}`, { signal: controller.signal })
       .then(r => r.json())
       .then(data => {
         if (data.error) { setDiffError(data.error as string); return }
         setRawDiff(data.diff ?? '')
         setTruncated(data.truncated ?? false)
       })
-      .catch(e => setDiffError((e as Error).message))
+      .catch(e => { if ((e as Error).name !== 'AbortError') setDiffError((e as Error).message) })
       .finally(() => setLoadingDiff(false))
+    return () => controller.abort()
   }, [stem, fromHash, toHash])
 
-  const hunks = parseDiff(rawDiff)
-  const filename = node?.path.split('/').pop() ?? `${stem}.md`
+  const hunks = useMemo(() => parseDiff(rawDiff), [rawDiff])
+  const filename = useMemo(() => node?.path.split('/').pop() ?? `${stem}.md`, [node?.path, stem])
 
   const handleSetFrom = useCallback((hash: string) => {
     setFromHash(hash)

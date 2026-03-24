@@ -65,7 +65,8 @@ export function CommitList({ commits, fromHash, toHash, onSetFrom, onSetTo }: Pr
                   onClick={() => { if (commit.hash !== toHash) onSetFrom(commit.hash) }}
                   disabled={commit.hash === toHash}
                   style={{
-                    padding: '1px 5px', borderRadius: 2, fontSize: 8, cursor: 'pointer',
+                    padding: '1px 5px', borderRadius: 2, fontSize: 8,
+                    cursor: commit.hash === toHash ? 'not-allowed' : 'pointer',
                     background: isFrom ? '#1e3a5f' : 'rgba(75,107,251,0.1)',
                     color: isFrom ? '#4b6bfb' : '#555',
                     border: `1px solid ${isFrom ? '#4b6bfb' : '#1a2040'}`,
@@ -79,7 +80,8 @@ export function CommitList({ commits, fromHash, toHash, onSetFrom, onSetTo }: Pr
                   onClick={() => { if (!isSingleCommit && commit.hash !== fromHash) onSetTo(commit.hash) }}
                   disabled={isSingleCommit || commit.hash === fromHash}
                   style={{
-                    padding: '1px 5px', borderRadius: 2, fontSize: 8, cursor: 'pointer',
+                    padding: '1px 5px', borderRadius: 2, fontSize: 8,
+                    cursor: (isSingleCommit || commit.hash === fromHash) ? 'not-allowed' : 'pointer',
                     background: isTo ? '#2d4a1e' : 'rgba(76,175,80,0.1)',
                     color: isTo ? '#4CAF50' : '#555',
                     border: `1px solid ${isTo ? '#4CAF50' : '#1a2040'}`,
@@ -112,7 +114,7 @@ export function CommitList({ commits, fromHash, toHash, onSetFrom, onSetTo }: Pr
           )
         })}
 
-        {isSingleCommit && commits.length === 1 && (
+        {commits.length === 1 && (
           <div style={{ color: '#555', fontSize: 10, padding: '4px 8px', fontFamily: 'monospace' }}>
             Only one version — no diff available.
           </div>
