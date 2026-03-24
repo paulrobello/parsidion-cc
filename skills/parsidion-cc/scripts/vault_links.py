@@ -35,6 +35,7 @@ def find_related_by_tags(
     new_tags: list[str],
     max_links: int = 5,
     vault_notes: list[Path] | None = None,
+    vault: Path | None = None,
 ) -> list[str]:
     """Find existing vault notes that share tags with a new note.
 
@@ -46,6 +47,7 @@ def find_related_by_tags(
             (default), calls ``vault_common.all_vault_notes()``.  Callers
             that already have the list should pass it to avoid a redundant
             vault walk.  See ARC-010.
+        vault: Optional vault path. Defaults to resolve_vault().
 
     Returns:
         List of ``"[[stem]]"`` wikilink strings for the top matching notes,
@@ -56,7 +58,9 @@ def find_related_by_tags(
 
     new_tag_set = set(new_tags)
     candidates: list[tuple[int, Path]] = []
-    notes = vault_notes if vault_notes is not None else vault_common.all_vault_notes()
+    notes = (
+        vault_notes if vault_notes is not None else vault_common.all_vault_notes(vault)
+    )
 
     for note_path in notes:
         # Skip the note itself and daily notes
@@ -85,9 +89,10 @@ def find_related_by_tags(
 
 def find_related_by_semantic(
     new_note_path: Path,
-    vault_root: Path,
+    vault_root: Path | None = None,
     max_links: int = 5,
     tag_strs: list[str] | None = None,
+    vault: Path | None = None,
 ) -> list[str]:
     """Find related vault notes using semantic search via vault_search.py subprocess.
 
@@ -96,21 +101,25 @@ def find_related_by_semantic(
 
     Args:
         new_note_path: Path to the newly written note (excluded from results).
-        vault_root: Vault root directory.
+        vault_root: Deprecated alias for vault. Use vault instead.
         max_links: Maximum number of related note wikilinks to return.
         tag_strs: Already-parsed tag strings from the note's frontmatter. When
             provided, avoids re-reading the note file.
+        vault: Optional vault path. Defaults to resolve_vault().
 
     Returns:
         List of ``"[[stem]]"`` wikilink strings, sorted by semantic similarity.
     """
     import json as _json
 
+    # Support legacy vault_root parameter
+    vault = vault or vault_root or vault_common.resolve_vault()
+
     vault_search_script = Path(__file__).parent / "vault_search.py"
     if not vault_search_script.exists():
         return []
 
-    db_path = vault_common.VAULT_ROOT / vault_common.EMBEDDINGS_DB_FILENAME
+    db_path = vault_common.get_embeddings_db_path(vault)
     if not db_path.exists():
         return []
 
@@ -221,6 +230,7 @@ def add_backlinks_to_existing(
     new_note_path: Path,
     related_notes: list[str],
     vault_notes: list[Path] | None = None,
+    vault: Path | None = None,
 ) -> list[Path]:
     """Add a backlink to ``new_note_path`` in each of the ``related_notes``.
 
@@ -235,6 +245,7 @@ def add_backlinks_to_existing(
             (default), calls ``vault_common.all_vault_notes()``.  Callers
             that already have the list should pass it to avoid a redundant
             vault walk.  See ARC-010.
+        vault: Optional vault path. Defaults to resolve_vault().
 
     Returns:
         List of Paths that were modified.
@@ -243,7 +254,9 @@ def add_backlinks_to_existing(
     modified: list[Path] = []
 
     # Build a stem -> path index from all vault notes once
-    notes = vault_notes if vault_notes is not None else vault_common.all_vault_notes()
+    notes = (
+        vault_notes if vault_notes is not None else vault_common.all_vault_notes(vault)
+    )
     stem_index: dict[str, Path] = {}
     for note_path in notes:
         stem_index[note_path.stem] = note_path

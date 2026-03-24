@@ -275,13 +275,17 @@ def resolve_vault(
     return VAULT_ROOT
 
 
-def get_embeddings_db_path() -> Path:
+def get_embeddings_db_path(vault: Path | None = None) -> Path:
     """Return the path to the vault's embeddings database.
 
+    Args:
+        vault: Optional vault path. Defaults to resolve_vault().
+
     Returns:
-        Path to VAULT_ROOT/embeddings.db.
+        Path to vault/embeddings.db.
     """
-    return VAULT_ROOT / EMBEDDINGS_DB_FILENAME
+    vault = vault or resolve_vault()
+    return vault / EMBEDDINGS_DB_FILENAME
 
 
 def ensure_note_index_schema(conn: sqlite3.Connection) -> None:
@@ -712,20 +716,25 @@ def extract_title(content: str, stem: str) -> str:
     return stem.replace("-", " ").title()
 
 
-def _walk_vault_notes() -> list[Path]:
-    """Walk the vault tree and return all .md files, excluding EXCLUDE_DIRS and CLAUDE.md."""
+def _walk_vault_notes(vault: Path | None = None) -> list[Path]:
+    """Walk the vault tree and return all .md files, excluding EXCLUDE_DIRS and CLAUDE.md.
+
+    Args:
+        vault: Optional vault path. Defaults to resolve_vault().
+    """
+    vault = vault or resolve_vault()
     notes: list[Path] = []
-    if not VAULT_ROOT.is_dir():
+    if not vault.is_dir():
         return notes
 
-    for dirpath, dirnames, filenames in os.walk(VAULT_ROOT):
+    for dirpath, dirnames, filenames in os.walk(vault):
         # Prune excluded directories in-place so os.walk skips them
         dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
 
         for fname in filenames:
             if not fname.endswith(".md"):
                 continue
-            if fname == "CLAUDE.md" and Path(dirpath) == VAULT_ROOT:
+            if fname == "CLAUDE.md" and Path(dirpath) == vault:
                 continue
             notes.append(Path(dirpath) / fname)
 
@@ -893,7 +902,9 @@ def build_context_block(notes: list[Path], max_chars: int = 4000) -> str:
     return "".join(parts).rstrip("\n")
 
 
-def build_compact_index(notes: list[Path], max_chars: int = 2000) -> str:
+def build_compact_index(
+    notes: list[Path], max_chars: int = 2000, vault: Path | None = None
+) -> str:
     """Build a compact one-line-per-note index: title [tags] (folder).
 
     Much smaller than build_context_block — use when vault is large or
@@ -902,10 +913,12 @@ def build_compact_index(notes: list[Path], max_chars: int = 2000) -> str:
     Args:
         notes: List of note paths to include.
         max_chars: Maximum total characters before truncating with a count line.
+        vault: Optional vault path. Defaults to resolve_vault().
 
     Returns:
         A compact index string, or empty string if notes is empty.
     """
+    vault = vault or resolve_vault()
     lines: list[str] = []
     total = 0
     for path in notes:
@@ -919,7 +932,7 @@ def build_compact_index(notes: list[Path], max_chars: int = 2000) -> str:
         if isinstance(tags, str):
             tags = [tags]
         tag_str = " ".join(f"`{t}`" for t in tags) if tags else ""
-        folder = path.parent.name if path.parent != VAULT_ROOT else "root"
+        folder = path.parent.name if path.parent != vault else "root"
         entry = f"- [[{path.stem}]] {title} ({folder})" + (
             " — " + tag_str if tag_str else ""
         )
@@ -964,14 +977,19 @@ def get_project_name(cwd: str | None = None) -> str:
     return path.name
 
 
-def ensure_vault_dirs() -> None:
-    """Create any missing vault directories under ``VAULT_ROOT``."""
-    VAULT_ROOT.mkdir(parents=True, exist_ok=True)
+def ensure_vault_dirs(vault: Path | None = None) -> None:
+    """Create any missing vault directories.
+
+    Args:
+        vault: Optional vault path. Defaults to resolve_vault().
+    """
+    vault = vault or resolve_vault()
+    vault.mkdir(parents=True, exist_ok=True)
     for dirname in VAULT_DIRS:
-        (VAULT_ROOT / dirname).mkdir(exist_ok=True)
+        (vault / dirname).mkdir(exist_ok=True)
 
     # Ensure Templates symlink points to the skill templates
-    templates_link = VAULT_ROOT / "Templates"
+    templates_link = vault / "Templates"
     if templates_link.is_dir() and not templates_link.is_symlink():
         # Only create symlink if the directory is empty (freshly created by us)
         try:
@@ -1006,17 +1024,21 @@ def get_vault_username() -> str:
     return username.strip() or "unknown"
 
 
-def today_daily_path() -> Path:
+def today_daily_path(vault: Path | None = None) -> Path:
     """Return the path to today's daily note: ``Daily/YYYY-MM/DD-{username}.md``.
 
     The username suffix prevents merge conflicts when a team shares a vault via
     git — each member writes to their own file on the same day.  The username is
     resolved by :func:`get_vault_username`.
+
+    Args:
+        vault: Optional vault path. Defaults to resolve_vault().
     """
+    vault = vault or resolve_vault()
     today = date.today()
     month_dir = f"{today.year:04d}-{today.month:02d}"
     day_file = f"{today.day:02d}-{get_vault_username()}.md"
-    return VAULT_ROOT / "Daily" / month_dir / day_file
+    return vault / "Daily" / month_dir / day_file
 
 
 def create_daily_note_if_missing() -> Path:
@@ -1050,9 +1072,13 @@ def create_daily_note_if_missing() -> Path:
     return daily_path
 
 
-def all_vault_notes() -> list[Path]:
-    """Return all ``.md`` files in the vault, excluding ``EXCLUDE_DIRS`` and ``CLAUDE.md``."""
-    return _walk_vault_notes()
+def all_vault_notes(vault: Path | None = None) -> list[Path]:
+    """Return all ``.md`` files in the vault, excluding ``EXCLUDE_DIRS`` and ``CLAUDE.md``.
+
+    Args:
+        vault: Optional vault path. Defaults to resolve_vault().
+    """
+    return _walk_vault_notes(vault)
 
 
 # ---------------------------------------------------------------------------
@@ -1135,14 +1161,18 @@ def _parse_config_yaml(text: str) -> dict[str, Any]:
 
 
 @functools.lru_cache(maxsize=1)
-def _load_config_cached() -> dict[str, Any]:
+def _load_config_cached(vault_root: Path | None = None) -> dict[str, Any]:
     """Internal cached implementation — call ``load_config()`` instead.
 
     Wrapped with ``functools.lru_cache(maxsize=1)`` so results survive for
     the lifetime of the process (each hook is a single-threaded subprocess).
     Use ``load_config.cache_clear()`` in tests to reset between cases.
+
+    Args:
+        vault_root: Optional vault root path. Defaults to resolve_vault().
     """
-    config_path = VAULT_ROOT / "config.yaml"
+    vault = vault_root or resolve_vault()
+    config_path = vault / "config.yaml"
     if not config_path.is_file():
         return {}
 
@@ -1153,16 +1183,20 @@ def _load_config_cached() -> dict[str, Any]:
         return {}
 
 
-def load_config() -> dict[str, Any]:
-    """Load ``config.yaml`` from *VAULT_ROOT*.
+def load_config(vault: Path | None = None) -> dict[str, Any]:
+    """Load ``config.yaml`` from the vault.
 
     Results are cached per-process via ``functools.lru_cache``.  Call
     ``load_config.cache_clear()`` to invalidate the cache in tests when
-    ``VAULT_ROOT`` has been patched to point at a different directory.
+    the vault path has been changed.
+
+    Args:
+        vault: Optional vault path. Defaults to resolve_vault().
 
     Returns an empty dict when the file is missing or unreadable.
     """
-    return _load_config_cached()
+    vault = vault or resolve_vault()
+    return _load_config_cached(vault)
 
 
 def _clear_config_cache() -> None:
@@ -1316,9 +1350,13 @@ _HOOK_EVENTS_MAX_LINES_DEFAULT = 10000
 
 
 def write_hook_event(
-    hook: str, project: str, duration_ms: float, **extra: object
+    hook: str,
+    project: str,
+    duration_ms: float,
+    vault: Path | None = None,
+    **extra: object,
 ) -> None:
-    """Append a structured JSON event line to ``~/ClaudeVault/hook_events.log``.
+    """Append a structured JSON event line to ``vault/hook_events.log``.
 
     Best-effort — never raises. Controlled by ``event_log.enabled`` config
     (default: ``true``). Rotates (keeps last *max_lines*) when the file
@@ -1328,8 +1366,10 @@ def write_hook_event(
         hook: Hook name, e.g. ``"SessionEnd"``.
         project: Project name.
         duration_ms: Hook wall-clock time in milliseconds.
+        vault: Optional vault path. Defaults to resolve_vault().
         **extra: Additional key-value pairs to include in the event object.
     """
+    vault = vault or resolve_vault()
     if not get_config("event_log", "enabled", True):
         return
 
@@ -1341,13 +1381,13 @@ def write_hook_event(
     }
     event.update(extra)
 
-    log_path = VAULT_ROOT / _HOOK_EVENTS_FILENAME
+    log_path = vault / _HOOK_EVENTS_FILENAME
     max_lines: int = int(
         get_config("event_log", "max_lines", _HOOK_EVENTS_MAX_LINES_DEFAULT)
     )
 
     try:
-        VAULT_ROOT.mkdir(parents=True, exist_ok=True)
+        vault.mkdir(parents=True, exist_ok=True)
         line = json.dumps(event) + "\n"
 
         # Atomic append with optional rotation
@@ -1377,41 +1417,51 @@ def write_hook_event(
 _LAST_SEEN_FILENAME = "last_seen.json"
 
 
-def get_last_seen_path() -> Path:
+def get_last_seen_path(vault: Path | None = None) -> Path:
     """Return the path to the last-seen tracker JSON file.
 
+    Args:
+        vault: Optional vault path. Defaults to resolve_vault().
+
     Returns:
-        Path to ``~/.claude/vault_last_seen.json``.
+        Path to ``~/.claude/vault_last_seen.json`` (vault-independent location).
     """
+    # last_seen.json is stored outside the vault to track across all vaults
     return Path.home() / ".claude" / _LAST_SEEN_FILENAME
 
 
-def load_last_seen() -> dict[str, str]:
+def load_last_seen(vault: Path | None = None) -> dict[str, str]:
     """Load the per-project last-seen timestamp map.
+
+    Args:
+        vault: Optional vault path (unused, for API consistency).
 
     Returns:
         Dict mapping project name → ISO 8601 timestamp string.
         Returns empty dict when the file is absent or unreadable.
     """
-    path = get_last_seen_path()
+    path = get_last_seen_path(vault)
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, ValueError):
         return {}
 
 
-def save_last_seen(project: str, ts: str | None = None) -> None:
+def save_last_seen(
+    project: str, ts: str | None = None, vault: Path | None = None
+) -> None:
     """Update and persist the last-seen timestamp for *project*.
 
     Args:
         project: Project name to update.
         ts: ISO 8601 timestamp. Defaults to ``datetime.now().isoformat()``.
+        vault: Optional vault path (unused, for API consistency).
     """
     if ts is None:
         ts = datetime.now().isoformat(timespec="seconds")
-    path = get_last_seen_path()
+    path = get_last_seen_path(vault)
     try:
-        data = load_last_seen()
+        data = load_last_seen(vault)
         data[project] = ts
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     except OSError:
@@ -1647,6 +1697,7 @@ def append_to_pending(
     source: str = "session",
     agent_type: str | None = None,
     session_id: str | None = None,
+    vault: Path | None = None,
 ) -> None:
     """Append a session entry to the pending summaries queue.
 
@@ -1666,14 +1717,16 @@ def append_to_pending(
             ``transcript_path.stem`` when omitted.  Pass the ``agent_id``
             here when the transcript path is the real agent transcript so
             that the stored path remains readable while dedup uses the ID.
+        vault: Optional vault path. Defaults to resolve_vault().
     """
+    vault = vault or resolve_vault()
     all_keys = set(categories.keys())
     if not force:
         significant = {"error_fix", "research", "pattern"}
         if not (significant & all_keys):
             return
 
-    pending_path = VAULT_ROOT / "pending_summaries.jsonl"
+    pending_path = vault / "pending_summaries.jsonl"
     session_id = session_id if session_id is not None else transcript_path.stem
 
     entry: dict[str, object] = {
@@ -1721,7 +1774,7 @@ def append_to_pending(
         pass
 
 
-def migrate_pending_paths(dry_run: bool = False) -> int:
+def migrate_pending_paths(dry_run: bool = False, vault: Path | None = None) -> int:
     """Fix broken transcript paths in pending_summaries.jsonl.
 
     Older versions of subagent_stop_hook stored paths without the ``agent-``
@@ -1731,11 +1784,13 @@ def migrate_pending_paths(dry_run: bool = False) -> int:
 
     Args:
         dry_run: If True, report what would change without writing.
+        vault: Optional vault path. Defaults to resolve_vault().
 
     Returns:
         Number of entries whose paths were fixed.
     """
-    pending_path = VAULT_ROOT / "pending_summaries.jsonl"
+    vault = vault or resolve_vault()
+    pending_path = vault / "pending_summaries.jsonl"
     if not pending_path.exists():
         return 0
     entries: list[dict] = []
@@ -1771,24 +1826,28 @@ def migrate_pending_paths(dry_run: bool = False) -> int:
     return fixed
 
 
-def git_commit_vault(message: str, paths: list[Path] | None = None) -> bool:
+def git_commit_vault(
+    message: str, vault: Path | None = None, paths: list[Path] | None = None
+) -> bool:
     """Stage and commit changes to the vault git repository.
 
-    Does nothing and returns False if VAULT_ROOT is not a git repository,
+    Does nothing and returns False if the vault is not a git repository,
     if git is not available, or if ``git.auto_commit`` is ``false`` in config.
     Never raises exceptions.
 
     Args:
         message: Commit message.
+        vault: Optional vault path. Defaults to resolve_vault().
         paths: Specific paths to stage. If None, stages all changes (``git add -A``).
 
     Returns:
         True if the commit succeeded, False otherwise.
     """
+    vault = vault or resolve_vault()
     if not get_config("git", "auto_commit", True):
         return False
 
-    git_marker = VAULT_ROOT / ".git"
+    git_marker = vault / ".git"
     if not (git_marker.is_dir() or git_marker.is_file()):
         return False
 
@@ -1801,7 +1860,7 @@ def git_commit_vault(message: str, paths: list[Path] | None = None) -> bool:
 
         result = subprocess.run(
             add_args,
-            cwd=str(VAULT_ROOT),
+            cwd=str(vault),
             capture_output=True,
             text=True,
             timeout=10,
@@ -1814,7 +1873,7 @@ def git_commit_vault(message: str, paths: list[Path] | None = None) -> bool:
         # are sanitized by callers using safe_project (see git_commit_vault usages).
         result = subprocess.run(
             ["git", "commit", "-m", message],
-            cwd=str(VAULT_ROOT),
+            cwd=str(vault),
             capture_output=True,
             text=True,
             timeout=10,
