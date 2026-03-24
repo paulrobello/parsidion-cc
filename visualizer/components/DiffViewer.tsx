@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { diffWords } from 'diff'
 import type { DiffHunk, DiffLine } from '@/lib/parseDiff'
 import { diffStats } from '@/lib/parseDiff'
@@ -27,6 +27,7 @@ const COLORS = {
   divider: '#111827',
   addLineNo: '#1a3a20',
   removeLineNo: '#5a2020',
+  hunkHeader: '#4b6bfb',
 }
 
 function LineNo({ n, color }: { n: number | null; color: string }) {
@@ -42,7 +43,7 @@ function UnifiedView({ hunks }: { hunks: DiffHunk[] }) {
     <div style={{ fontFamily: 'monospace', fontSize: 11 }}>
       {hunks.map((hunk, hi) => (
         <div key={hi}>
-          <div style={{ padding: '2px 8px', background: '#0a0e1a', color: '#4b6bfb', fontSize: 10 }}>
+          <div style={{ padding: '2px 8px', background: '#0a0e1a', color: COLORS.hunkHeader, fontSize: 10 }}>
             {hunk.header}
           </div>
           {hunk.lines.map((line, li) => {
@@ -55,7 +56,7 @@ function UnifiedView({ hunks }: { hunks: DiffHunk[] }) {
               }}>
                 <LineNo n={line.oldLineNo} color={isRemove ? COLORS.removeLineNo : COLORS.lineNoText} />
                 <LineNo n={line.newLineNo} color={isAdd ? COLORS.addLineNo : COLORS.lineNoText} />
-                <span style={{ color: isAdd ? '#4CAF50' : isRemove ? '#ef4444' : '#555', minWidth: 10 }}>
+                <span style={{ color: isAdd ? COLORS.addText : isRemove ? COLORS.removeText : COLORS.contextText, minWidth: 10 }}>
                   {isAdd ? '+' : isRemove ? '-' : ' '}
                 </span>
                 <span style={{ color: isAdd ? COLORS.addText : isRemove ? COLORS.removeText : COLORS.contextText, flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
@@ -108,38 +109,40 @@ function SplitView({ hunks }: { hunks: DiffHunk[] }) {
 
         return (
           <div key={hi} style={{ display: 'contents' }}>
-            <div style={{ padding: '2px 8px', background: '#0a0e1a', color: '#4b6bfb', fontSize: 10, gridColumn: '1 / -1' }}>
+            <div style={{ padding: '2px 8px', background: '#0a0e1a', color: COLORS.hunkHeader, fontSize: 10, gridColumn: '1 / -1' }}>
               {hunk.header}
             </div>
             {oldLines.map((old, li) => {
               const nw = newLines[li]
-              return [
-                <div key={`old-${li}`} style={{
-                  display: 'flex', gap: 6, padding: '1px 8px',
-                  background: old?.type === 'remove' ? COLORS.removeBg : 'transparent',
-                  borderRight: `1px solid ${COLORS.divider}`,
-                }}>
-                  <LineNo n={old?.oldLineNo ?? null} color={old?.type === 'remove' ? COLORS.removeLineNo : COLORS.lineNoText} />
-                  <span style={{
-                    color: old?.type === 'remove' ? COLORS.removeText : COLORS.contextText,
-                    flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+              return (
+                <div key={li} style={{ display: 'contents' }}>
+                  <div style={{
+                    display: 'flex', gap: 6, padding: '1px 8px',
+                    background: old?.type === 'remove' ? COLORS.removeBg : 'transparent',
+                    borderRight: `1px solid ${COLORS.divider}`,
                   }}>
-                    {old?.content ?? ''}
-                  </span>
-                </div>,
-                <div key={`new-${li}`} style={{
-                  display: 'flex', gap: 6, padding: '1px 8px',
-                  background: nw?.type === 'add' ? COLORS.addBg : 'transparent',
-                }}>
-                  <LineNo n={nw?.newLineNo ?? null} color={nw?.type === 'add' ? COLORS.addLineNo : COLORS.lineNoText} />
-                  <span style={{
-                    color: nw?.type === 'add' ? COLORS.addText : COLORS.contextText,
-                    flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                    <LineNo n={old?.oldLineNo ?? null} color={old?.type === 'remove' ? COLORS.removeLineNo : COLORS.lineNoText} />
+                    <span style={{
+                      color: old?.type === 'remove' ? COLORS.removeText : COLORS.contextText,
+                      flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                    }}>
+                      {old?.content ?? ''}
+                    </span>
+                  </div>
+                  <div style={{
+                    display: 'flex', gap: 6, padding: '1px 8px',
+                    background: nw?.type === 'add' ? COLORS.addBg : 'transparent',
                   }}>
-                    {nw?.content ?? ''}
-                  </span>
-                </div>,
-              ]
+                    <LineNo n={nw?.newLineNo ?? null} color={nw?.type === 'add' ? COLORS.addLineNo : COLORS.lineNoText} />
+                    <span style={{
+                      color: nw?.type === 'add' ? COLORS.addText : COLORS.contextText,
+                      flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                    }}>
+                      {nw?.content ?? ''}
+                    </span>
+                  </div>
+                </div>
+              )
             })}
           </div>
         )
@@ -152,7 +155,7 @@ function WordsView({ hunks }: { hunks: DiffHunk[] }) {
   return (
     <div style={{ fontFamily: 'monospace', fontSize: 11 }}>
       {hunks.map((hunk, hi) => {
-        const rows: React.ReactNode[] = []
+        const rows: ReactNode[] = []
         let i = 0
         while (i < hunk.lines.length) {
           const line = hunk.lines[i]
@@ -184,9 +187,8 @@ function WordsView({ hunks }: { hunks: DiffHunk[] }) {
                     <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                       {parts.map((part, pi) => (
                         <span key={pi} style={{
-                          color: part.added ? COLORS.addText : part.removed ? 'transparent' : COLORS.contextText,
+                          color: part.added ? COLORS.addText : part.removed ? COLORS.removeText : COLORS.contextText,
                           textDecoration: part.removed ? 'line-through' : 'none',
-                          display: part.removed ? 'none' : 'inline',
                         }}>
                           {part.value}
                         </span>
@@ -214,7 +216,7 @@ function WordsView({ hunks }: { hunks: DiffHunk[] }) {
         }
         return (
           <div key={hi}>
-            <div style={{ padding: '2px 8px', background: '#0a0e1a', color: '#4b6bfb', fontSize: 10 }}>
+            <div style={{ padding: '2px 8px', background: '#0a0e1a', color: COLORS.hunkHeader, fontSize: 10 }}>
               {hunk.header}
             </div>
             {rows}

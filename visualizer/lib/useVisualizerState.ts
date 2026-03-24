@@ -32,7 +32,8 @@ export function useVisualizerState(graphData: GraphData | null) {
   // --- History mode state ---
   const [historyMode, setHistoryMode] = useState(false)
   const [historyNote, setHistoryNote] = useState<string | null>(null)
-  const [prevViewMode, setPrevViewMode] = useState<'read' | 'graph'>('read')
+  // Internal: ref avoids stale-closure risk; restored by closeHistory
+  const prevViewModeRef = useRef<'read' | 'graph'>('read')
 
   // --- Sidebar state ---
   const [sidebarWidth, setSidebarWidth] = useLocalStorage('vv:sidebarWidth', 240)
@@ -130,16 +131,21 @@ export function useVisualizerState(graphData: GraphData | null) {
   }, [setActiveTabStem])
 
   const openHistory = useCallback((stem: string) => {
-    setPrevViewMode(viewMode)
+    if (historyMode) {
+      // Already in history mode — just swap the note, don't re-save prevViewMode
+      setHistoryNote(stem)
+      return
+    }
+    prevViewModeRef.current = viewMode
     setHistoryNote(stem)
     setHistoryMode(true)
-  }, [viewMode])
+  }, [historyMode, viewMode])
 
   const closeHistory = useCallback(() => {
     setHistoryMode(false)
     setHistoryNote(null)
-    setViewMode(prevViewMode)
-  }, [prevViewMode, setViewMode])
+    setViewMode(prevViewModeRef.current)
+  }, [setViewMode])
 
   // --- Fetch note content (with cache) ---
   const fetchNoteContent = useCallback(async (stem: string): Promise<string> => {
