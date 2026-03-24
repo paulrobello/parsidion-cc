@@ -254,7 +254,7 @@ def full_rebuild(vault_root: Path, model_name: str, dry_run: bool) -> None:
         model_name: fastembed model ID to use.
         dry_run: If True, print actions without writing.
     """
-    db_path = vault_common.get_embeddings_db_path()
+    db_path = vault_common.get_embeddings_db_path(vault=vault_root)
     notes = _collect_notes()
 
     if dry_run:
@@ -279,7 +279,7 @@ def incremental_update(vault_root: Path, model_name: str, dry_run: bool) -> None
         model_name: fastembed model ID to use.
         dry_run: If True, print actions without writing.
     """
-    db_path = vault_common.get_embeddings_db_path()
+    db_path = vault_common.get_embeddings_db_path(vault=vault_root)
 
     if not db_path.exists():
         print("No embeddings.db found — running full rebuild instead.")
@@ -352,6 +352,11 @@ def main() -> None:
         description="Build or update the Claude Vault semantic search index.",
     )
     parser.add_argument(
+        "--vault", "-V",
+        type=str,
+        help="Vault name or path (default: current project-local or default vault)",
+    )
+    parser.add_argument(
         "--incremental",
         action="store_true",
         default=False,
@@ -380,7 +385,7 @@ def main() -> None:
 
     # If the model changed since the last build, incremental is unsafe —
     # existing vectors have a different dimension. Force full rebuild.
-    db_path = vault_common.get_embeddings_db_path()
+    db_path = vault_common.get_embeddings_db_path(vault=vault_path)
     if args.incremental and db_path.exists():
         conn_check = open_db(db_path)
         row = conn_check.execute(
@@ -402,11 +407,21 @@ def main() -> None:
                 )
                 args.incremental = False
 
+    # Resolve vault path
+    vault_path = vault_common.resolve_vault(explicit=args.vault)
+
+    # Replace VAULT_ROOT with vault_path for this run
+    original_vault_root = vault_common.VAULT_ROOT
+    vault_common.VAULT_ROOT = vault_path
+
     start = time.time()
     if args.incremental:
-        incremental_update(vault_common.VAULT_ROOT, args.model, args.dry_run)
+        incremental_update(vault_path, args.model, args.dry_run)
     else:
-        full_rebuild(vault_common.VAULT_ROOT, args.model, args.dry_run)
+        full_rebuild(vault_path, args.model, args.dry_run)
+
+    # Restore original VAULT_ROOT
+    vault_common.VAULT_ROOT = original_vault_root
 
     elapsed = time.time() - start
     if not args.dry_run:
