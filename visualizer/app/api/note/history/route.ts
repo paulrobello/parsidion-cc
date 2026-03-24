@@ -1,0 +1,95 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { spawn } from 'child_process'
+import fs from 'fs'
+import path from 'path'
+
+function getVaultRoot() {
+  return process.env.VAULT_ROOT || path.join(process.env.HOME || '~', 'ClaudeVault')
+}
+
+function findNote(dir: string, stemToFind: string): string | null {
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        const found = findNote(full, stemToFind)
+        if (found) return found
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        if (entry.name.replace(/\.md$/, '') === stemToFind) return full
+      }
+    }
+  } catch { /* skip */ }
+  return null
+}
+
+function guardPath(notePath: string, vaultRoot: string): boolean {
+  return path.resolve(notePath).startsWith(path.resolve(vaultRoot) + path.sep)
+}
+
+export interface CommitEntry {
+  hash: string
+  shortHash: string
+  date: string
+  message: string
+}
+
+export async function GET(req: NextRequest) {
+  const stem = req.nextUrl.searchParams.get('stem')
+  if (!stem) return NextResponse.json({ error: 'stem required' }, { status: 400 })
+
+  const vaultRoot = getVaultRoot()
+  const notePath = findNote(vaultRoot, stem)
+  if (!notePath) return NextResponse.json({ error: `Note not found: ${stem}` }, { status: 404 })
+
+  if (!guardPath(notePath, vaultRoot)) {
+    return NextResponse.json({ error: 'Path traversal rejected' }, { status: 403 })
+  }
+
+  // Check git is available
+  const gitDir = path.join(vaultRoot, '.git')
+  if (!fs.existsSync(gitDir)) {
+    return NextResponse.json({ commits: [] })
+  }
+
+  const relPath = path.relative(vaultRoot, notePath)
+
+  return new Promise<NextResponse>(resolve => {
+    const proc = spawn('git', ['log', '--follow', '--format=%H|%ai|%s', '--', relPath], {
+      cwd: vaultRoot,
+      stdio: 'pipe',
+    })
+
+    let stdout = ''
+    let stderr = ''
+    proc.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+    proc.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+
+    proc.on('close', code => {
+      if (code !== 0) {
+        resolve(NextResponse.json({ error: `git log failed: ${stderr}` }, { status: 500 }))
+        return
+      }
+
+      const commits: CommitEntry[] = stdout
+        .split('\n')
+        .filter(Boolean)
+        .map(line => {
+          const [hash, date, ...msgParts] = line.split('|')
+          return {
+            hash,
+            shortHash: hash.slice(0, 7),
+            date,
+            message: msgParts.join('|'),
+          }
+        })
+
+      resolve(NextResponse.json({ commits }))
+    })
+
+    proc.on('error', err => {
+      resolve(NextResponse.json({ error: err.message }, { status: 500 }))
+    })
+  })
+}
