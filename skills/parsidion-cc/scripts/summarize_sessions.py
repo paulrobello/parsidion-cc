@@ -28,6 +28,7 @@ vault_links.py.  This file now imports and delegates to that module.
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -275,16 +276,19 @@ def read_project_names(vault_notes: list[Path] | None = None) -> set[str]:
     return projects
 
 
-def read_existing_tags() -> list[str]:
+def read_existing_tags(vault: Path) -> list[str]:
     """Read existing tags from the vault index CLAUDE.md.
 
     Parses the '## Existing Tags' section which contains a comma-separated
     list of all tags currently in the vault.
 
+    Args:
+        vault: Path to the vault directory.
+
     Returns:
         Sorted list of existing tag strings, or empty list if unavailable.
     """
-    index_path = vault_common.VAULT_ROOT / "CLAUDE.md"
+    index_path = vault / "CLAUDE.md"
     if not index_path.exists():
         return []
     try:
@@ -531,12 +535,13 @@ def _validate_frontmatter(note_content: str) -> str | None:
     return None
 
 
-def write_note(note_content: str, dry_run: bool) -> Path | None:
+def write_note(note_content: str, dry_run: bool, vault: Path) -> Path | None:
     """Write a generated vault note to the appropriate folder.
 
     Args:
         note_content: Full markdown note content.
         dry_run: If True, print without writing.
+        vault: Path to the vault directory.
 
     Returns:
         Path where the note was written, or None on dry-run/error.
@@ -580,9 +585,9 @@ def write_note(note_content: str, dry_run: bool) -> Path | None:
     # SEC-001: Guard against empty slug and path traversal outside vault root.
     if not slug:
         slug = "session-note"
-    target_dir = vault_common.VAULT_ROOT / folder_name
+    target_dir = vault / folder_name
     resolved = (target_dir / f"{slug}.md").resolve()
-    if not str(resolved).startswith(str(vault_common.VAULT_ROOT.resolve())):
+    if not str(resolved).startswith(str(vault.resolve())):
         raise ValueError(f"Refusing to write outside vault: {resolved}")
     target_path = target_dir / f"{slug}.md"
 
@@ -714,16 +719,17 @@ async def preprocess_transcript_hierarchical(
     return f"{header}\n\n{body}"
 
 
-def _resolve_note_stem(stem: str) -> Path | None:
+def _resolve_note_stem(stem: str, vault: Path) -> Path | None:
     """Resolve a note stem to its vault path via the note_index DB.
 
     Args:
         stem: Note filename without extension (e.g. "my-note").
+        vault: Path to the vault directory.
 
     Returns:
         Path to the note file, or None if not found.
     """
-    db_path = vault_common.get_embeddings_db_path()
+    db_path = vault_common.get_embeddings_db_path(vault)
     if db_path.exists():
         try:
             import sqlite3 as _sqlite3
@@ -740,7 +746,7 @@ def _resolve_note_stem(stem: str) -> Path | None:
         except Exception:  # noqa: BLE001
             pass
     # Fallback: walk vault notes
-    for note in vault_common.all_vault_notes():
+    for note in vault_common.all_vault_notes(vault):
         if note.stem == stem:
             return note
     return None
@@ -748,6 +754,7 @@ def _resolve_note_stem(stem: str) -> Path | None:
 
 def _find_dedup_candidates(
     topic_query: str,
+    vault: Path,
     threshold: float = 0.80,
     top_k: int = 5,
 ) -> list[tuple[str, float, str]]:
@@ -758,6 +765,7 @@ def _find_dedup_candidates(
 
     Args:
         topic_query: Free-text query derived from project name and categories.
+        vault: Path to the vault directory.
         threshold: Minimum cosine similarity score to consider a duplicate.
         top_k: Maximum number of candidates to return.
 
@@ -769,7 +777,7 @@ def _find_dedup_candidates(
     import json as _json
 
     vault_search_script = Path(__file__).parent / "vault_search.py"
-    db_path = vault_common.get_embeddings_db_path()
+    db_path = vault_common.get_embeddings_db_path(vault)
     if not vault_search_script.exists() or not db_path.exists():
         return []
 
@@ -784,6 +792,8 @@ def _find_dedup_candidates(
                 "--top",
                 str(top_k),
                 "--json",
+                "--vault",
+                str(vault),
             ],
             capture_output=True,
             text=True,
@@ -835,6 +845,7 @@ async def summarize_one(
     semaphore: anyio.Semaphore,
     existing_tags: list[str],
     persist: bool,
+    vault: Path,
     tail_lines: int = _DEFAULT_TRANSCRIPT_TAIL_LINES,
     max_cleaned_chars: int = _DEFAULT_MAX_CLEANED_CHARS,
     cluster_model: str = _DEFAULT_CLUSTER_MODEL,
@@ -849,6 +860,7 @@ async def summarize_one(
         semaphore: Concurrency limiter.
         existing_tags: All tags currently in the vault.
         persist: If True, allow the SDK to persist the session to disk.
+        vault: Path to the vault directory.
         tail_lines: Number of transcript lines to read.
         max_cleaned_chars: Maximum characters after cleaning.
         cluster_model: Model ID for hierarchical chunk summarization.
@@ -899,7 +911,9 @@ async def summarize_one(
             "summarizer", "dedup_threshold", 0.80
         )
         topic_query = f"{project} {' '.join(categories)}".strip()
-        similar_notes = _find_dedup_candidates(topic_query, threshold=dedup_threshold)
+        similar_notes = _find_dedup_candidates(
+            topic_query, vault, threshold=dedup_threshold
+        )
 
         prompt = build_prompt(
             project, categories, cleaned, existing_tags, session_id, similar_notes
@@ -947,7 +961,7 @@ async def summarize_one(
                         if new_content and target_wikilink:
                             # Extract stem from [[stem]] wikilink
                             target_stem = target_wikilink.strip("[]")
-                            target_path = _resolve_note_stem(target_stem)
+                            target_path = _resolve_note_stem(target_stem, vault)
                             if target_path is not None and not dry_run:
                                 target_path.write_text(new_content, encoding="utf-8")
                                 print(
@@ -962,7 +976,7 @@ async def summarize_one(
                 pass  # Not a structured decision — treat as normal note
 
         result_text = inject_project_tag(result_text, project)
-        written = write_note(result_text, dry_run)
+        written = write_note(result_text, dry_run, vault)
 
         # Automated backlink suggestion
         if written is not None:
@@ -975,7 +989,7 @@ async def summarize_one(
                     note_tags = []
                 tag_strs = [str(t) for t in note_tags]
                 related_links = vault_links.find_related_by_semantic(
-                    written, vault_common.VAULT_ROOT, max_links=5, tag_strs=tag_strs
+                    written, vault, max_links=5, tag_strs=tag_strs
                 )
                 if not related_links:
                     related_links = vault_links.find_related_by_tags(
@@ -1001,6 +1015,7 @@ async def run_all(
     model: str,
     dry_run: bool,
     persist: bool,
+    vault: Path,
     max_parallel: int = _DEFAULT_MAX_PARALLEL,
     tail_lines: int = _DEFAULT_TRANSCRIPT_TAIL_LINES,
     max_cleaned_chars: int = _DEFAULT_MAX_CLEANED_CHARS,
@@ -1013,6 +1028,7 @@ async def run_all(
         model: Model ID.
         dry_run: If True, print without writing.
         persist: If True, allow SDK session persistence.
+        vault: Path to the vault directory.
         max_parallel: Maximum concurrent summarization tasks.
         tail_lines: Transcript tail lines per entry.
         max_cleaned_chars: Max cleaned chars per entry.
@@ -1022,11 +1038,11 @@ async def run_all(
         List of (entry, written_path) tuples.
     """
     # ARC-010: collect vault notes once per run and pass to every per-entry
-    # function so we don't call all_vault_notes() up to 3× per entry.
-    vault_notes: list[Path] = vault_common.all_vault_notes()
-    existing_tags = read_existing_tags()
+    # function so we don't call all_vault_notes() up to 3x per entry.
+    vault_notes: list[Path] = vault_common.all_vault_notes(vault)
+    existing_tags = read_existing_tags(vault)
     project_names = read_project_names(vault_notes=vault_notes)
-    # Filter project names out — they're injected post-generation, not chosen by the model
+    # Filter project names out -- they're injected post-generation, not chosen by the model
     semantic_tags = [t for t in existing_tags if t not in project_names]
     semaphore = anyio.Semaphore(max_parallel)
     results: list[tuple[dict[str, object], Path | None]] = []
@@ -1064,6 +1080,7 @@ async def run_all(
             semaphore,
             semantic_tags,
             persist,
+            vault,
             tail_lines,
             max_cleaned_chars,
             cluster_model,
@@ -1143,12 +1160,14 @@ def remove_processed(
 
 
 def rebuild_index(
+    vault: Path,
     rebuild_graph: bool = False,
     graph_include_daily: bool = False,
 ) -> None:
     """Run update_index.py to rebuild the vault index.
 
     Args:
+        vault: Path to the vault directory.
         rebuild_graph: When True, pass ``--rebuild-graph`` to update_index.py
             so the visualizer graph.json is regenerated after indexing.
         graph_include_daily: When True, also pass ``--graph-include-daily``
@@ -1171,7 +1190,7 @@ def rebuild_index(
             file=sys.stderr,
         )
         return
-    cmd = ["uv", "run", str(index_script)]
+    cmd = ["uv", "run", str(index_script), "--vault", str(vault)]
     if rebuild_graph:
         cmd.append("--rebuild-graph")
     if graph_include_daily:
@@ -1236,6 +1255,13 @@ def main() -> None:
         default=False,
         help="Include Daily folder notes in the graph (only used with --rebuild-graph).",
     )
+    parser.add_argument(
+        "--vault",
+        "-V",
+        metavar="PATH|NAME",
+        default=None,
+        help="Vault path or named vault (default: ~/ClaudeVault)",
+    )
     args = parser.parse_args()
 
     # Resolve options: defaults → config → CLI args
@@ -1270,6 +1296,9 @@ def main() -> None:
         _DEFAULT_CLUSTER_MODEL,
     )
 
+    # Resolve vault
+    vault_path = vault_common.resolve_vault(explicit=args.vault, cwd=os.getcwd())
+
     # Optionally run vault_doctor first (--fix-all: frontmatter, tags, subfolders)
     if args.run_doctor:
         import subprocess as _sp
@@ -1283,8 +1312,8 @@ def main() -> None:
     if args.sessions:
         source_path = Path(args.sessions).expanduser()
     else:
-        # Default: pending file
-        source_path = vault_common.VAULT_ROOT / "pending_summaries.jsonl"
+        # Default: pending file in resolved vault
+        source_path = vault_path / "pending_summaries.jsonl"
 
     entries = read_pending(source_path)
     if not entries:
@@ -1303,6 +1332,7 @@ def main() -> None:
             model,
             args.dry_run,
             persist,
+            vault_path,
             max_parallel,
             tail_lines,
             max_cleaned_chars,
@@ -1340,6 +1370,7 @@ def main() -> None:
         # Rebuild vault index and commit all new notes + updated index
         if successful_entries:
             rebuild_index(
+                vault_path,
                 rebuild_graph=args.rebuild_graph,
                 graph_include_daily=args.graph_include_daily,
             )
@@ -1353,7 +1384,8 @@ def main() -> None:
             }
             project_str = ", ".join(sorted(projects))
             vault_common.git_commit_vault(
-                f"chore(vault): add session notes [{project_str}]"
+                f"chore(vault): add session notes [{project_str}]",
+                vault=vault_path,
             )
 
     summary_parts = [f"{len(successful_entries)} written"]
