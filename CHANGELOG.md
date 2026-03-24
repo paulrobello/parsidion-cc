@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Lint issues in `build_graph.py` (BLE001, UP017) and `vault_doctor.py` (B007)
+- Upgraded Pillow to 12.1.1 to fix CVE (out-of-bounds write in PSD image loading)
 
 ## [0.3.4] - 2026-03-24
 

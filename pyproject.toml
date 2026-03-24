@@ -8,6 +8,7 @@ dependencies = []
 search = [
     "fastembed>=0.6.0,<1.0",
     "sqlite-vec>=0.1.6,<1.0",
+    "pillow>=12.1.1",
 ]
 tools = [
     "parsidion-cc[search]",
@@ -18,6 +19,7 @@ eval = [
     "pyyaml>=6.0",
     "fastembed>=0.6.0,<1.0",
     "sqlite-vec>=0.1.6,<1.0",
+    "pillow>=12.1.1",
 ]
 
 [project.scripts]
