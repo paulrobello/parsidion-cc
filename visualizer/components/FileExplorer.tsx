@@ -272,7 +272,7 @@ function NoteItem({ file, isActive, indent, onSelect, onContextMenu }: {
         }
       }}
     >
-      <span style={{ color: getNodeColor(file.noteType ?? ''), fontSize: 7, flexShrink: 0 }}>●</span>
+      <span style={{ color: getNodeColor(file.noteType ?? 'pattern'), fontSize: 7, flexShrink: 0 }}>●</span>
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {file.stem}.md
       </span>
