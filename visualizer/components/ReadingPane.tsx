@@ -16,10 +16,11 @@ interface Props {
   onNavigate: (stem: string, newTab: boolean) => void
   onSave: (stem: string, content: string) => Promise<void>
   onDelete: (stem: string) => Promise<void>
+  onOpenHistory: (stem: string) => void
   nodes: NoteNode[]
 }
 
-export function ReadingPane({ node, fetchContent, onNavigate, onSave, onDelete, nodes }: Props) {
+export function ReadingPane({ node, fetchContent, onNavigate, onSave, onDelete, onOpenHistory, nodes }: Props) {
   const [content, setContent] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -336,6 +337,19 @@ export function ReadingPane({ node, fetchContent, onNavigate, onSave, onDelete, 
               >
                 Delete
               </button>
+              {!isEditing && node && (
+                <button
+                  onClick={() => onOpenHistory(node.id)}
+                  title="Version History"
+                  style={{
+                    background: 'none', border: '1px solid #1a2040', borderRadius: 3,
+                    color: '#888', cursor: 'pointer', padding: '2px 8px', fontSize: 10,
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                >
+                  HISTORY
+                </button>
+              )}
             </>
           )}
         </div>
