@@ -29,6 +29,11 @@ export function useVisualizerState(graphData: GraphData | null) {
   const [viewMode, setViewMode] = useLocalStorage<'read' | 'graph'>('vv:viewMode', 'read')
   const [graphScope, setGraphScope] = useLocalStorage<'local' | 'full'>('vv:graphScope', 'local')
 
+  // --- History mode state ---
+  const [historyMode, setHistoryMode] = useState(false)
+  const [historyNote, setHistoryNote] = useState<string | null>(null)
+  const [prevViewMode, setPrevViewMode] = useState<'read' | 'graph'>('read')
+
   // --- Sidebar state ---
   const [sidebarWidth, setSidebarWidth] = useLocalStorage('vv:sidebarWidth', 240)
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage('vv:sidebarCollapsed', false)
@@ -123,6 +128,18 @@ export function useVisualizerState(graphData: GraphData | null) {
   const switchTab = useCallback((stem: string) => {
     setActiveTabStem(stem)
   }, [setActiveTabStem])
+
+  const openHistory = useCallback((stem: string) => {
+    setPrevViewMode(viewMode)
+    setHistoryNote(stem)
+    setHistoryMode(true)
+  }, [viewMode])
+
+  const closeHistory = useCallback(() => {
+    setHistoryMode(false)
+    setHistoryNote(null)
+    setViewMode(prevViewMode)
+  }, [prevViewMode, setViewMode])
 
   // --- Fetch note content (with cache) ---
   const fetchNoteContent = useCallback(async (stem: string): Promise<string> => {
@@ -274,6 +291,7 @@ export function useVisualizerState(graphData: GraphData | null) {
     openNote, closeTab, switchTab,
     // View state
     viewMode, setViewMode, graphScope, setGraphScope,
+    historyMode, historyNote, openHistory, closeHistory,
     // Sidebar state
     sidebarWidth, setSidebarWidth, sidebarCollapsed, setSidebarCollapsed,
     // Content
