@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-03-24
+
+### Added
+- **Windows compatibility** — installer now works on Windows without elevated privileges or Developer Mode
+  - Raw strings for patched paths prevent backslash escape issues in `vault_common.py`
+  - Lambda-based regex replacement avoids `\U` unicode escape errors in Windows paths
+  - Graceful symlink fallback to `shutil.copytree` when symlinks require admin rights
+
+### Fixed
+- Lint issues in `build_graph.py` (BLE001, UP017) and `vault_doctor.py` (B007)
+
 ## [0.3.4] - 2026-03-24
 
 ### Added

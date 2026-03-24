@@ -75,9 +75,7 @@ def _ai_merge_bodies(path_a: Path, path_b: Path, title: str) -> str | None:
         "first heading"
     )
 
-    model = vault_common.get_config(
-        "summarizer", "merge_model", _DEFAULT_AI_MODEL
-    )
+    model = vault_common.get_config("summarizer", "merge_model", _DEFAULT_AI_MODEL)
     timeout = vault_common.get_config(
         "summarizer", "merge_timeout", _DEFAULT_AI_TIMEOUT
     )
@@ -311,17 +309,13 @@ def _merge_notes(
         merged_body = _ai_merge_bodies(path_a, path_b, title_a)
         if merged_body:
             # Add a comment noting the merge source
-            merged_body += (
-                f"\n\n<!-- merged from: {title_b} ({path_b.name}) -->"
-            )
+            merged_body += f"\n\n<!-- merged from: {title_b} ({path_b.name}) -->"
 
     # Fallback: naive concatenation
     if merged_body is None:
         merged_body = body_a
         if body_b:
-            separator_comment = (
-                f"<!-- merged from: {title_b} ({path_b.name}) -->"
-            )
+            separator_comment = f"<!-- merged from: {title_b} ({path_b.name}) -->"
             merged_body += f"\n\n---\n\n{separator_comment}\n\n{body_b}"
 
     return _build_frontmatter(merged_fm) + "\n" + merged_body + "\n"
@@ -425,7 +419,9 @@ _DEFAULT_SCAN_THRESHOLD = 0.92
 _DEFAULT_SCAN_TOP = 50
 
 
-def _scan_duplicates(threshold: float = _DEFAULT_SCAN_THRESHOLD, top: int = _DEFAULT_SCAN_TOP) -> None:
+def _scan_duplicates(
+    threshold: float = _DEFAULT_SCAN_THRESHOLD, top: int = _DEFAULT_SCAN_TOP
+) -> None:
     """Scan all vault notes for near-duplicate pairs using embedding similarity.
 
     Loads all embeddings from the DB, computes pairwise cosine similarity,
@@ -479,9 +475,7 @@ def _scan_duplicates(threshold: float = _DEFAULT_SCAN_THRESHOLD, top: int = _DEF
     blobs = [r[4] for r in rows]
 
     dim = len(blobs[0]) // 4  # float32 = 4 bytes each
-    vecs: list[list[float]] = [
-        list(struct.unpack(f"{dim}f", b)) for b in blobs
-    ]
+    vecs: list[list[float]] = [list(struct.unpack(f"{dim}f", b)) for b in blobs]
 
     # Compute pairwise cosine similarity (upper triangle only)
     pairs: list[tuple[float, int, int]] = []
@@ -537,7 +531,10 @@ def _rebuild_index() -> None:
             / "update_index.py"
         )
     if not index_script.exists():
-        print("Warning: update_index.py not found, skipping index rebuild.", file=sys.stderr)
+        print(
+            "Warning: update_index.py not found, skipping index rebuild.",
+            file=sys.stderr,
+        )
         return
     try:
         subprocess.run(
@@ -659,9 +656,7 @@ def main() -> None:
         _print_diff_summary(path_a, content_a, path_b, content_b)
 
         # Build merged content
-        merged = _merge_notes(
-            path_a, content_a, path_b, content_b, no_ai=args.no_ai
-        )
+        merged = _merge_notes(path_a, content_a, path_b, content_b, no_ai=args.no_ai)
 
         if args.dry_run or not args.execute:
             print("=== Proposed merged content ===\n")

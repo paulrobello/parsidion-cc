@@ -98,7 +98,9 @@ def main() -> None:
 
             _today = _date.today()
             _month = f"{_today.year:04d}-{_today.month:02d}"
-            _legacy = vault_common.VAULT_ROOT / "Daily" / _month / f"{_today.day:02d}.md"
+            _legacy = (
+                vault_common.VAULT_ROOT / "Daily" / _month / f"{_today.day:02d}.md"
+            )
             if _legacy.is_file():
                 daily_path = _legacy
             else:

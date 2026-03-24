@@ -41,6 +41,8 @@ Parsidion CC replaces Claude Code's built-in auto memory with a richly organized
 - **[mcpl](https://github.com/kenneth-liao/mcp-launchpad)** (optional) -- MCP Launchpad, a unified CLI for discovering and calling tools from any MCP server; used by the research agent as a fallback search gateway (see [docs/MCPL.md](docs/MCPL.md))
 - **[agentchrome](https://github.com/Nunley-Media-Group/AgentChrome)** (optional, recommended) -- native CLI for browser control via Chrome DevTools Protocol; used by the research agent to fetch fully-rendered pages for higher-quality markdown conversion (see [docs/AGENTCHROME.md](docs/AGENTCHROME.md)); falls back to `curl` when unavailable
 
+> **Platform support:** Works on macOS, Linux, and Windows. On Windows, the installer gracefully falls back from symlinks to directory copies when elevated privileges are unavailable.
+
 ## Quick Start
 
 1. **Clone the repository:**

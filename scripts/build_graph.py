@@ -17,7 +17,7 @@ import os
 import re
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -80,9 +80,7 @@ def get_vault_root(args: argparse.Namespace) -> Path:
     return Path("~/ClaudeVault").expanduser().resolve()
 
 
-def load_note_metadata(
-    conn: sqlite3.Connection, include_daily: bool
-) -> list[dict]:
+def load_note_metadata(conn: sqlite3.Connection, include_daily: bool) -> list[dict]:
     """Load all rows from note_index table."""
     cursor = conn.cursor()
     cursor.execute(
@@ -113,9 +111,7 @@ def load_note_metadata(
     return notes
 
 
-def load_embeddings(
-    conn: sqlite3.Connection, stems: set[str]
-) -> dict[str, np.ndarray]:
+def load_embeddings(conn: sqlite3.Connection, stems: set[str]) -> dict[str, np.ndarray]:
     """Load embeddings from note_embeddings table for the given stems."""
     cursor = conn.cursor()
     cursor.execute("SELECT stem, embedding FROM note_embeddings")
@@ -132,7 +128,7 @@ def load_embeddings(
             if vec.shape[0] not in (384, 768):
                 continue
             stem_to_embedding[stem] = vec
-        except Exception:
+        except (ValueError, TypeError):
             continue
     return stem_to_embedding
 
@@ -293,7 +289,7 @@ def main() -> None:
     for note in filtered_notes:
         rel_path = note["path"]
         if rel_path.startswith(vault_root_str):
-            rel_path = rel_path[len(vault_root_str):]
+            rel_path = rel_path[len(vault_root_str) :]
         nodes.append(
             {
                 "id": note["stem"],
@@ -310,7 +306,7 @@ def main() -> None:
     # Build output
     graph = {
         "meta": {
-            "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "generated": datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "note_count": len(nodes),
             "edge_count": total_edges,
             "min_semantic_threshold": args.min_threshold,

@@ -679,7 +679,9 @@ def _rebuild_graph(include_daily: bool) -> None:
     if include_daily:
         cmd.append("--include-daily")
 
-    print(f"Graph: rebuilding graph.json ({'with' if include_daily else 'without'} Daily notes)...")
+    print(
+        f"Graph: rebuilding graph.json ({'with' if include_daily else 'without'} Daily notes)..."
+    )
     result = subprocess.run(cmd, capture_output=False)
     if result.returncode != 0:
         print(f"Graph rebuild failed (exit {result.returncode})", file=sys.stderr)

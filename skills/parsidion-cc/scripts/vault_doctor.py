@@ -278,7 +278,7 @@ def dedup_related_links(dry_run: bool = False) -> int:
     duplicate entries.  Returns the number of notes fixed.
     """
     fixed = 0
-    related_re = re.compile(r'^(related:\s*)(\[.*?\])\s*$', re.MULTILINE)
+    related_re = re.compile(r"^(related:\s*)(\[.*?\])\s*$", re.MULTILINE)
     entry_re = re.compile(r'"(\[\[[^\]]+\]\])"')
 
     for note_path in vault_common.all_vault_notes():
@@ -538,7 +538,9 @@ def fix_prefix_cluster(
         try:
             old_path.rename(new_path)
         except FileNotFoundError:
-            print(f"  ⚠ skipped (not found): {old_path.relative_to(vault_common.VAULT_ROOT)}")
+            print(
+                f"  ⚠ skipped (not found): {old_path.relative_to(vault_common.VAULT_ROOT)}"
+            )
             failed_moves.append((old_path, new_path))
     # Remove failed moves so wikilink patching doesn't reference nonexistent files
     if failed_moves:
@@ -839,7 +841,11 @@ def check_note(path: Path, note_map: dict[str, list[Path]]) -> list[Issue]:
             if s.startswith("# ") and not s.startswith("## "):
                 has_h1 = True
                 break
-            if first_h2_line is None and s.startswith("## ") and not s.startswith("### "):
+            if (
+                first_h2_line is None
+                and s.startswith("## ")
+                and not s.startswith("### ")
+            ):
                 first_h2_line = s
         if not has_h1 and first_h2_line is not None:
             issues.append(
@@ -1216,7 +1222,9 @@ def _repair_one(
     repairable = [i for i in note_issues if i.code in REPAIRABLE_CODES]
     broken = [i for i in repairable if i.code == "BROKEN_WIKILINK"]
     heading_issues = [i for i in repairable if i.code == "HEADING_MISMATCH"]
-    other = [i for i in repairable if i.code not in ("BROKEN_WIKILINK", "HEADING_MISMATCH")]
+    other = [
+        i for i in repairable if i.code not in ("BROKEN_WIKILINK", "HEADING_MISMATCH")
+    ]
 
     with lock:
         prev_status = state.get("notes", {}).get(key, {}).get("status", "")
@@ -1295,9 +1303,7 @@ def _repair_one(
 
 # Regex to find the tags line in frontmatter (inline or block).
 # We operate on raw file text to preserve formatting of other fields.
-_TAGS_INLINE_RE = re.compile(
-    r"^(tags:\s*)\[([^\]]*)\]\s*$", re.MULTILINE
-)
+_TAGS_INLINE_RE = re.compile(r"^(tags:\s*)\[([^\]]*)\]\s*$", re.MULTILINE)
 _TAGS_BLOCK_START_RE = re.compile(r"^tags:\s*$", re.MULTILINE)
 
 
@@ -1455,7 +1461,7 @@ def _replace_tag_in_note(path: Path, old_tag: str, new_tag: str) -> bool:
             # Split everything after "tags:" into lines and find the
             # contiguous block of "  - ..." items.  The first line is
             # often empty (the newline right after "tags:").
-            after = fm_text[block_m.end():]
+            after = fm_text[block_m.end() :]
             all_lines = after.split("\n")
             tag_lines: list[str] = []  # original "  - X" lines
             end_idx = 0
@@ -1498,11 +1504,7 @@ def _replace_tag_in_note(path: Path, old_tag: str, new_tag: str) -> bool:
             # Reconstruct: "tags:\n" + new tag lines + everything after the block
             rest = "\n".join(all_lines[end_idx:])
             fm_text = (
-                fm_text[: block_m.end()]
-                + "\n"
-                + "\n".join(new_tag_lines)
-                + "\n"
-                + rest
+                fm_text[: block_m.end()] + "\n" + "\n".join(new_tag_lines) + "\n" + rest
             )
         else:
             return False
@@ -1548,9 +1550,7 @@ def _update_graph_json_tags(merges: list[tuple[str, str, str]]) -> int:
                 subs += 1
 
     if subs:
-        graph_path.write_text(
-            json.dumps(data, indent=2) + "\n", encoding="utf-8"
-        )
+        graph_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     return subs
 
@@ -1708,7 +1708,7 @@ def run_fix_tags(dry_run: bool = True) -> None:
             return
 
         # Apply merges
-        for keep, away, reason in duplicates:
+        for keep, away, _reason in duplicates:
             count = 0
             for note in all_notes:
                 if _replace_tag_in_note(note, away, keep):
@@ -1729,9 +1729,7 @@ def run_fix_tags(dry_run: bool = True) -> None:
         if underscore_fixed:
             msg_parts.append(f"normalize {underscore_fixed} underscore field(s)")
         if duplicates:
-            msg_parts.append(
-                f"merge {len(duplicates)} duplicate tag pair(s)"
-            )
+            msg_parts.append(f"merge {len(duplicates)} duplicate tag pair(s)")
         vault_common.git_commit_vault(
             f"refactor(vault): {', '.join(msg_parts)}",
         )
@@ -1805,7 +1803,9 @@ def run_strip_prefixes(dry_run: bool = True) -> None:
     print()
 
     if dry_run:
-        print(f"[dry-run] {len(pairs)} file(s) would be renamed. Run with --execute to apply.")
+        print(
+            f"[dry-run] {len(pairs)} file(s) would be renamed. Run with --execute to apply."
+        )
         return
 
     # Build stem remapping for wikilink patching
@@ -1849,7 +1849,9 @@ def run_strip_prefixes(dry_run: bool = True) -> None:
 # ---------------------------------------------------------------------------
 
 
-def run_migrate_daily_notes(vault_root: Path, dry_run: bool = True, username: str = "") -> None:
+def run_migrate_daily_notes(
+    vault_root: Path, dry_run: bool = True, username: str = ""
+) -> None:
     """Rename legacy ``Daily/YYYY-MM/DD.md`` notes to ``DD-{username}.md``.
 
     The un-namespaced ``DD.md`` format causes git merge conflicts when a team
@@ -1891,7 +1893,9 @@ def run_migrate_daily_notes(vault_root: Path, dry_run: bool = True, username: st
                 candidates.append((note, new_path))
 
     if not candidates:
-        print(f"No legacy daily notes found to migrate (already using DD-{username}.md format or vault is empty).")
+        print(
+            f"No legacy daily notes found to migrate (already using DD-{username}.md format or vault is empty)."
+        )
         return
 
     print(f"Found {len(candidates)} legacy daily note(s) to rename:\n")
@@ -1919,7 +1923,9 @@ def run_migrate_daily_notes(vault_root: Path, dry_run: bool = True, username: st
             skipped += 1
             continue
         old.rename(new)
-        print(f"  Renamed: {old.relative_to(vault_root)}  →  {new.relative_to(vault_root)}")
+        print(
+            f"  Renamed: {old.relative_to(vault_root)}  →  {new.relative_to(vault_root)}"
+        )
         moved.append((old, new))
 
     if not moved:
@@ -2184,7 +2190,9 @@ def main() -> None:
     # ── --migrate-daily-notes mode ─────────────────────────────────────────
     if args.migrate_daily_notes:
         dry = not args.execute
-        run_migrate_daily_notes(vault_common.VAULT_ROOT, dry_run=dry, username=args.daily_username)
+        run_migrate_daily_notes(
+            vault_common.VAULT_ROOT, dry_run=dry, username=args.daily_username
+        )
         if not args.fix_all:
             return
 
@@ -2192,7 +2200,9 @@ def main() -> None:
     fixed_paths = vault_common.migrate_pending_paths(dry_run=args.dry_run)
     if fixed_paths:
         action = "Would fix" if args.dry_run else "Fixed"
-        print(f"{action} {fixed_paths} legacy transcript path(s) in pending_summaries.jsonl.\n")
+        print(
+            f"{action} {fixed_paths} legacy transcript path(s) in pending_summaries.jsonl.\n"
+        )
 
     # Auto-deduplicate related wikilinks (silent when nothing to fix)
     deduped = dedup_related_links(dry_run=args.dry_run)
