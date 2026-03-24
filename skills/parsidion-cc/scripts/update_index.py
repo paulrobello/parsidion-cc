@@ -34,6 +34,7 @@ from vault_common import (
     get_embeddings_db_path,
     git_commit_vault,
     parse_frontmatter,
+    resolve_vault,
 )
 
 # Canonical folder order for index sections
@@ -224,7 +225,7 @@ def _extract_wikilink_stems(related: object) -> list[str]:
     return stems
 
 
-def build_index() -> tuple[
+def build_index(vault: Path) -> tuple[
     str,
     int,
     int,
@@ -239,7 +240,7 @@ def build_index() -> tuple[
         (wikilink, title, summary, tags, is_stale) tuples.
         db_rows is a list of NoteEntry records ready to upsert into the note_index table.
     """
-    ensure_vault_dirs()
+    ensure_vault_dirs(vault=vault)
     # Filter out MANIFEST.md files — they are auto-generated and should not be
     # indexed as vault notes.
     notes: list[Path] = [p for p in all_vault_notes() if p.name != "MANIFEST.md"]
@@ -514,6 +515,7 @@ def build_index() -> tuple[
 
 def build_manifests(
     folder_notes: dict[str, list[tuple[str, str, str, list[str], bool]]],
+    vault: Path,
 ) -> list[Path]:
     """Generate a MANIFEST.md file inside each non-empty vault subfolder.
 
@@ -536,7 +538,7 @@ def build_manifests(
         if not entries:
             continue
 
-        folder_dir: Path = VAULT_ROOT / folder_name
+        folder_dir: Path = vault / folder_name
         if not folder_dir.is_dir():
             continue
 
@@ -574,7 +576,7 @@ def build_manifests(
     return written
 
 
-def _write_note_index_to_db(db_rows: list[NoteEntry], current_stems: set[str]) -> None:
+def _write_note_index_to_db(db_rows: list[NoteEntry], current_stems: set[str], vault: Path) -> None:
     """Write per-note metadata rows to the note_index table in embeddings.db.
 
     No-op if embeddings are disabled or the DB file does not exist. Errors are
@@ -583,6 +585,7 @@ def _write_note_index_to_db(db_rows: list[NoteEntry], current_stems: set[str]) -
     Args:
         db_rows: List of NoteEntry records to upsert into note_index.
         current_stems: Set of stems currently in the vault (used to prune deleted notes).
+        vault: Path to the vault directory.
     """
     if not get_config("embeddings", "enabled", True):
         return
@@ -590,7 +593,7 @@ def _write_note_index_to_db(db_rows: list[NoteEntry], current_stems: set[str]) -
         import sqlite3 as _sqlite3
         from vault_common import ensure_note_index_schema
 
-        db_path = get_embeddings_db_path()
+        db_path = get_embeddings_db_path(vault=vault)
         if not db_path.exists():
             return
 
@@ -694,6 +697,11 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
+        "--vault", "-V",
+        type=str,
+        help="Vault name or path (default: current project-local or default vault)",
+    )
+    parser.add_argument(
         "--rebuild-graph",
         action="store_true",
         default=False,
@@ -711,20 +719,32 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     """Entry point: rebuild the index, write CLAUDE.md, and generate MANIFEST.md files."""
     args = _parse_args()
+
+    # Resolve vault path
+    vault_path = resolve_vault(explicit=args.vault, cwd=os.getcwd())
+
+    # Replace VAULT_ROOT with vault_path for this run
+    import vault_common
+    original_vault_root = vault_common.VAULT_ROOT
+    vault_common.VAULT_ROOT = vault_path
+
     _singleton_guard()
-    content, note_count, tag_count, folder_notes, db_rows = build_index()
-    index_path: Path = VAULT_ROOT / "CLAUDE.md"
+    content, note_count, tag_count, folder_notes, db_rows = build_index(vault=vault_path)
+    index_path: Path = vault_path / "CLAUDE.md"
     index_path.write_text(content, encoding="utf-8")
 
-    manifest_paths: list[Path] = build_manifests(folder_notes)
+    manifest_paths: list[Path] = build_manifests(folder_notes, vault=vault_path)
     manifest_count: int = len(manifest_paths)
 
     # Commit CLAUDE.md + all MANIFEST.md files together
     commit_paths: list[Path] = [index_path] + manifest_paths
-    git_commit_vault("chore(vault): rebuild index and manifests", paths=commit_paths)
+    git_commit_vault("chore(vault): rebuild index and manifests", paths=commit_paths, vault=vault_path)
+
+    # Restore original VAULT_ROOT
+    vault_common.VAULT_ROOT = original_vault_root
 
     current_stems: set[str] = {row.stem for row in db_rows}
-    _write_note_index_to_db(db_rows, current_stems)
+    _write_note_index_to_db(db_rows, current_stems, vault=vault_path)
 
     print(
         f"Updated CLAUDE.md: {note_count} notes indexed, {tag_count} tags; "
@@ -736,7 +756,7 @@ def main() -> None:
     # ARC-011: stderr is redirected to a log file so silent failures are
     # visible.  Check /tmp/parsidion-cc-embed.log when embeddings seem stale.
     if get_config("embeddings", "enabled", True):
-        db_path = get_embeddings_db_path()
+        db_path = get_embeddings_db_path(vault=vault_path)
         build_script = Path(__file__).parent / "build_embeddings.py"
         if build_script.exists():
             cmd = ["uv", "run", "--no-project", str(build_script)]
