@@ -32,11 +32,12 @@ const MAX_DIFF_LINES = 5000
 
 export async function GET(req: NextRequest) {
   const stem = req.nextUrl.searchParams.get('stem')
+  const notePathParam = req.nextUrl.searchParams.get('path')
   const from = req.nextUrl.searchParams.get('from')
   const to = req.nextUrl.searchParams.get('to')
 
-  if (!stem || !from || !to) {
-    return NextResponse.json({ error: 'stem, from, and to are required' }, { status: 400 })
+  if ((!stem && !notePathParam) || !from || !to) {
+    return NextResponse.json({ error: 'stem or path, from, and to are required' }, { status: 400 })
   }
 
   // Validate SHAs: alphanumeric only (short or full) or the sentinel "working"
@@ -46,7 +47,10 @@ export async function GET(req: NextRequest) {
   }
 
   const vaultRoot = getVaultRoot()
-  const notePath = findNote(vaultRoot, stem)
+  // Prefer explicit vault-relative path (avoids stem collision for MANIFEST.md etc.)
+  const notePath = notePathParam
+    ? path.join(vaultRoot, notePathParam)
+    : findNote(vaultRoot, stem!)
   if (!notePath) return NextResponse.json({ error: `Note not found: ${stem}` }, { status: 404 })
 
   if (!guardPath(notePath, vaultRoot)) {

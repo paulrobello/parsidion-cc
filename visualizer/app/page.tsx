@@ -144,8 +144,28 @@ export default function Home() {
   const handleGraphNodeClick = useCallback((stem: string, newTab: boolean) => {
     state.openNote(stem, newTab)
     state.setSelectedNode(stem)
+    // Switch to read mode when opening a note from graph
     state.setViewMode('read')
   }, [state])
+
+  // Track whether the sim was running when we last left the graph tab,
+  // so we can restore that state when switching back.
+  const simWasRunningRef = useRef(false)
+
+  const handleGraphTabClick = useCallback(() => {
+    state.setViewMode('graph')
+  }, [state])
+
+  // Pause sim when leaving graph view; resume if it was running when we return.
+  useEffect(() => {
+    if (state.viewMode !== 'graph') {
+      simWasRunningRef.current = state.isLayoutRunning
+      if (state.isLayoutRunning) state.setIsLayoutRunning(false)
+    } else {
+      if (simWasRunningRef.current) state.setIsLayoutRunning(true)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.viewMode])
 
   const handleNavigate = useCallback((stem: string, newTab: boolean) => {
     const resolved = state.resolveWikilink(stem) ?? stem
@@ -226,20 +246,17 @@ export default function Home() {
           <Toolbar
             onToggleSidebar={() => state.setSidebarCollapsed(c => !c)}
             tabs={state.openTabs}
-            activeTab={state.activeTab}
+            activeTab={state.viewMode === 'graph' ? null : state.activeTab}
             nodeMap={state.nodeMap}
             onSwitchTab={(stem: string) => {
               state.switchTab(stem)
-              if (state.viewMode === 'graph') {
-                graphCanvasRef.current?.flyToNode(stem)
-                graphCanvasRef.current?.selectNode(stem)
-              }
+              state.setViewMode('read')
             }}
             onCloseTab={state.closeTab}
             nodes={graphData.nodes}
             onSearchSelect={handleSearchSelect}
-            viewMode={state.viewMode}
-            onViewModeChange={state.setViewMode}
+            graphTabActive={state.viewMode === 'graph'}
+            onGraphTabClick={handleGraphTabClick}
             onNewNote={() => setShowNewNote(true)}
             wsStatus={wsStatus}
           />
@@ -254,6 +271,10 @@ export default function Home() {
               onSelectNote={(stem, newTab, path) => {
                 // Capture the explicit path so same-stem notes in different folders resolve correctly
                 if (path) setSelectedVaultPath(path)
+                if (state.historyMode) {
+                  state.openHistory(stem, path ?? undefined)
+                  return
+                }
                 state.openNote(stem, newTab)
                 if (state.viewMode === 'graph') {
                   graphCanvasRef.current?.flyToNode(stem)
@@ -273,122 +294,132 @@ export default function Home() {
               {state.historyMode && state.historyNote ? (
                 <HistoryView
                   stem={state.historyNote}
+                  notePath={state.historyPath}
                   node={state.nodeMap.get(state.historyNote) ?? null}
                   onClose={state.closeHistory}
                 />
-              ) : state.viewMode === 'read' ? (
-                <ReadingPane
-                  node={activeNode}
-                  fetchContent={state.fetchNoteContent}
-                  onNavigate={handleNavigate}
-                  onSave={state.saveNote}
-                  onDelete={handleDelete}
-                  onOpenHistory={state.openHistory}
-                  nodes={graphData.nodes}
-                  refreshTrigger={noteRefreshTrigger}
-                />
               ) : (
-                /* Graph mode */
-                <div style={{ flex: 1, position: 'relative' }}>
-                  {/* Scope indicator — top-right to avoid HUD overlap */}
-                  <div style={{
-                    position: 'absolute', top: 12, right: 12,
-                    display: 'flex', gap: 6, zIndex: 10,
-                    fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
-                  }}>
-                    {state.activeTab && state.graphScope === 'local' && (
-                      <div style={{
-                        background: 'rgba(15,23,42,0.92)',
-                        border: '1px solid #1e293b', borderRadius: 5,
-                        padding: '4px 10px',
-                        display: 'flex', gap: 8, alignItems: 'center',
-                      }}>
-                        <span style={{ color: '#f97316' }}>●</span>
-                        <span style={{ color: '#e8e8f0' }}>{state.activeTab}</span>
-                        <span style={{ color: '#6b7a99' }}>· 2 hops</span>
-                      </div>
-                    )}
-                    <button
-                      onClick={() => state.setGraphScope(state.graphScope === 'local' ? 'full' : 'local')}
-                      style={{
-                        background: 'rgba(15,23,42,0.92)',
-                        border: '1px solid #1e293b', borderRadius: 5,
-                        padding: '4px 10px',
-                        color: '#7b61ff', cursor: 'pointer',
-                        fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
-                      }}
-                    >
-                      {state.graphScope === 'local' ? 'Show Full Vault ⤢' : 'Show Neighborhood ⤡'}
-                    </button>
+                <>
+                  {/* Reading pane — hidden in graph mode but not unmounted */}
+                  <div style={{ flex: 1, display: state.viewMode === 'read' ? 'flex' : 'none', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+                    <ReadingPane
+                      node={activeNode}
+                      fetchContent={state.fetchNoteContent}
+                      onNavigate={handleNavigate}
+                      onSave={state.saveNote}
+                      onDelete={handleDelete}
+                      onOpenHistory={state.openHistory}
+                      nodes={graphData.nodes}
+                      refreshTrigger={noteRefreshTrigger}
+                    />
                   </div>
 
-                  <GraphCanvas
-                    ref={graphCanvasRef}
-                    data={graphData}
-                    threshold={state.threshold}
-                    graphSource={state.graphSource}
-                    activeTypes={state.activeTypes}
-                    showDaily={state.showDaily}
-                    hideIsolated={state.hideIsolated}
-                    labelsOnHoverOnly={state.labelsOnHoverOnly}
-                    showOverlayEdges={state.showOverlayEdges}
-                    filterNodesBySimilarity={state.filterNodesBySimilarity}
-                    selectedNode={state.selectedNode}
-                    onNodeClick={handleGraphNodeClick}
-                    onBackgroundClick={() => state.setSelectedNode(null)}
-                    onOpenHistory={state.openHistory}
-                    scalingRatio={state.scalingRatio}
-                    gravity={state.gravity}
-                    slowDown={state.slowDown}
-                    edgeWeightInfluence={state.edgeWeightInfluence}
-                    startTemperature={state.startTemperature}
-                    stopThreshold={state.stopThreshold}
-                    isLayoutRunning={state.isLayoutRunning}
-                    onLayoutStop={() => state.setIsLayoutRunning(false)}
-                    onLayoutRestart={() => state.setIsLayoutRunning(true)}
-                    neighborhoodCenter={neighborhoodCenter}
-                    neighborhoodHops={2}
-                  />
+                  {/* Graph view — always mounted to preserve layout.
+                      Use visibility+absolute (not display:none) so Sigma's container always has real dimensions. */}
+                  <div style={state.viewMode === 'graph'
+                    ? { flex: 1, position: 'relative' }
+                    : { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none' }
+                  }>
+                    {/* Scope indicator — top-right to avoid HUD overlap */}
+                    <div style={{
+                      position: 'absolute', top: 12, right: 12,
+                      display: 'flex', gap: 6, zIndex: 10,
+                      fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                    }}>
+                      {state.activeTab && state.graphScope === 'local' && (
+                        <div style={{
+                          background: 'rgba(15,23,42,0.92)',
+                          border: '1px solid #1e293b', borderRadius: 5,
+                          padding: '4px 10px',
+                          display: 'flex', gap: 8, alignItems: 'center',
+                        }}>
+                          <span style={{ color: '#f97316' }}>●</span>
+                          <span style={{ color: '#e8e8f0' }}>{state.activeTab}</span>
+                          <span style={{ color: '#6b7a99' }}>· 2 hops</span>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => state.setGraphScope(state.graphScope === 'local' ? 'full' : 'local')}
+                        style={{
+                          background: 'rgba(15,23,42,0.92)',
+                          border: '1px solid #1e293b', borderRadius: 5,
+                          padding: '4px 10px',
+                          color: '#7b61ff', cursor: 'pointer',
+                          fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                        }}
+                      >
+                        {state.graphScope === 'local' ? 'Show Full Vault ⤢' : 'Show Neighborhood ⤡'}
+                      </button>
+                    </div>
 
-                  {/* HUD Panel — graph mode only */}
-                  <HUDPanel
-                    threshold={state.threshold}
-                    onThresholdChange={state.setThreshold}
-                    graphSource={state.graphSource}
-                    onGraphSourceChange={state.setGraphSource}
-                    showOverlayEdges={state.showOverlayEdges}
-                    onToggleOverlayEdges={state.toggleOverlayEdges}
-                    filterNodesBySimilarity={state.filterNodesBySimilarity}
-                    onToggleFilterNodesBySimilarity={state.toggleFilterNodesBySimilarity}
-                    activeTypes={state.activeTypes}
-                    onToggleType={state.handleToggleType}
-                    showDaily={state.showDaily}
-                    onToggleDaily={state.toggleShowDaily}
-                    hideIsolated={state.hideIsolated}
-                    onToggleHideIsolated={state.toggleHideIsolated}
-                    labelsOnHoverOnly={state.labelsOnHoverOnly}
-                    onToggleLabelsOnHoverOnly={state.toggleLabelsOnHoverOnly}
-                    nodeCount={state.stats.nodeCount}
-                    edgeCount={state.stats.edgeCount}
-                    avgScore={state.stats.avgScore}
-                    scalingRatio={state.scalingRatio}
-                    onScalingRatioChange={state.setScalingRatio}
-                    gravity={state.gravity}
-                    onGravityChange={state.setGravity}
-                    slowDown={state.slowDown}
-                    onSlowDownChange={state.setSlowDown}
-                    edgeWeightInfluence={state.edgeWeightInfluence}
-                    onEdgeWeightInfluenceChange={state.setEdgeWeightInfluence}
-                    startTemperature={state.startTemperature}
-                    onStartTemperatureChange={state.setStartTemperature}
-                    stopThreshold={state.stopThreshold}
-                    onStopThresholdChange={state.setStopThreshold}
-                    isLayoutRunning={state.isLayoutRunning}
-                    onToggleLayout={() => state.setIsLayoutRunning(r => !r)}
-                    onResetSimSettings={state.resetSimSettings}
-                    canvasRef={graphCanvasRef}
-                  />
-                </div>
+                    <GraphCanvas
+                      ref={graphCanvasRef}
+                      data={graphData}
+                      threshold={state.threshold}
+                      graphSource={state.graphSource}
+                      activeTypes={state.activeTypes}
+                      showDaily={state.showDaily}
+                      hideIsolated={state.hideIsolated}
+                      labelsOnHoverOnly={state.labelsOnHoverOnly}
+                      showOverlayEdges={state.showOverlayEdges}
+                      filterNodesBySimilarity={state.filterNodesBySimilarity}
+                      selectedNode={state.selectedNode}
+                      onNodeClick={handleGraphNodeClick}
+                      onBackgroundClick={() => state.setSelectedNode(null)}
+                      onOpenHistory={state.openHistory}
+                      scalingRatio={state.scalingRatio}
+                      gravity={state.gravity}
+                      slowDown={state.slowDown}
+                      edgeWeightInfluence={state.edgeWeightInfluence}
+                      startTemperature={state.startTemperature}
+                      stopThreshold={state.stopThreshold}
+                      isLayoutRunning={state.isLayoutRunning}
+                      onLayoutStop={() => state.setIsLayoutRunning(false)}
+                      onLayoutRestart={() => state.setIsLayoutRunning(true)}
+                      neighborhoodCenter={neighborhoodCenter}
+                      neighborhoodHops={2}
+                    />
+
+                    {/* HUD Panel */}
+                    <HUDPanel
+                      threshold={state.threshold}
+                      onThresholdChange={state.setThreshold}
+                      graphSource={state.graphSource}
+                      onGraphSourceChange={state.setGraphSource}
+                      showOverlayEdges={state.showOverlayEdges}
+                      onToggleOverlayEdges={state.toggleOverlayEdges}
+                      filterNodesBySimilarity={state.filterNodesBySimilarity}
+                      onToggleFilterNodesBySimilarity={state.toggleFilterNodesBySimilarity}
+                      activeTypes={state.activeTypes}
+                      onToggleType={state.handleToggleType}
+                      showDaily={state.showDaily}
+                      onToggleDaily={state.toggleShowDaily}
+                      hideIsolated={state.hideIsolated}
+                      onToggleHideIsolated={state.toggleHideIsolated}
+                      labelsOnHoverOnly={state.labelsOnHoverOnly}
+                      onToggleLabelsOnHoverOnly={state.toggleLabelsOnHoverOnly}
+                      nodeCount={state.stats.nodeCount}
+                      edgeCount={state.stats.edgeCount}
+                      avgScore={state.stats.avgScore}
+                      scalingRatio={state.scalingRatio}
+                      onScalingRatioChange={state.setScalingRatio}
+                      gravity={state.gravity}
+                      onGravityChange={state.setGravity}
+                      slowDown={state.slowDown}
+                      onSlowDownChange={state.setSlowDown}
+                      edgeWeightInfluence={state.edgeWeightInfluence}
+                      onEdgeWeightInfluenceChange={state.setEdgeWeightInfluence}
+                      startTemperature={state.startTemperature}
+                      onStartTemperatureChange={state.setStartTemperature}
+                      stopThreshold={state.stopThreshold}
+                      onStopThresholdChange={state.setStopThreshold}
+                      isLayoutRunning={state.isLayoutRunning}
+                      onToggleLayout={() => state.setIsLayoutRunning(r => !r)}
+                      onResetSimSettings={state.resetSimSettings}
+                      canvasRef={graphCanvasRef}
+                    />
+                  </div>
+                </>
               )}
             </div>
           </div>

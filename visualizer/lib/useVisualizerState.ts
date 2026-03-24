@@ -32,6 +32,7 @@ export function useVisualizerState(graphData: GraphData | null) {
   // --- History mode state ---
   const [historyMode, setHistoryMode] = useState(false)
   const [historyNote, setHistoryNote] = useState<string | null>(null)
+  const [historyPath, setHistoryPath] = useState<string | null>(null)
   // Internal: ref avoids stale-closure risk; restored by closeHistory
   const prevViewModeRef = useRef<'read' | 'graph'>('read')
 
@@ -130,20 +131,23 @@ export function useVisualizerState(graphData: GraphData | null) {
     setActiveTabStem(stem)
   }, [setActiveTabStem])
 
-  const openHistory = useCallback((stem: string) => {
+  const openHistory = useCallback((stem: string, notePath?: string) => {
     if (historyMode) {
       // Already in history mode — just swap the note, don't re-save prevViewMode
       setHistoryNote(stem)
+      setHistoryPath(notePath ?? null)
       return
     }
     prevViewModeRef.current = viewMode
     setHistoryNote(stem)
+    setHistoryPath(notePath ?? null)
     setHistoryMode(true)
   }, [historyMode, viewMode])
 
   const closeHistory = useCallback(() => {
     setHistoryMode(false)
     setHistoryNote(null)
+    setHistoryPath(null)
     setViewMode(prevViewModeRef.current)
   }, [setViewMode])
 
@@ -299,7 +303,7 @@ export function useVisualizerState(graphData: GraphData | null) {
     openNote, closeTab, switchTab,
     // View state
     viewMode, setViewMode, graphScope, setGraphScope,
-    historyMode, historyNote, openHistory, closeHistory,
+    historyMode, historyNote, historyPath, openHistory, closeHistory,
     // Sidebar state
     sidebarWidth, setSidebarWidth, sidebarCollapsed, setSidebarCollapsed,
     // Content

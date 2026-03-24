@@ -4,7 +4,6 @@ import { useEffect } from 'react'
 import type { NoteNode } from '@/lib/graph'
 import { TabBar } from './TabBar'
 import { UnifiedSearch } from './UnifiedSearch'
-import { ViewToggle } from './ViewToggle'
 import type { WsStatus } from '@/lib/useVaultFiles'
 
 interface Props {
@@ -16,8 +15,8 @@ interface Props {
   onCloseTab: (stem: string) => void
   nodes: NoteNode[]
   onSearchSelect: (stem: string, newTab: boolean) => void
-  viewMode: 'read' | 'graph'
-  onViewModeChange: (mode: 'read' | 'graph') => void
+  graphTabActive: boolean
+  onGraphTabClick: () => void
   onNewNote: () => void
   wsStatus: WsStatus
 }
@@ -26,7 +25,7 @@ export function Toolbar({
   onToggleSidebar,
   tabs, activeTab, nodeMap, onSwitchTab, onCloseTab,
   nodes, onSearchSelect,
-  viewMode, onViewModeChange,
+  graphTabActive, onGraphTabClick,
   onNewNote,
   wsStatus,
 }: Props) {
@@ -38,12 +37,12 @@ export function Toolbar({
       }
       if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
         e.preventDefault()
-        onViewModeChange(viewMode === 'read' ? 'graph' : 'read')
+        onGraphTabClick()
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [onToggleSidebar, viewMode, onViewModeChange])
+  }, [onToggleSidebar, onGraphTabClick])
 
   return (
     <div style={{
@@ -77,6 +76,8 @@ export function Toolbar({
           nodeMap={nodeMap}
           onSwitch={onSwitchTab}
           onClose={onCloseTab}
+          graphTabActive={graphTabActive}
+          onGraphTabClick={onGraphTabClick}
         />
       </div>
 
@@ -110,7 +111,6 @@ export function Toolbar({
           +
         </button>
         <UnifiedSearch nodes={nodes} onSelect={onSearchSelect} />
-        <ViewToggle mode={viewMode} onToggle={onViewModeChange} />
       </div>
     </div>
   )

@@ -11,7 +11,7 @@ interface Props {
   /** Vault-relative path of the active note — used for highlighting when stems collide */
   activePath: string | null
   onSelectNote: (stem: string, newTab: boolean, path?: string) => void
-  onOpenHistory: (stem: string) => void
+  onOpenHistory: (stem: string, notePath?: string) => void
   onDeleteNote?: (stem: string) => void
   width: number
   onWidthChange: (w: number) => void
@@ -25,7 +25,7 @@ export function FileExplorer({ fileTree, activeTab, activePath, onSelectNote, on
   const isDragging = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(width)
-  const [contextMenu, setContextMenu] = useState<{ stem: string; x: number; y: number } | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ stem: string; path: string; x: number; y: number } | null>(null)
 
   const toggleFolder = useCallback((folder: string) => {
     setExpandedFolders(prev => {
@@ -110,7 +110,7 @@ export function FileExplorer({ fileTree, activeTab, activePath, onSelectNote, on
               isActive={activePath ? file.path === activePath : file.stem === activeTab}
               indent={12}
               onSelect={onSelectNote}
-              onContextMenu={(stem, x, y) => setContextMenu({ stem, x, y })}
+              onContextMenu={(stem, path, x, y) => setContextMenu({ stem, path, x, y })}
             />
           ))
         })()}
@@ -173,7 +173,7 @@ export function FileExplorer({ fileTree, activeTab, activePath, onSelectNote, on
                           isActive={activePath ? file.path === activePath : file.stem === activeTab}
                           indent={38}
                           onSelect={onSelectNote}
-                          onContextMenu={(stem, x, y) => setContextMenu({ stem, x, y })}
+                          onContextMenu={(stem, path, x, y) => setContextMenu({ stem, path, x, y })}
                         />
                       ))}
                     </div>
@@ -189,7 +189,7 @@ export function FileExplorer({ fileTree, activeTab, activePath, onSelectNote, on
                         isActive={activePath ? file.path === activePath : file.stem === activeTab}
                         indent={24}
                         onSelect={onSelectNote}
-                        onContextMenu={(stem, x, y) => setContextMenu({ stem, x, y })}
+                        onContextMenu={(stem, path, x, y) => setContextMenu({ stem, path, x, y })}
                       />
                     ))}
                   </div>
@@ -232,7 +232,7 @@ export function FileExplorer({ fileTree, activeTab, activePath, onSelectNote, on
             style={{ padding: '6px 12px', cursor: 'pointer', color: '#00FFC8' }}
             onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            onClick={() => { onOpenHistory(contextMenu.stem); setContextMenu(null) }}
+            onClick={() => { onOpenHistory(contextMenu.stem, contextMenu.path); setContextMenu(null) }}
           >
             View History
           </div>
@@ -257,14 +257,14 @@ function NoteItem({ file, isActive, indent, onSelect, onContextMenu }: {
   isActive: boolean
   indent: number
   onSelect: (stem: string, newTab: boolean, path: string) => void
-  onContextMenu: (stem: string, x: number, y: number) => void
+  onContextMenu: (stem: string, path: string, x: number, y: number) => void
 }) {
   return (
     <div
       onClick={(e) => onSelect(file.stem, e.metaKey || e.ctrlKey, file.path)}
       onContextMenu={(e) => {
         e.preventDefault()
-        onContextMenu(file.stem, e.clientX, e.clientY)
+        onContextMenu(file.stem, file.path, e.clientX, e.clientY)
       }}
       style={{
         padding: `4px 10px 4px ${indent}px`,

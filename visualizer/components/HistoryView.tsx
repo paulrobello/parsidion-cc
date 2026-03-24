@@ -10,6 +10,7 @@ import type { NoteNode } from '@/lib/graph'
 
 interface Props {
   stem: string
+  notePath: string | null
   node: NoteNode | null
   onClose: () => void
 }
@@ -19,7 +20,7 @@ const BUTTON_BASE: CSSProperties = {
   fontFamily: "'JetBrains Mono', monospace",
 }
 
-export function HistoryView({ stem, node, onClose }: Props) {
+export function HistoryView({ stem, notePath, node, onClose }: Props) {
   const [commits, setCommits] = useState<CommitEntry[]>([])
   const [loadingCommits, setLoadingCommits] = useState(true)
   const [commitsError, setCommitsError] = useState<string | null>(null)
@@ -38,7 +39,10 @@ export function HistoryView({ stem, node, onClose }: Props) {
   useEffect(() => {
     setLoadingCommits(true) // eslint-disable-line react-hooks/set-state-in-effect
     setCommitsError(null)
-    fetch(`/api/note/history?stem=${encodeURIComponent(stem)}`)
+    const historyQuery = notePath
+      ? `path=${encodeURIComponent(notePath)}`
+      : `stem=${encodeURIComponent(stem)}`
+    fetch(`/api/note/history?${historyQuery}`)
       .then(r => r.json())
       .then(data => {
         if (data.error) { setCommitsError(data.error as string); return }
@@ -55,7 +59,7 @@ export function HistoryView({ stem, node, onClose }: Props) {
       })
       .catch(e => setCommitsError((e as Error).message))
       .finally(() => setLoadingCommits(false))
-  }, [stem])
+  }, [stem, notePath])
 
   // Fetch diff whenever from/to changes; abort stale in-flight requests
   useEffect(() => {
@@ -63,7 +67,10 @@ export function HistoryView({ stem, node, onClose }: Props) {
     const controller = new AbortController()
     setLoadingDiff(true)
     setDiffError(null)
-    fetch(`/api/note/diff?stem=${encodeURIComponent(stem)}&from=${encodeURIComponent(fromHash)}&to=${encodeURIComponent(toHash)}`, { signal: controller.signal })
+    const diffQuery = notePath
+      ? `path=${encodeURIComponent(notePath)}`
+      : `stem=${encodeURIComponent(stem)}`
+    fetch(`/api/note/diff?${diffQuery}&from=${encodeURIComponent(fromHash)}&to=${encodeURIComponent(toHash)}`, { signal: controller.signal })
       .then(r => r.json())
       .then(data => {
         if (data.error) { setDiffError(data.error as string); return }
@@ -73,7 +80,7 @@ export function HistoryView({ stem, node, onClose }: Props) {
       .catch(e => { if ((e as Error).name !== 'AbortError') setDiffError((e as Error).message) })
       .finally(() => setLoadingDiff(false))
     return () => controller.abort()
-  }, [stem, fromHash, toHash])
+  }, [stem, notePath, fromHash, toHash])
 
   const hunks = useMemo(() => parseDiff(rawDiff), [rawDiff])
   const filename = useMemo(() => node?.path.split('/').pop() ?? `${stem}.md`, [node?.path, stem])

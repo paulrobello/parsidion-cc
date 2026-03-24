@@ -37,10 +37,14 @@ export interface CommitEntry {
 
 export async function GET(req: NextRequest) {
   const stem = req.nextUrl.searchParams.get('stem')
-  if (!stem) return NextResponse.json({ error: 'stem required' }, { status: 400 })
+  const notPathParam = req.nextUrl.searchParams.get('path')
+  if (!stem && !notPathParam) return NextResponse.json({ error: 'stem or path required' }, { status: 400 })
 
   const vaultRoot = getVaultRoot()
-  const notePath = findNote(vaultRoot, stem)
+  // Prefer explicit vault-relative path (avoids stem collision for MANIFEST.md etc.)
+  const notePath = notPathParam
+    ? path.join(vaultRoot, notPathParam)
+    : findNote(vaultRoot, stem!)
   if (!notePath) return NextResponse.json({ error: `Note not found: ${stem}` }, { status: 404 })
 
   if (!guardPath(notePath, vaultRoot)) {

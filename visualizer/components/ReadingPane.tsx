@@ -17,7 +17,7 @@ interface Props {
   onNavigate: (stem: string, newTab: boolean) => void
   onSave: (stem: string, content: string, lastModified?: number) => Promise<{ conflict: true; serverContent: string } | { ok: true }>
   onDelete: (stem: string) => Promise<void>
-  onOpenHistory: (stem: string) => void
+  onOpenHistory: (stem: string, notePath?: string) => void
   nodes: NoteNode[]
   refreshTrigger?: number
 }
@@ -416,7 +416,7 @@ export function ReadingPane({ node, fetchContent, onNavigate, onSave, onDelete, 
               </button>
               {!isEditing && node && (
                 <button
-                  onClick={() => onOpenHistory(node.id)}
+                  onClick={() => onOpenHistory(node.id, node.path)}
                   title="Version History"
                   style={{
                     background: 'none', border: '1px solid #1e293b', borderRadius: 5,
