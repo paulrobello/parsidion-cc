@@ -44,7 +44,7 @@ _SEMANTIC_TIMEOUT: int = 10  # seconds
 _AI_CONTEXT_HEADER_RESERVE: int = 500
 
 
-def _build_candidates(project_name: str) -> list[Path]:
+def _build_candidates(project_name: str, vault_path: Path) -> list[Path]:
     """Collect candidate vault notes for AI selection.
 
     Returns project-specific notes first, then all other notes sorted by
@@ -52,11 +52,12 @@ def _build_candidates(project_name: str) -> list[Path]:
 
     Args:
         project_name: The current project name (used to prioritize notes).
+        vault_path: The vault root path.
 
     Returns:
         Ordered list of note paths; project notes first, then others by mtime.
     """
-    all_notes = vault_common.all_vault_notes()
+    all_notes = vault_common.all_vault_notes(vault=vault_path)
     project_lower = project_name.lower()
 
     project_notes: list[Path] = []
@@ -86,6 +87,7 @@ def _run_semantic_search(
     query: str,
     top: int,
     vault_search_script: Path,
+    vault_path: Path,
 ) -> list[Path]:
     """Run vault_search.py as a subprocess and return matching note paths.
 
@@ -96,6 +98,7 @@ def _run_semantic_search(
         query: Search query string.
         top: Number of results to request.
         vault_search_script: Path to vault_search.py.
+        vault_path: The vault root path.
 
     Returns:
         List of note Paths from the semantic search results.
@@ -105,7 +108,7 @@ def _run_semantic_search(
     if not vault_search_script.exists():
         return []
 
-    db_path = vault_common.get_embeddings_db_path()
+    db_path = vault_common.get_embeddings_db_path(vault=vault_path)
     if not db_path.exists():
         return []
 
@@ -147,6 +150,7 @@ def _select_context_with_ai(
     candidate_notes: list[Path],
     model: str,
     max_chars: int = _DEFAULT_MAX_CHARS,
+    vault_path: Path | None = None,
 ) -> str:
     """Use claude haiku to select the most relevant notes for session context.
 
@@ -159,17 +163,21 @@ def _select_context_with_ai(
         candidate_notes: Ordered list of candidate note paths (project-first).
         model: The claude model ID to use.
         max_chars: Maximum characters for the output context block.
+        vault_path: The vault root path.
 
     Returns:
         Formatted context string chosen by the AI, or empty string on failure.
     """
+    if vault_path is None:
+        vault_path = vault_common.resolve_vault(cwd=cwd)
+
     # Build the candidate block, capped so the prompt stays manageable
     candidate_parts: list[str] = []
     char_budget = 8000
 
     for note_path in candidate_notes:
         try:
-            rel = note_path.relative_to(vault_common.VAULT_ROOT)
+            rel = note_path.relative_to(vault_path)
         except ValueError:
             rel = Path(note_path.parent.name) / note_path.name
 
@@ -269,14 +277,17 @@ def _rank_by_usefulness(notes: list[Path]) -> list[Path]:
     return sorted(notes, key=_score, reverse=True)
 
 
-def _build_pending_notice() -> str:
+def _build_pending_notice(vault_path: Path) -> str:
     """Return a one-line warning if pending_summaries.jsonl has entries.
+
+    Args:
+        vault_path: The vault root path.
 
     Returns:
         Warning string like ``⚠ 7 sessions pending summarization (run summarize_sessions.py)``
         or empty string if queue is empty or file is absent.
     """
-    pending_path = vault_common.VAULT_ROOT / "pending_summaries.jsonl"
+    pending_path = vault_path / "pending_summaries.jsonl"
     if not pending_path.exists():
         return ""
     try:
@@ -289,12 +300,15 @@ def _build_pending_notice() -> str:
     return f"⚠ {count} session{'s' if count != 1 else ''} pending summarization (run summarize_sessions.py)"
 
 
-def _build_delta_section(project_name: str, last_seen_ts: str | None) -> str:
+def _build_delta_section(
+    project_name: str, last_seen_ts: str | None, vault_path: Path
+) -> str:
     """Build a 'Since last time' section from notes newer than *last_seen_ts*.
 
     Args:
         project_name: Current project name (used to label the section).
         last_seen_ts: ISO 8601 timestamp of the last session, or None.
+        vault_path: The vault root path.
 
     Returns:
         A formatted section string, or empty string if nothing new.
@@ -307,17 +321,16 @@ def _build_delta_section(project_name: str, last_seen_ts: str | None) -> str:
         return ""
 
     cutoff_ts = last_seen_dt.timestamp()
-    vault_root = vault_common.VAULT_ROOT
     new_notes: list[tuple[float, str, str]] = []  # (mtime, stem, folder)
 
-    for note_path in vault_common.all_vault_notes():
+    for note_path in vault_common.all_vault_notes(vault=vault_path):
         try:
             mtime = note_path.stat().st_mtime
         except OSError:
             continue
         if mtime > cutoff_ts:
             try:
-                rel = note_path.relative_to(vault_root)
+                rel = note_path.relative_to(vault_path)
                 folder = str(rel.parent) if str(rel.parent) != "." else "root"
             except ValueError:
                 folder = note_path.parent.name
@@ -370,30 +383,32 @@ def build_session_context(
     project_name: str = vault_common.get_project_name(cwd)
     today_str: str = date.today().isoformat()
 
+    # Resolve vault path from cwd (supports multi-vault)
+    vault_path: Path = vault_common.resolve_vault(cwd=cwd)
+
     # Ensure vault directories exist and create today's daily note
-    vault_common.ensure_vault_dirs()
-    vault_common.create_daily_note_if_missing()
+    vault_common.ensure_vault_dirs(vault=vault_path)
 
     header: str = f"# Vault Context for {project_name}\n**Date:** {today_str}\n\n"
 
     # --- Pending queue warning (#3) ---
-    pending_notice = _build_pending_notice()
+    pending_notice = _build_pending_notice(vault_path)
 
     # --- Cross-session delta (#10) ---
     delta_section = ""
     if vault_common.get_config("session_start_hook", "track_delta", True):
-        last_seen_map = vault_common.load_last_seen()
+        last_seen_map = vault_common.load_last_seen(vault=vault_path)
         last_seen_ts = last_seen_map.get(project_name)
-        delta_section = _build_delta_section(project_name, last_seen_ts)
+        delta_section = _build_delta_section(project_name, last_seen_ts, vault_path)
     # Update last-seen timestamp for this project
-    vault_common.save_last_seen(project_name)
+    vault_common.save_last_seen(project_name, vault=vault_path)
 
     notes_injected = 0
 
     if ai_model:
-        candidates = _build_candidates(project_name)
+        candidates = _build_candidates(project_name, vault_path)
         ai_context = _select_context_with_ai(
-            project_name, cwd, candidates, ai_model, max_chars
+            project_name, cwd, candidates, ai_model, max_chars, vault_path=vault_path
         )
         if ai_context:
             notes_injected = ai_context.count("\n### ") + (
@@ -406,7 +421,17 @@ def build_session_context(
         # AI failed — fall through to standard behaviour
 
     # Standard behaviour: project notes + recent notes + today's daily note
-    daily_path: Path = vault_common.create_daily_note_if_missing()
+    daily_path: Path = vault_common.today_daily_path(vault=vault_path)
+    if not daily_path.exists():
+        # Create daily note if missing
+        vault_common.ensure_vault_dirs(vault=vault_path)
+        from datetime import date as _date
+
+        _month = f"{_date.today().year:04d}-{_date.today().month:02d}"
+        daily_dir = vault_path / "Daily" / _month
+        daily_dir.mkdir(parents=True, exist_ok=True)
+        daily_path.touch()
+
     project_notes: list[Path] = vault_common.find_notes_by_project(project_name)
     recent_days: int = vault_common.get_config("session_start_hook", "recent_days", 3)
     recent_notes: list[Path] = vault_common.find_recent_notes(days=recent_days)
@@ -432,11 +457,11 @@ def build_session_context(
         "session_start_hook", "use_embeddings", True
     )
     if use_embeddings:
-        db_path = vault_common.get_embeddings_db_path()
+        db_path = vault_common.get_embeddings_db_path(vault=vault_path)
         if db_path.exists():
             vault_search_script = Path(__file__).parent / _VAULT_SEARCH_SCRIPT_NAME
             semantic_notes = _run_semantic_search(
-                project_name, _SEMANTIC_TOP_N, vault_search_script
+                project_name, _SEMANTIC_TOP_N, vault_search_script, vault_path
             )
             for note in semantic_notes:
                 resolved = note.resolve()
@@ -663,6 +688,9 @@ def main() -> None:
         if not cwd:
             cwd = str(Path.cwd())
 
+        # Resolve vault path from cwd (supports multi-vault)
+        vault_path: Path = vault_common.resolve_vault(cwd=cwd)
+
         # Resolve options: defaults → config → CLI args
         ai_model: str | None = args.ai
         if ai_model is None:
@@ -704,6 +732,7 @@ def main() -> None:
             duration_ms=elapsed_ms,
             notes_injected=notes_injected,
             chars=len(context),
+            vault=vault_path,
         )
 
         if debug:
