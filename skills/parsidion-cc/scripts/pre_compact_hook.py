@@ -196,6 +196,7 @@ def append_snapshot_to_daily(
     task_summary: str,
     recent_files: list[str],
     cwd: str = "",
+    vault_path: Path | None = None,
 ) -> None:
     """Append a pre-compact snapshot section to today's daily note.
 
@@ -204,8 +205,22 @@ def append_snapshot_to_daily(
         task_summary: Brief description of the current task.
         recent_files: List of file paths being worked on.
         cwd: Working directory for git context extraction.
+        vault_path: The vault root path.
     """
-    daily_path = vault_common.create_daily_note_if_missing()
+    if vault_path is None:
+        vault_path = vault_common.resolve_vault(cwd=cwd)
+
+    daily_path = vault_common.today_daily_path(vault=vault_path)
+    # Ensure the daily note exists
+    if not daily_path.exists():
+        vault_common.ensure_vault_dirs(vault=vault_path)
+        from datetime import date as _date
+
+        _month = f"{_date.today().year:04d}-{_date.today().month:02d}"
+        daily_dir = vault_path / "Daily" / _month
+        daily_dir.mkdir(parents=True, exist_ok=True)
+        daily_path.touch()
+
     now_time = datetime.now().strftime("%H:%M")
 
     files_str = ", ".join(recent_files[:10]) if recent_files else "None detected"
@@ -287,8 +302,11 @@ def main() -> None:
         cwd: str = input_data.get("cwd", "")
         transcript_path_str: str = input_data.get("transcript_path", "")
 
+        # Resolve vault path from cwd (supports multi-vault)
+        vault_path: Path = vault_common.resolve_vault(cwd=cwd)
+
         # Ensure vault directories exist
-        vault_common.ensure_vault_dirs()
+        vault_common.ensure_vault_dirs(vault=vault_path)
 
         project: str = vault_common.get_project_name(cwd) if cwd else "unknown"
 
@@ -309,11 +327,14 @@ def main() -> None:
                 task_summary = extract_user_task(raw_lines)
                 recent_files = extract_file_paths(raw_lines)
 
-        append_snapshot_to_daily(project, task_summary, recent_files, cwd=cwd)
+        append_snapshot_to_daily(
+            project, task_summary, recent_files, cwd=cwd, vault_path=vault_path
+        )
         # SEC-002: sanitize project name to prevent embedded newlines in commit messages
         safe_project = project.replace("\n", " ").replace("\r", "").strip()
         vault_common.git_commit_vault(
-            f"chore(vault): pre-compact snapshot [{safe_project}]"
+            f"chore(vault): pre-compact snapshot [{safe_project}]",
+            vault=vault_path,
         )
 
         sys.stdout.write("{}")
