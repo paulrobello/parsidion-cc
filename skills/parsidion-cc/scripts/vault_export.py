@@ -53,16 +53,17 @@ def _collect_notes(
         project=project,
         folder=folder,
         tag=tag,
+        vault_path=vault_path,
     )
     if db_results is not None:
         return sorted(db_results)
 
     # Fallback: walk all vault notes and filter by frontmatter
     candidates: list[Path] = []
-    for path in vault_common.all_vault_notes():
+    for path in vault_common.all_vault_notes(vault_path=vault_path):
         # Folder filter
         if folder is not None:
-            rel = path.relative_to(vault_common.VAULT_ROOT)
+            rel = path.relative_to(vault_path)
             parts = rel.parts
             note_folder = parts[0] if len(parts) > 1 else ""
             if note_folder.lower() != folder.lower():
@@ -71,7 +72,7 @@ def _collect_notes(
             content = path.read_text(encoding="utf-8")
         except OSError:
             continue
-        fm = vault_common.parse_frontmatter(content)
+        fm = vault_common.parse_frontmatter(content, vault_path=vault_path)
         # Project filter
         if project is not None:
             if fm.get("project", "").lower() != project.lower():
@@ -318,7 +319,7 @@ def _cmd_list(
         return
     print(f"Would export {len(notes)} note(s):\n")
     for path in notes:
-        rel = path.relative_to(vault_common.VAULT_ROOT)
+        rel = path.relative_to(vault_path)
         print(f"  {rel}")
 
 
@@ -353,9 +354,9 @@ def _cmd_html(
             print(f"  Warning: cannot read {path}: {exc}", file=sys.stderr)
             continue
 
-        fm = vault_common.parse_frontmatter(content)
-        body_md = vault_common.get_body(content)
-        title = vault_common.extract_title(content, path.stem)
+        fm = vault_common.parse_frontmatter(content, vault_path=vault_path)
+        body_md = vault_common.get_body(content, vault_path=vault_path)
+        title = vault_common.extract_title(content, path.stem, vault_path=vault_path)
 
         # Build meta line
         meta_parts: list[str] = []
@@ -421,7 +422,7 @@ def _cmd_zip(
     with zipfile.ZipFile(output_file, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in notes:
             try:
-                rel = path.relative_to(vault_common.VAULT_ROOT)
+                rel = path.relative_to(vault_path)
             except ValueError:
                 rel = path.name  # type: ignore[assignment]
             zf.write(path, arcname=str(rel))
@@ -444,6 +445,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="vault-export",
         description="Export vault notes to HTML or ZIP.",
+    )
+
+    parser.add_argument(
+        "--vault",
+        "-V",
+        metavar="VAULT",
+        default=None,
+        help="Use a specific vault (path or named vault).",
     )
 
     mode_group = parser.add_mutually_exclusive_group()
@@ -489,6 +498,12 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    # Resolve vault path
+    vault_path = vault_common.resolve_vault(explicit=args.vault, cwd=os.getcwd())
+
+    # Replace module-level VAULT_ROOT with resolved vault path
+    vault_common.VAULT_ROOT = vault_path
 
     try:
         if args.html is not None:
