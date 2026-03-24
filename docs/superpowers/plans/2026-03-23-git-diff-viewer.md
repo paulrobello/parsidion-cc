@@ -1233,6 +1233,8 @@ import { HistoryView } from '@/components/HistoryView'
 
 - [ ] **Step 2: Replace the content area conditional render**
 
+Note: `state.nodeMap` already exists in `useVisualizerState` (it is built from `graphData.nodes` and returned as part of the state object). Task 5 only adds the history-specific fields — `nodeMap` requires no changes.
+
 Find this block in `page.tsx` (around line 194):
 
 ```typescript
@@ -1527,8 +1529,8 @@ sigma.on('rightClickNode', (e: { node: string; event: MouseEvent & { preventSigm
   e.event.preventDefault()           // suppress browser right-click menu
   e.event.preventSigmaDefault?.()    // suppress Sigma's default if it exists
   const rect = (e.event.target as HTMLElement)?.closest('canvas')?.getBoundingClientRect()
-  const x = rect ? e.event.clientX : e.event.clientX
-  const y = rect ? e.event.clientY : e.event.clientY
+  const x = e.event.clientX
+  const y = e.event.clientY
   setNodeContextMenu({ stem: e.node, x, y })
 })
 ```
