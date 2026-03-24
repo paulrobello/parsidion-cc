@@ -42,7 +42,7 @@ _DEFAULT_AI_TIMEOUT: int = 60
 
 
 def _ai_merge_bodies(
-    path_a: Path, path_b: Path, title: str, vault_path: Path
+    path_a: Path, path_b: Path, title: str, vault_path: Path | None = None
 ) -> str | None:
     """Use claude to intelligently merge two note bodies into one.
 
@@ -79,11 +79,9 @@ def _ai_merge_bodies(
         "first heading"
     )
 
-    model = vault_common.get_config(
-        "summarizer", "merge_model", _DEFAULT_AI_MODEL, vault_path=vault_path
-    )
+    model = vault_common.get_config("summarizer", "merge_model", _DEFAULT_AI_MODEL)
     timeout = vault_common.get_config(
-        "summarizer", "merge_timeout", _DEFAULT_AI_TIMEOUT, vault_path=vault_path
+        "summarizer", "merge_timeout", _DEFAULT_AI_TIMEOUT
     )
 
     try:
@@ -148,7 +146,7 @@ def _find_note(query: str, vault_path: Path) -> Path | None:
 
     # Stem search across all vault notes
     query_lower = query.lower().removesuffix(".md")
-    for path in vault_common.all_vault_notes(vault_path=vault_path):
+    for path in vault_common.all_vault_notes(vault=vault_path):
         if path.stem.lower() == query_lower:
             return path
     return None
@@ -273,10 +271,10 @@ def _merge_notes(
     Returns:
         Full merged note content including frontmatter and body.
     """
-    fm_a = vault_common.parse_frontmatter(content_a, vault_path=vault_path)
-    fm_b = vault_common.parse_frontmatter(content_b, vault_path=vault_path)
-    body_a = vault_common.get_body(content_a, vault_path=vault_path).strip()
-    body_b = vault_common.get_body(content_b, vault_path=vault_path).strip()
+    fm_a = vault_common.parse_frontmatter(content_a)
+    fm_b = vault_common.parse_frontmatter(content_b)
+    body_a = vault_common.get_body(content_a).strip()
+    body_b = vault_common.get_body(content_b).strip()
 
     # Tags: union, sorted
     tags_a = _parse_tags_list(fm_a)
@@ -309,8 +307,8 @@ def _merge_notes(
     merged_fm["sources"] = fm_a.get("sources", [])
     merged_fm["related"] = merged_related
 
-    title_a = vault_common.extract_title(content_a, path_a.stem, vault_path=vault_path)
-    title_b = vault_common.extract_title(content_b, path_b.stem, vault_path=vault_path)
+    title_a = vault_common.extract_title(content_a, path_a.stem)
+    title_b = vault_common.extract_title(content_b, path_b.stem)
 
     # Try AI merge for intelligent deduplication
     merged_body: str | None = None
@@ -356,7 +354,7 @@ def _update_wikilinks_in_vault(old_stem: str, new_stem: str, vault_path: Path) -
         re.IGNORECASE,
     )
     replacement = f"[[{new_stem}\\1]]"
-    for path in vault_common.all_vault_notes(vault_path=vault_path):
+    for path in vault_common.all_vault_notes(vault=vault_path):
         try:
             content = path.read_text(encoding="utf-8")
         except OSError:
@@ -389,8 +387,8 @@ def _print_diff_summary(
         content_b: Content of note B.
         vault_path: Path to the vault root.
     """
-    title_a = vault_common.extract_title(content_a, path_a.stem, vault_path=vault_path)
-    title_b = vault_common.extract_title(content_b, path_b.stem, vault_path=vault_path)
+    title_a = vault_common.extract_title(content_a, path_a.stem)
+    title_b = vault_common.extract_title(content_b, path_b.stem)
     fm_a = vault_common.parse_frontmatter(content_a)
     fm_b = vault_common.parse_frontmatter(content_b)
     tags_a = _parse_tags_list(fm_a)
@@ -446,7 +444,7 @@ def _scan_duplicates(
         top: Maximum number of pairs to report.
         vault_path: Path to the vault root.
     """
-    db_path = vault_common.get_embeddings_db_path(vault_path=vault_path)
+    db_path = vault_common.get_embeddings_db_path(vault=vault_path)
     if not db_path.exists():
         print(
             "No embeddings database found. Run build_embeddings.py first.",
@@ -732,7 +730,7 @@ def main() -> None:
         # Commit
         vault_common.git_commit_vault(
             f"refactor(vault): merge {path_b.stem} into {output_path.stem}",
-            vault_path=vault_path,
+            vault=vault_path,
         )
 
         # Rebuild index

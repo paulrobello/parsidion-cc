@@ -69,7 +69,7 @@ def _write_entries(entries: list[dict], vault_path: Path | None = None) -> None:
     """
     tmp = _PENDING_PATH.with_suffix(".jsonl.tmp")
     with open(tmp, "w", encoding="utf-8") as fh:
-        vault_common.flock_exclusive(fh, vault_path=vault_path)
+        vault_common.flock_exclusive(fh)
         for entry in entries:
             fh.write(json.dumps(entry) + "\n")
     tmp.replace(_PENDING_PATH)
@@ -184,9 +184,7 @@ def _read_transcript_excerpt(
                         raw_content = msg.get("content", "")
                     else:
                         raw_content = obj.get("content", "")
-                    text = vault_common.extract_text_from_content(
-                        raw_content, vault_path=vault_path
-                    )
+                    text = vault_common.extract_text_from_content(raw_content)
                     if text:
                         for sub in text.splitlines():
                             lines.append(sub[:200])
@@ -550,7 +548,7 @@ def main() -> None:
             return
 
         # Auto-migrate on every startup (silent — fixes old entries in-place)
-        vault_common.migrate_pending_paths(dry_run=False, vault_path=vault_path)
+        vault_common.migrate_pending_paths(dry_run=False, vault=vault_path)
 
         # Check for pending sessions before attempting curses
         entries = _read_entries()

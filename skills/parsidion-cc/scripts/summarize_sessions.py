@@ -850,7 +850,7 @@ async def summarize_one(
     max_cleaned_chars: int = _DEFAULT_MAX_CLEANED_CHARS,
     cluster_model: str = _DEFAULT_CLUSTER_MODEL,
     vault_notes: list[Path] | None = None,
-) -> tuple[dict[str, object], Path | None]:
+) -> tuple[dict[str, object], Path | str | None]:
     """Summarize one pending session entry.
 
     Args:
@@ -1020,7 +1020,7 @@ async def run_all(
     tail_lines: int = _DEFAULT_TRANSCRIPT_TAIL_LINES,
     max_cleaned_chars: int = _DEFAULT_MAX_CLEANED_CHARS,
     cluster_model: str = _DEFAULT_CLUSTER_MODEL,
-) -> list[tuple[dict[str, object], Path | None]]:
+) -> list[tuple[dict[str, object], Path | str | None]]:
     """Run all summarization tasks in parallel.
 
     Args:
@@ -1045,7 +1045,7 @@ async def run_all(
     # Filter project names out -- they're injected post-generation, not chosen by the model
     semantic_tags = [t for t in existing_tags if t not in project_names]
     semaphore = anyio.Semaphore(max_parallel)
-    results: list[tuple[dict[str, object], Path | None]] = []
+    results: list[tuple[dict[str, object], Path | str | None]] = []
     total = len(entries)
 
     # Initialize progress (#13)
@@ -1324,8 +1324,8 @@ def main() -> None:
     if args.dry_run:
         print("[dry-run mode — nothing will be written]")
 
-    results: list[tuple[dict[str, object], Path | None]] = cast(
-        list[tuple[dict[str, object], Path | None]],
+    results: list[tuple[dict[str, object], Path | str | None]] = cast(
+        list[tuple[dict[str, object], Path | str | None]],
         anyio.run(
             run_all,
             entries,
