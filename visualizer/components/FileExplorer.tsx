@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useCallback, useEffect } from 'react'
+import { useRef, useCallback, useEffect, useState } from 'react'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import type { NoteNode } from '@/lib/graph'
 import { getNodeColor } from '@/lib/sigma-colors'
@@ -9,18 +9,21 @@ interface Props {
   fileTree: Map<string, Map<string, NoteNode[]>>
   activeTab: string | null
   onSelectNote: (stem: string, newTab: boolean) => void
+  onOpenHistory: (stem: string) => void
+  onDeleteNote?: (stem: string) => void
   width: number
   onWidthChange: (w: number) => void
   collapsed: boolean
   totalNotes: number
 }
 
-export function FileExplorer({ fileTree, activeTab, onSelectNote, width, onWidthChange, collapsed, totalNotes }: Props) {
+export function FileExplorer({ fileTree, activeTab, onSelectNote, onOpenHistory, onDeleteNote, width, onWidthChange, collapsed, totalNotes }: Props) {
   const [expandedFolders, setExpandedFolders] = useLocalStorage<string[]>('vv:expandedFolders', [])
   const expandedSet = new Set(expandedFolders)
   const isDragging = useRef(false)
   const startX = useRef(0)
   const startWidth = useRef(width)
+  const [contextMenu, setContextMenu] = useState<{ stem: string; x: number; y: number } | null>(null)
 
   const toggleFolder = useCallback((folder: string) => {
     setExpandedFolders(prev => {
@@ -59,6 +62,13 @@ export function FileExplorer({ fileTree, activeTab, onSelectNote, width, onWidth
       window.removeEventListener('mouseup', onUp)
     }
   }, [onWidthChange])
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const dismiss = () => setContextMenu(null)
+    window.addEventListener('click', dismiss)
+    return () => window.removeEventListener('click', dismiss)
+  }, [contextMenu])
 
   if (collapsed) return null
 
@@ -145,6 +155,7 @@ export function FileExplorer({ fileTree, activeTab, onSelectNote, width, onWidth
                           isActive={note.id === activeTab}
                           indent={38}
                           onSelect={onSelectNote}
+                          onContextMenu={(stem, x, y) => setContextMenu({ stem, x, y })}
                         />
                       ))}
                     </div>
@@ -160,6 +171,7 @@ export function FileExplorer({ fileTree, activeTab, onSelectNote, width, onWidth
                         isActive={note.id === activeTab}
                         indent={24}
                         onSelect={onSelectNote}
+                        onContextMenu={(stem, x, y) => setContextMenu({ stem, x, y })}
                       />
                     ))}
                   </div>
@@ -179,19 +191,63 @@ export function FileExplorer({ fileTree, activeTab, onSelectNote, width, onWidth
         onMouseEnter={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.5)')}
         onMouseLeave={e => { if (!isDragging.current) e.currentTarget.style.background = 'transparent' }}
       />
+
+      {contextMenu && (
+        <div
+          style={{
+            position: 'fixed', left: contextMenu.x, top: contextMenu.y,
+            background: '#0a0e1a', border: '1px solid #1a2040', borderRadius: 4,
+            zIndex: 1000, minWidth: 140, boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div
+            style={{ padding: '6px 12px', cursor: 'pointer', color: '#ccc' }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            onClick={() => { onSelectNote(contextMenu.stem, false); setContextMenu(null) }}
+          >
+            Open
+          </div>
+          <div
+            style={{ padding: '6px 12px', cursor: 'pointer', color: '#00FFC8' }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            onClick={() => { onOpenHistory(contextMenu.stem); setContextMenu(null) }}
+          >
+            View History
+          </div>
+          {onDeleteNote && (
+            <div
+              style={{ padding: '6px 12px', cursor: 'pointer', color: '#ef4444', borderTop: '1px solid #1a2040' }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              onClick={() => { onDeleteNote(contextMenu.stem); setContextMenu(null) }}
+            >
+              Delete
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-function NoteItem({ note, isActive, indent, onSelect }: {
+function NoteItem({ note, isActive, indent, onSelect, onContextMenu }: {
   note: NoteNode
   isActive: boolean
   indent: number
   onSelect: (stem: string, newTab: boolean) => void
+  onContextMenu: (stem: string, x: number, y: number) => void
 }) {
   return (
     <div
       onClick={(e) => onSelect(note.id, e.metaKey || e.ctrlKey)}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onContextMenu(note.id, e.clientX, e.clientY)
+      }}
       style={{
         padding: `4px 10px 4px ${indent}px`,
         fontSize: 10, cursor: 'pointer',
