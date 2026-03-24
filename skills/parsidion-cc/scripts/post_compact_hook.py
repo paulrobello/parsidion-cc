@@ -93,8 +93,17 @@ def main() -> None:
         daily_path = vault_common.today_daily_path()
 
         if not daily_path.is_file():
-            sys.stdout.write("{}")
-            return
+            # Fallback: legacy un-namespaced path (pre-migration vault)
+            from datetime import date as _date
+
+            _today = _date.today()
+            _month = f"{_today.year:04d}-{_today.month:02d}"
+            _legacy = vault_common.VAULT_ROOT / "Daily" / _month / f"{_today.day:02d}.md"
+            if _legacy.is_file():
+                daily_path = _legacy
+            else:
+                sys.stdout.write("{}")
+                return
 
         try:
             content = daily_path.read_text(encoding="utf-8")

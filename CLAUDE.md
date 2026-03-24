@@ -112,8 +112,14 @@ uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migr
 uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix-frontmatter    # repair frontmatter via Claude
 uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --no-fix-headings --fix-frontmatter  # repair frontmatter without heading promotion
 
+# Vault doctor — migrate legacy un-namespaced daily notes to DD-{username}.md (team use)
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migrate-daily-notes                            # dry-run
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migrate-daily-notes --execute                 # apply (uses vault.username from config, then $USER)
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migrate-daily-notes --daily-username alice --execute  # explicit username
+
 # Vault doctor — fix everything in one pass (used by nightly cron)
 # Note: --fix-headings is enabled by default (promotes ## to # when no # heading exists)
+# Note: --fix-all includes --migrate-daily-notes (uses vault.username / $USER)
 uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --fix-all
 
 # Run the skill trigger accuracy eval (MUST be from a separate terminal, not inside Claude Code)
@@ -171,6 +177,7 @@ Config sections:
 | `git` | `auto_commit` | `vault_common.git_commit_vault()` |
 | `event_log` | `enabled`, `max_lines` | `vault_common.write_hook_event()` (all hooks) |
 | `adaptive_context` | `enabled`, `decay_days` | `session_start_hook.py`, `vault_common.py` |
+| `vault` | `username` | daily note filename suffix (`DD-{username}.md`); auto-set by installer to `$USER` |
 
 The config is parsed by `vault_common.load_config()` (simple stdlib YAML parser — supports
 one level of nesting, inline comments, scalars). Results are cached per process.
@@ -279,7 +286,7 @@ session_id: <uuid>      # optional — set by summarize_sessions.py on AI-genera
 ```
 
 - Filenames: kebab-case, 3-5 words, no date suffix
-- **Daily notes**: stored as `Daily/YYYY-MM/DD.md` (e.g. `Daily/2026-03/13.md`) — the hook writes them there automatically; never create flat `Daily/YYYY-MM-DD.md` files
+- **Daily notes**: stored as `Daily/YYYY-MM/DD-{username}.md` (e.g. `Daily/2026-03/23-probello.md`) — the hook writes them there automatically using the `vault.username` from `config.yaml` (defaults to `$USER`). Never create flat `Daily/YYYY-MM-DD.md` files. Legacy un-namespaced `DD.md` files can be migrated with `vault_doctor.py --migrate-daily-notes`.
 - No orphan notes — every note must link to at least one other note via `related`
 - Search before create — update existing notes rather than creating duplicates
 - **Tag brevity**: prefer short singular kebab-case tags — e.g. `voxel` not `voxel-engine`, `hook` not `hooks`, `fractal` not `fractals`. **Never use underscores** in tags or the `project` field — convert repo names like `par_ai_core` to `par-ai-core`. Use a longer form only when the short form would be genuinely ambiguous.

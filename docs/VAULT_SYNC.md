@@ -189,16 +189,46 @@ with the latest notes.
 
 ---
 
+## Team Vault (Multiple Users)
+
+Multiple people can share a vault by pointing at the same git remote.  Each
+person runs the installer on their own machine — the installer automatically sets
+`vault.username` in `config.yaml` to their OS username (`$USER`).
+
+Daily notes are stored as `Daily/YYYY-MM/DD-{username}.md` (e.g.
+`Daily/2026-03/23-alice.md`, `Daily/2026-03/23-bob.md`), so each team member
+writes their own file and git pull/push never produces daily-note conflicts.
+
+### Migrating existing vaults
+
+If you have existing un-namespaced daily notes (`Daily/YYYY-MM/DD.md`), run the
+migration once on each machine:
+
+```bash
+# Dry-run: see what would be renamed
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py \
+    --migrate-daily-notes --daily-username alice
+
+# Apply:
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py \
+    --migrate-daily-notes --daily-username alice --execute
+```
+
+The migration renames files in place, updates wikilinks in weekly/monthly rollup
+notes, commits all changes, and rebuilds the index.
+
+---
+
 ## Handling Conflicts
 
 ### Daily Notes
 
-Both machines may append to the same daily note (`Daily/YYYY-MM/DD.md`) on the
-same day.  Git will flag this as a merge conflict.  Since daily notes are
-append-only with timestamped sections, conflicts are easy to resolve — keep both
-sides.
+With per-user daily notes (`DD-{username}.md`), daily notes **never conflict**
+— each team member writes their own file.  Pull/push freely without worrying
+about merge conflicts in the Daily folder.
 
-**Tip:** pull before starting a new session to minimize daily note conflicts.
+If you have a legacy vault that still uses un-namespaced `DD.md` files, see
+[Migrating existing vaults](#migrating-existing-vaults) above.
 
 ### config.yaml
 
@@ -249,17 +279,6 @@ uv run ~/.claude/skills/parsidion-cc/scripts/build_embeddings.py --incremental
 rm ~/ClaudeVault/embeddings.db
 uv run --no-project ~/.claude/skills/parsidion-cc/scripts/update_index.py
 uv run ~/.claude/skills/parsidion-cc/scripts/build_embeddings.py
-```
-
-### Merge conflicts in daily notes
-
-**Symptom:** `git pull` reports a conflict in `Daily/YYYY-MM/DD.md`.
-
-**Fix:** open the file, keep both sets of entries (they are timestamped sections),
-remove conflict markers, then commit:
-```bash
-git add Daily/
-git commit -m "chore(vault): resolve daily note merge conflict"
 ```
 
 ---

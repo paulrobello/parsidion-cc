@@ -675,15 +675,24 @@ Everything else -- indexing, embedding, searching, hook execution, daily notes, 
 
 No. The `SessionStart` hook injects a **compact one-line-per-note index** (title + tags only) as context, not full note contents. For a vault with 300+ notes this typically adds 3-5 KB -- roughly 1,000 tokens. The `PreCompact` and `PostCompact` hooks inject a small snapshot (~20 lines) of the current task and recently-touched files so Claude can resume after context compaction. None of these inject full note bodies into the conversation. When Claude needs a specific note, it reads it on demand via the vault-explorer agent or the Read tool.
 
-### How can I share a vault across multiple machines?
+### How can I share a vault across multiple machines or with a team?
 
-The installer sets up everything you need. It initializes the vault as a git repo, configures `.gitignore` for machine-local files (`embeddings.db`, `pending_summaries.jsonl`, `hook_events.log`), and installs a `post-merge` git hook that automatically rebuilds the local search index after every `git pull`. To share:
+The installer sets up everything you need. It initializes the vault as a git repo, configures `.gitignore` for machine-local files (`embeddings.db`, `pending_summaries.jsonl`, `hook_events.log`), installs a `post-merge` git hook that automatically rebuilds the local search index after every `git pull`, and writes your OS username into `vault.username` in `config.yaml`.
 
-1. Run the installer: `uv run install.py --force --yes`
+Daily notes are stored as `Daily/YYYY-MM/DD-{username}.md` so multiple team members can push to the same remote without daily-note merge conflicts. Each person's notes land in their own file.
+
+To share:
+
+1. Run the installer on each machine: `uv run install.py --force --yes` (prompts for username interactively, or pass `--vault-username alice`)
 2. Push to a private remote: `cd ~/ClaudeVault && git remote add origin <url> && git push -u origin main`
 3. On other machines: clone the vault, then run the installer
 
-See [docs/VAULT_SYNC.md](docs/VAULT_SYNC.md) for the full setup guide, conflict handling, and troubleshooting.
+If you have an existing vault with legacy `DD.md` daily notes, migrate them once:
+```bash
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/vault_doctor.py --migrate-daily-notes --execute
+```
+
+See [docs/VAULT_SYNC.md](docs/VAULT_SYNC.md) for the full setup guide and troubleshooting.
 
 ## Contributing
 

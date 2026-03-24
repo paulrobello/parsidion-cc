@@ -813,11 +813,34 @@ def ensure_vault_dirs() -> None:
             templates_link.mkdir(exist_ok=True)
 
 
+def get_vault_username() -> str:
+    """Return the configured vault username for daily note naming.
+
+    Reads ``vault.username`` from config.yaml first, then falls back to the
+    ``USER`` / ``USERNAME`` environment variable.  Returns ``"unknown"`` if
+    neither source yields a non-empty value.
+
+    Used to produce per-user daily note filenames (``DD-{username}.md``) so
+    multiple team members can share a vault via git without daily-note conflicts.
+    """
+    username = get_config("vault", "username", "")
+    if not username:
+        import os as _os
+
+        username = _os.environ.get("USER", _os.environ.get("USERNAME", ""))
+    return username.strip() or "unknown"
+
+
 def today_daily_path() -> Path:
-    """Return the path to today's daily note: ``Daily/YYYY-MM/DD.md``."""
+    """Return the path to today's daily note: ``Daily/YYYY-MM/DD-{username}.md``.
+
+    The username suffix prevents merge conflicts when a team shares a vault via
+    git — each member writes to their own file on the same day.  The username is
+    resolved by :func:`get_vault_username`.
+    """
     today = date.today()
     month_dir = f"{today.year:04d}-{today.month:02d}"
-    day_file = f"{today.day:02d}.md"
+    day_file = f"{today.day:02d}-{get_vault_username()}.md"
     return VAULT_ROOT / "Daily" / month_dir / day_file
 
 

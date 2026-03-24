@@ -718,17 +718,22 @@ def run_weekly(conn: sqlite3.Connection | None, dry_run: bool = False) -> None:
         vault_common.VAULT_ROOT / "Daily" / f"{today.year:04d}-{today.month:02d}"
     )
 
-    # Collect daily note paths for this week
+    # Collect daily note paths for this week (supports both DD.md and DD-{user}.md)
+    import re as _re
+
+    _daily_stem_re = _re.compile(r"^(\d{2})(?:-.+)?$")
     daily_paths: list[Path] = []
     for delta in range(7):
         day = monday + timedelta(days=delta)
-        # Daily notes live in their own month directory
         day_month_dir = (
             vault_common.VAULT_ROOT / "Daily" / f"{day.year:04d}-{day.month:02d}"
         )
-        day_path = day_month_dir / f"{day.day:02d}.md"
-        if day_path.exists():
-            daily_paths.append(day_path)
+        day_prefix = f"{day.day:02d}"
+        if day_month_dir.exists():
+            for p in sorted(day_month_dir.glob(f"{day_prefix}*.md")):
+                m = _daily_stem_re.match(p.stem)
+                if m and m.group(1) == day_prefix:
+                    daily_paths.append(p)
 
     if not daily_paths:
         _CONSOLE.print(
@@ -849,11 +854,15 @@ def run_monthly(conn: sqlite3.Connection | None, dry_run: bool = False) -> None:
         vault_common.VAULT_ROOT / "Daily" / f"{today.year:04d}-{today.month:02d}"
     )
 
-    # Collect all daily note files in this month's directory
+    # Collect all daily note files in this month's directory (DD.md and DD-{user}.md)
+    import re as _re
+
+    _daily_stem_re = _re.compile(r"^(\d{2})(?:-.+)?$")
     daily_paths: list[Path] = []
     if month_dir.exists():
-        for dp in sorted(month_dir.glob("[0-9][0-9].md")):
-            daily_paths.append(dp)
+        for dp in sorted(month_dir.glob("*.md")):
+            if _daily_stem_re.match(dp.stem):
+                daily_paths.append(dp)
 
     if not daily_paths:
         _CONSOLE.print(

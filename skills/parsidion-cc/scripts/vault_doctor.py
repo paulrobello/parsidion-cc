@@ -1849,6 +1849,143 @@ def run_strip_prefixes(dry_run: bool = True) -> None:
 # ---------------------------------------------------------------------------
 
 
+def run_migrate_daily_notes(vault_root: Path, dry_run: bool = True, username: str = "") -> None:
+    """Rename legacy ``Daily/YYYY-MM/DD.md`` notes to ``DD-{username}.md``.
+
+    The un-namespaced ``DD.md`` format causes git merge conflicts when a team
+    shares a vault — multiple users write the same filename on the same day.
+    This migration renames existing notes once so future writes use the new
+    ``DD-{username}.md`` format.
+
+    After renaming, wikilinks inside rollup notes (``week-NN.md``,
+    ``monthly.md``) that reference the old stem are updated automatically.
+
+    Args:
+        vault_root: Root path of the vault.
+        dry_run: When True, only print candidates — do not rename any files.
+        username: Username suffix to append.  Resolved from vault config /
+            ``$USER`` environment variable when empty.
+    """
+    import re
+
+    if not username:
+        username = vault_common.get_vault_username()
+
+    daily_root = vault_root / "Daily"
+    if not daily_root.exists():
+        print("No Daily/ directory found — nothing to migrate.")
+        return
+
+    # Pattern for un-namespaced day files: exactly two digits, no hyphen suffix
+    stem_re = re.compile(r"^\d{2}$")
+
+    candidates: list[tuple[Path, Path]] = []  # (old_path, new_path)
+
+    for month_dir in sorted(daily_root.iterdir()):
+        if not month_dir.is_dir():
+            continue
+        for note in sorted(month_dir.glob("[0-9][0-9].md")):
+            if stem_re.match(note.stem):
+                new_name = f"{note.stem}-{username}.md"
+                new_path = note.parent / new_name
+                candidates.append((note, new_path))
+
+    if not candidates:
+        print(f"No legacy daily notes found to migrate (already using DD-{username}.md format or vault is empty).")
+        return
+
+    print(f"Found {len(candidates)} legacy daily note(s) to rename:\n")
+    for old, new in candidates:
+        old_rel = old.relative_to(vault_root)
+        new_rel = new.relative_to(vault_root)
+        status = ""
+        if new.exists():
+            status = "  [SKIP — target already exists]"
+        print(f"  {old_rel}  →  {new_rel}{status}")
+
+    if dry_run:
+        print(
+            f"\n[dry-run] {len(candidates)} note(s) would be renamed. "
+            "Run with --execute to apply."
+        )
+        return
+
+    # --- Execute renames ---
+    moved: list[tuple[Path, Path]] = []
+    skipped = 0
+    for old, new in candidates:
+        if new.exists():
+            print(f"  Skipped (target exists): {old.relative_to(vault_root)}")
+            skipped += 1
+            continue
+        old.rename(new)
+        print(f"  Renamed: {old.relative_to(vault_root)}  →  {new.relative_to(vault_root)}")
+        moved.append((old, new))
+
+    if not moved:
+        print("No files renamed.")
+        return
+
+    # --- Update wikilinks in rollup notes ---
+    # Rollup notes (week-NN.md, monthly.md) contain [[DD]] wikilinks.
+    # Update them to [[DD-username]].
+    rollup_pattern = re.compile(r"week-\d+\.md|monthly\.md")
+    updated_rollups: list[Path] = []
+
+    for month_dir in sorted(daily_root.iterdir()):
+        if not month_dir.is_dir():
+            continue
+        for rollup in month_dir.iterdir():
+            if not rollup_pattern.match(rollup.name):
+                continue
+            try:
+                text = rollup.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+
+            new_text = text
+            for old, new in moved:
+                if old.parent != month_dir:
+                    continue
+                old_stem = re.escape(old.stem)
+                new_stem = new.stem
+                # Match [[DD]] but not [[DD-something]] (avoid double-rename)
+                new_text = re.sub(
+                    rf"\[\[{old_stem}\]\]",
+                    f"[[{new_stem}]]",
+                    new_text,
+                )
+
+            if new_text != text:
+                rollup.write_text(new_text, encoding="utf-8")
+                updated_rollups.append(rollup)
+                print(f"  Updated wikilinks: {rollup.relative_to(vault_root)}")
+
+    # --- Commit and rebuild index ---
+    all_changed = [new for _, new in moved] + updated_rollups
+    vault_common.git_commit_vault(
+        f"refactor(vault): migrate {len(moved)} daily note(s) to DD-{username}.md format",
+        paths=all_changed,
+    )
+    print(f"\nMigrated {len(moved)} note(s). Running update_index.py…")
+    update_index_script = Path(__file__).parent / "update_index.py"
+    env = os.environ.copy()
+    env.pop("CLAUDECODE", None)
+    try:
+        subprocess.run(
+            ["uv", "run", "--no-project", str(update_index_script)],
+            check=True,
+            env=env,
+            timeout=60,
+        )
+        print("Index rebuilt.")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        print(f"Warning: update_index.py failed: {exc}", file=sys.stderr)
+        print("Run manually: uv run --no-project update_index.py", file=sys.stderr)
+    if skipped:
+        print(f"Note: {skipped} file(s) skipped because target already existed.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Vault Doctor — find and optionally repair vault note issues",
@@ -1877,8 +2014,9 @@ def main() -> None:
         "--fix-all",
         action="store_true",
         help=(
-            "Run all fix steps: frontmatter repair, tag dedup, and subfolder "
-            "migration. Equivalent to --fix-frontmatter --fix-tags --execute."
+            "Run all fix steps: frontmatter repair, tag dedup, subfolder migration, "
+            "and daily note migration. Equivalent to --fix-frontmatter --fix-tags "
+            "--migrate-daily-notes --execute."
         ),
     )
     parser.add_argument(
@@ -1937,8 +2075,27 @@ def main() -> None:
         "--execute",
         action="store_true",
         help=(
-            "With --migrate-subfolders or --fix-tags: apply changes. "
+            "With --migrate-subfolders, --fix-tags, or --migrate-daily-notes: apply changes. "
             "Implied by --fix-all."
+        ),
+    )
+    parser.add_argument(
+        "--migrate-daily-notes",
+        action="store_true",
+        help=(
+            "Rename legacy Daily/YYYY-MM/DD.md notes to DD-{username}.md format "
+            "to prevent git merge conflicts in shared team vaults. "
+            "Shows candidates by default; use --execute to apply. "
+            "Included in --fix-all."
+        ),
+    )
+    parser.add_argument(
+        "--daily-username",
+        default="",
+        metavar="NAME",
+        help=(
+            "Username suffix for --migrate-daily-notes "
+            "(default: vault config vault.username, then $USER)."
         ),
     )
     parser.add_argument(
@@ -2000,6 +2157,7 @@ def main() -> None:
         args.fix_tags = True
         args.strip_prefixes = True
         args.migrate_subfolders = True
+        args.migrate_daily_notes = True
         args.execute = True
 
     # ── --fix-tags mode ────────────────────────────────────────────────────
@@ -2020,6 +2178,13 @@ def main() -> None:
     if args.migrate_subfolders:
         dry = not args.execute
         run_migrate_subfolders(vault_common.VAULT_ROOT, dry_run=dry)
+        if not args.fix_all:
+            return
+
+    # ── --migrate-daily-notes mode ─────────────────────────────────────────
+    if args.migrate_daily_notes:
+        dry = not args.execute
+        run_migrate_daily_notes(vault_common.VAULT_ROOT, dry_run=dry, username=args.daily_username)
         if not args.fix_all:
             return
 

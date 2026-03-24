@@ -1227,6 +1227,85 @@ def unschedule_summarizer(dry_run: bool = False) -> None:
             pass  # crontab not available, nothing to remove
 
 
+def configure_vault_username(
+    vault_root: Path,
+    dry_run: bool = False,
+    username: str = "",
+) -> None:
+    """Write the vault username into ``config.yaml`` if not already set.
+
+    Sets ``vault.username`` so that daily notes are written as
+    ``DD-{username}.md``, preventing git merge conflicts when a team shares a
+    vault.  The username is resolved in priority order:
+
+    1. *username* argument (e.g. from interactive prompt)
+    2. ``$USER`` / ``$USERNAME`` environment variable
+
+    Does nothing if the key already has a non-empty value.
+
+    Args:
+        vault_root: Path to the vault root directory.
+        dry_run: If True, print actions without writing.
+        username: Explicit username to use; falls back to ``$USER`` if empty.
+    """
+    import os
+
+    if not username:
+        username = os.environ.get("USER", os.environ.get("USERNAME", "")).strip()
+    if not username:
+        return  # Cannot determine username — leave blank for user to fill in
+
+    config_path = vault_root / "config.yaml"
+
+    if config_path.exists():
+        try:
+            content = config_path.read_text(encoding="utf-8")
+        except OSError:
+            content = ""
+    else:
+        content = ""
+
+    # Check if vault.username is already set to a non-empty value
+    # Pattern: inside a "vault:" section, "username: <value>"
+    # We treat any non-empty, non-blank value as already configured.
+    username_set = re.search(r"(?m)^\s+username\s*:\s*(?!\"?\"\s*$)(\S+)", content)
+    if username_set:
+        return  # Already configured — respect the user's value
+
+    _step(f"Set vault.username = {username!r} in {config_path}", dry_run=dry_run)
+    if dry_run:
+        return
+
+    # If vault: section exists with a blank username key, fill it in
+    if re.search(r"(?m)^\s+username\s*:\s*\"?\"\s*$", content):
+        new_content = re.sub(
+            r"(?m)^(\s+username\s*:)\s*\"?\"\s*$",
+            rf'\1 "{username}"',
+            content,
+        )
+    elif "vault:" in content:
+        # vault section exists but no username key — append it
+        new_content = re.sub(
+            r"(?m)^(vault:)",
+            rf"\1\n  username: \"{username}\"",
+            content,
+            count=1,
+        )
+    else:
+        # No vault section — append one at the end
+        vault_section = (
+            "\n# Vault identity — used for per-user daily note filenames (team vault sharing)\n"
+            f'vault:\n  username: "{username}"  # Username suffix for daily notes (DD-{{username}}.md). Change if desired.\n'
+        )
+        new_content = content.rstrip("\n") + "\n" + vault_section
+
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(new_content, encoding="utf-8")
+    except OSError as exc:
+        _warn(f"Could not write vault.username to {config_path}: {exc}")
+
+
 def configure_vault_gitignore(vault_root: Path, dry_run: bool = False) -> None:
     """Ensure machine-local files are listed in the vault ``.gitignore``.
 
@@ -1495,6 +1574,27 @@ def install(args: argparse.Namespace) -> int:
         )
         do_schedule = _confirm("Schedule nightly summarizer?", default=False)
 
+    # --- Vault username prompt ---
+    import os as _os_import
+
+    _detected_user = _os_import.environ.get("USER", _os_import.environ.get("USERNAME", ""))
+    vault_username: str = args.vault_username
+    if not args.yes and not vault_username:
+        print()
+        print(bold("Vault Username"))
+        print(
+            dim(
+                "  Daily notes are stored as Daily/YYYY-MM/DD-{username}.md so\n"
+                "  multiple team members can share a vault via git without conflicts.\n"
+                f"  Auto-detected: {_detected_user or '(unknown)'}"
+            )
+        )
+        vault_username = _ask(
+            "Username for daily notes", default=_detected_user
+        ).strip()
+    if not vault_username:
+        vault_username = _detected_user
+
     print()
     print(bold("Installation Plan"))
     print(f"  {dim('Claude dir   :')} {claude_dir}")
@@ -1509,6 +1609,7 @@ def install(args: argparse.Namespace) -> int:
         )
     if enable_ai:
         print(f"  {dim('AI mode      :')} enabled (SessionStart timeout → 30s)")
+    print(f"  {dim('Vault username:')} {vault_username or '(auto: $USER)'}")
     print(f"  {dim('Settings     :')} {settings_file}")
     print(f"  {dim('Install skill:')} {claude_dir / 'skills' / 'parsidion-cc'}")
     if not args.skip_agent:
@@ -1584,6 +1685,9 @@ def install(args: argparse.Namespace) -> int:
 
     # 10c. Install post-merge git hook for multi-machine sync
     install_vault_post_merge_hook(vault_root, claude_dir, dry_run=dry_run)
+
+    # 10d. Write vault.username to config.yaml (for per-user daily note naming)
+    configure_vault_username(vault_root, dry_run=dry_run, username=vault_username)
 
     # 11. Install global CLI tools (vault-search, vault-new, vault-stats) via uv tool
     if install_tools:
@@ -1765,6 +1869,17 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Also add --graph-include-daily to the scheduled command to include "
             "Daily folder notes in the graph. Only meaningful with --rebuild-graph."
+        ),
+    )
+    parser.add_argument(
+        "--vault-username",
+        default="",
+        metavar="NAME",
+        help=(
+            "Username suffix for per-user daily notes (DD-{username}.md). "
+            "Written to vault config.yaml so it persists across sessions. "
+            "Defaults to $USER when not set. "
+            "The interactive installer prompts for this."
         ),
     )
     parser.add_argument(

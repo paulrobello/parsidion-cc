@@ -393,7 +393,7 @@ Write a complete markdown vault note. Requirements:
   least one entry; if no specific note title is known, link to the project name or primary
   technology, e.g. ["[[{project}]]"]; an empty "related: []" is NEVER acceptable),
   session_id: {session_id}
-- ## Title heading (3-5 descriptive words, not generic)
+- # Title heading (3-5 descriptive words, not generic) — use a single # (H1), not ##
 - ## Summary (2-3 sentences: what was learned and why it matters)
 - ## Key Learnings (3-6 bullet points, concrete and reusable)
 - ## Context (1-2 sentences: what triggered this, what project)
@@ -425,7 +425,10 @@ def parse_note_title_slug(note_content: str) -> str:
     Returns:
         Kebab-case slug, or 'session-note' as fallback.
     """
-    match = re.search(r"^##\s+(.+)$", note_content, re.MULTILINE)
+    # Prefer H1 (#) first; fall back to first H2 (##) for legacy notes
+    match = re.search(r"^#(?!#)\s+(.+)$", note_content, re.MULTILINE)
+    if not match:
+        match = re.search(r"^##\s+(.+)$", note_content, re.MULTILINE)
     if match:
         heading = match.group(1).strip()
         slug = vault_common.slugify(heading)

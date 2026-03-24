@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-03-23
+
+### Added
+- **Per-user daily notes** — daily notes are now stored as `Daily/YYYY-MM/DD-{username}.md` (e.g. `23-probello.md`) so multiple team members can share a vault via git without merge conflicts
+- `get_vault_username()` in `vault_common.py` — resolves username from `vault.username` config key, falling back to `$USER` env var
+- `vault.username` config key in `config.yaml` template — new `vault` section
+- `vault_doctor --migrate-daily-notes` — renames legacy `DD.md` notes to `DD-{username}.md`, updates wikilinks in weekly/monthly rollup notes, commits, and rebuilds the index
+- `--daily-username NAME` flag for `vault_doctor` — explicit override for migration username
+- `configure_vault_username()` in `install.py` — writes `vault.username = $USER` to vault `config.yaml` on install if not already set
+- `--vault-username NAME` CLI flag for `install.py` — non-interactive username override
+- Interactive installer prompt for vault username (shown between summarizer and plan steps)
+- Team vault section in `docs/VAULT_SYNC.md` with migration instructions
+
+### Changed
+- `vault_doctor --fix-all` now includes `--migrate-daily-notes` (uses auto-detected username)
+- Weekly and monthly rollup generators in `vault_stats.py` now handle both `DD.md` (legacy) and `DD-{username}.md` (new), aggregating all users' notes for the same day
+- `post_compact_hook.py` falls back to legacy `DD.md` path if the namespaced path does not exist (smooth migration transition)
+- Summarizer prompt corrected to use `#` (H1) for the title heading instead of `##`, eliminating recurring heading-promotion noise in `vault_doctor`
+- `parse_note_title_slug()` updated to prefer H1 headings when extracting filenames
+- `docs/VAULT_SYNC.md` — daily-note conflict section replaced with per-user note explanation; stale conflict troubleshooting entry removed
+
 ## [0.3.1] - 2026-03-23
 
 ### Added

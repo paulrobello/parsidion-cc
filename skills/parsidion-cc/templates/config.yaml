@@ -69,3 +69,7 @@ event_log:
 adaptive_context:
   enabled: false           # Track per-note usefulness; derank unreferenced notes over time
   decay_days: 30           # Days without reference before score decays
+
+# Vault identity — used for per-user daily note filenames (team vault sharing)
+vault:
+  username: ""             # Username suffix for daily notes (DD-{username}.md). Defaults to $USER if blank.
