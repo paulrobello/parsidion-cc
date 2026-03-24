@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { loadGraphData } from '@/lib/graph'
-import type { GraphData } from '@/lib/graph'
+import type { GraphData, NoteNode } from '@/lib/graph'
 import type { GraphCanvasHandle } from '@/components/GraphCanvas'
 import { useVisualizerState } from '@/lib/useVisualizerState'
 import { useVaultFiles } from '@/lib/useVaultFiles'
@@ -73,6 +73,36 @@ export default function Home() {
     onNoteModified: handleNoteModified,
     onGraphRebuilt: handleGraphRebuilt,
   })
+
+  // Flat stem→VaultFile lookup for notes not in graph.json (e.g. daily notes)
+  const vaultFileMap = useMemo(() => {
+    const map = new Map<string, { path: string; noteType?: string }>()
+    for (const [, subMap] of fileTree) {
+      for (const [, files] of subMap) {
+        for (const f of files) map.set(f.stem, f)
+      }
+    }
+    return map
+  }, [fileTree])
+
+  // Synthesize a minimal NoteNode for notes that exist in the vault but not in graph.json
+  const activeNode: NoteNode | null = useMemo(() => {
+    if (state.activeNode) return state.activeNode
+    if (!state.activeTab) return null
+    const vf = vaultFileMap.get(state.activeTab)
+    if (!vf) return null
+    const parts = vf.path.replace(/\.md$/, '').split('/')
+    return {
+      id: state.activeTab,
+      title: state.activeTab,
+      type: vf.noteType ?? 'daily',
+      folder: parts[0] ?? '',
+      path: vf.path,
+      tags: [],
+      incoming_links: 0,
+      mtime: 0,
+    }
+  }, [state.activeNode, state.activeTab, vaultFileMap])
 
   // Auto-collapse sidebar on narrow viewports
   useEffect(() => {
@@ -227,7 +257,7 @@ export default function Home() {
                 />
               ) : state.viewMode === 'read' ? (
                 <ReadingPane
-                  node={state.activeNode}
+                  node={activeNode}
                   fetchContent={state.fetchNoteContent}
                   onNavigate={handleNavigate}
                   onSave={state.saveNote}
