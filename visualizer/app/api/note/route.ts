@@ -49,7 +49,11 @@ function guardPath(notePath: string, vaultRoot: string): boolean {
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { stem, content } = body as { stem?: string; content?: string }
+  const { stem, content, lastModified } = body as {
+    stem?: string
+    content?: string
+    lastModified?: number
+  }
   if (!stem || content === undefined) {
     return NextResponse.json({ error: 'stem and content required' }, { status: 400 })
   }
@@ -60,6 +64,20 @@ export async function POST(req: NextRequest) {
 
   if (!guardPath(notePath, vaultRoot)) {
     return NextResponse.json({ error: 'Path traversal rejected' }, { status: 403 })
+  }
+
+  // Conflict detection: if caller provided lastModified and the file
+  // has been modified since then, return the current content instead of saving.
+  if (lastModified !== undefined) {
+    try {
+      const stat = fs.statSync(notePath)
+      if (stat.mtimeMs > lastModified) {
+        const serverContent = fs.readFileSync(notePath, 'utf-8')
+        return NextResponse.json({ conflict: true, serverContent })
+      }
+    } catch {
+      // If stat fails, proceed with the save
+    }
   }
 
   try {
