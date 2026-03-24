@@ -41,7 +41,9 @@ _DEFAULT_AI_TIMEOUT: int = 60
 # ---------------------------------------------------------------------------
 
 
-def _ai_merge_bodies(path_a: Path, path_b: Path, title: str, vault_path: Path) -> str | None:
+def _ai_merge_bodies(
+    path_a: Path, path_b: Path, title: str, vault_path: Path
+) -> str | None:
     """Use claude to intelligently merge two note bodies into one.
 
     Passes file paths to Claude so it can read the notes directly, avoiding
@@ -77,7 +79,9 @@ def _ai_merge_bodies(path_a: Path, path_b: Path, title: str, vault_path: Path) -
         "first heading"
     )
 
-    model = vault_common.get_config("summarizer", "merge_model", _DEFAULT_AI_MODEL, vault_path=vault_path)
+    model = vault_common.get_config(
+        "summarizer", "merge_model", _DEFAULT_AI_MODEL, vault_path=vault_path
+    )
     timeout = vault_common.get_config(
         "summarizer", "merge_timeout", _DEFAULT_AI_TIMEOUT, vault_path=vault_path
     )
@@ -651,7 +655,9 @@ def main() -> None:
     try:
         # --scan mode: find near-duplicate pairs across the whole vault
         if args.scan:
-            _scan_duplicates(threshold=args.threshold, top=args.top, vault_path=vault_path)
+            _scan_duplicates(
+                threshold=args.threshold, top=args.top, vault_path=vault_path
+            )
             return
 
         # Require NOTE_A and NOTE_B when not scanning
@@ -680,7 +686,14 @@ def main() -> None:
         _print_diff_summary(path_a, content_a, path_b, content_b, vault_path=vault_path)
 
         # Build merged content
-        merged = _merge_notes(path_a, content_a, path_b, content_b, no_ai=args.no_ai, vault_path=vault_path)
+        merged = _merge_notes(
+            path_a,
+            content_a,
+            path_b,
+            content_b,
+            no_ai=args.no_ai,
+            vault_path=vault_path,
+        )
 
         if args.dry_run or not args.execute:
             print("=== Proposed merged content ===\n")
@@ -708,7 +721,9 @@ def main() -> None:
         print(f"Moved {path_b.name} to .trash/")
 
         # Update wikilinks
-        n_updated = _update_wikilinks_in_vault(path_b.stem, output_path.stem, vault_path)
+        n_updated = _update_wikilinks_in_vault(
+            path_b.stem, output_path.stem, vault_path
+        )
         if n_updated:
             print(
                 f"Updated wikilinks in {n_updated} file(s): {path_b.stem} → {output_path.stem}"

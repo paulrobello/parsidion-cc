@@ -352,7 +352,8 @@ def main() -> None:
         description="Build or update the Claude Vault semantic search index.",
     )
     parser.add_argument(
-        "--vault", "-V",
+        "--vault",
+        "-V",
         type=str,
         help="Vault name or path (default: current project-local or default vault)",
     )

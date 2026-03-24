@@ -224,7 +224,9 @@ def _release_pid(vault_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def commit_stale_files(dry_run: bool = False, vault_path: Path | None = None) -> list[Path]:
+def commit_stale_files(
+    dry_run: bool = False, vault_path: Path | None = None
+) -> list[Path]:
     """Stage and commit uncommitted vault files whose mtime is older than STALE_COMMIT_MINUTES.
 
     Skips deleted files (no mtime to check) and respects the git.auto_commit
@@ -762,7 +764,9 @@ def resolve_wikilink(raw_link: str, note_map: dict[str, list[Path]]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def check_note(path: Path, note_map: dict[str, list[Path]], vault_path: Path) -> list[Issue]:
+def check_note(
+    path: Path, note_map: dict[str, list[Path]], vault_path: Path
+) -> list[Issue]:
     """Return a list of Issues found in *path*."""
     issues: list[Issue] = []
 
@@ -1543,7 +1547,9 @@ def _replace_tag_in_note(path: Path, old_tag: str, new_tag: str) -> bool:
     return True
 
 
-def _update_graph_json_tags(merges: list[tuple[str, str, str]], vault_path: Path | None = None) -> int:
+def _update_graph_json_tags(
+    merges: list[tuple[str, str, str]], vault_path: Path | None = None
+) -> int:
     """Update graph.json to replace merged-away tags with their canonical form.
 
     Returns the number of substitutions made.
@@ -1710,7 +1716,9 @@ def run_fix_tags(dry_run: bool = True, vault_path: Path | None = None) -> None:
     all_notes = list(vault_common.all_vault_notes(vault_path))
 
     # Step 1: Normalize underscores → hyphens in tags and project fields
-    underscore_fixed = _normalize_underscores_in_frontmatter(all_notes, dry_run=dry_run, vault_path=vault_path)
+    underscore_fixed = _normalize_underscores_in_frontmatter(
+        all_notes, dry_run=dry_run, vault_path=vault_path
+    )
 
     # Step 2: Detect and merge duplicate tag pairs
     tag_counts = _collect_all_tags(all_notes)
@@ -2190,7 +2198,11 @@ def main() -> None:
     _vault_path = vault_common.resolve_vault(explicit=args.vault, cwd=os.getcwd())
 
     # Load persistent state
-    state = load_state(_vault_path) if not args.no_state else {"last_run": None, "notes": {}}
+    state = (
+        load_state(_vault_path)
+        if not args.no_state
+        else {"last_run": None, "notes": {}}
+    )
 
     # Singleton guard — only one doctor may run at a time
     existing_pid = state.get("pid")
@@ -2246,14 +2258,14 @@ def main() -> None:
     # ── --migrate-daily-notes mode ─────────────────────────────────────────
     if args.migrate_daily_notes:
         dry = not args.execute
-        run_migrate_daily_notes(
-            _vault_path, dry_run=dry, username=args.daily_username
-        )
+        run_migrate_daily_notes(_vault_path, dry_run=dry, username=args.daily_username)
         if not args.fix_all:
             return
 
     # Auto-fix legacy pending paths (silent when nothing to fix)
-    fixed_paths = vault_common.migrate_pending_paths(dry_run=args.dry_run, vault=_vault_path)
+    fixed_paths = vault_common.migrate_pending_paths(
+        dry_run=args.dry_run, vault=_vault_path
+    )
     if fixed_paths:
         action = "Would fix" if args.dry_run else "Fixed"
         print(

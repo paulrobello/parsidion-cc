@@ -318,7 +318,9 @@ def _cmd_list(
         tag: Tag filter.
         vault_path: Path to the vault root.
     """
-    notes = _collect_notes(project=project, folder=folder, tag=tag, vault_path=vault_path)
+    notes = _collect_notes(
+        project=project, folder=folder, tag=tag, vault_path=vault_path
+    )
     if not notes:
         print("No notes match the given filters.")
         return
@@ -346,7 +348,9 @@ def _cmd_html(
         tag: Tag filter.
         vault_path: Path to the vault root.
     """
-    notes = _collect_notes(project=project, folder=folder, tag=tag, vault_path=vault_path)
+    notes = _collect_notes(
+        project=project, folder=folder, tag=tag, vault_path=vault_path
+    )
     if not notes:
         print("No notes match the given filters.")
         return
@@ -422,7 +426,9 @@ def _cmd_zip(
         tag: Tag filter.
         vault_path: Path to the vault root.
     """
-    notes = _collect_notes(project=project, folder=folder, tag=tag, vault_path=vault_path)
+    notes = _collect_notes(
+        project=project, folder=folder, tag=tag, vault_path=vault_path
+    )
     if not notes:
         print("No notes match the given filters.")
         return

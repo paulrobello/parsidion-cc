@@ -140,7 +140,9 @@ def _resolve_transcript_path(entry: dict) -> Path | None:
     return None
 
 
-def _read_transcript_excerpt(entry: dict, n: int = _EXCERPT_LINES, vault_path: Path | None = None) -> list[str]:
+def _read_transcript_excerpt(
+    entry: dict, n: int = _EXCERPT_LINES, vault_path: Path | None = None
+) -> list[str]:
     """Read the first n text-bearing lines from the transcript.
 
     Args:
@@ -182,7 +184,9 @@ def _read_transcript_excerpt(entry: dict, n: int = _EXCERPT_LINES, vault_path: P
                         raw_content = msg.get("content", "")
                     else:
                         raw_content = obj.get("content", "")
-                    text = vault_common.extract_text_from_content(raw_content, vault_path=vault_path)
+                    text = vault_common.extract_text_from_content(
+                        raw_content, vault_path=vault_path
+                    )
                     if text:
                         for sub in text.splitlines():
                             lines.append(sub[:200])

@@ -225,7 +225,9 @@ def _extract_wikilink_stems(related: object) -> list[str]:
     return stems
 
 
-def build_index(vault: Path) -> tuple[
+def build_index(
+    vault: Path,
+) -> tuple[
     str,
     int,
     int,
@@ -576,7 +578,9 @@ def build_manifests(
     return written
 
 
-def _write_note_index_to_db(db_rows: list[NoteEntry], current_stems: set[str], vault: Path) -> None:
+def _write_note_index_to_db(
+    db_rows: list[NoteEntry], current_stems: set[str], vault: Path
+) -> None:
     """Write per-note metadata rows to the note_index table in embeddings.db.
 
     No-op if embeddings are disabled or the DB file does not exist. Errors are
@@ -697,7 +701,8 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--vault", "-V",
+        "--vault",
+        "-V",
         type=str,
         help="Vault name or path (default: current project-local or default vault)",
     )
@@ -725,11 +730,14 @@ def main() -> None:
 
     # Replace VAULT_ROOT with vault_path for this run
     import vault_common
+
     original_vault_root = vault_common.VAULT_ROOT
     vault_common.VAULT_ROOT = vault_path
 
     _singleton_guard()
-    content, note_count, tag_count, folder_notes, db_rows = build_index(vault=vault_path)
+    content, note_count, tag_count, folder_notes, db_rows = build_index(
+        vault=vault_path
+    )
     index_path: Path = vault_path / "CLAUDE.md"
     index_path.write_text(content, encoding="utf-8")
 
@@ -738,7 +746,11 @@ def main() -> None:
 
     # Commit CLAUDE.md + all MANIFEST.md files together
     commit_paths: list[Path] = [index_path] + manifest_paths
-    git_commit_vault("chore(vault): rebuild index and manifests", paths=commit_paths, vault=vault_path)
+    git_commit_vault(
+        "chore(vault): rebuild index and manifests",
+        paths=commit_paths,
+        vault=vault_path,
+    )
 
     # Restore original VAULT_ROOT
     vault_common.VAULT_ROOT = original_vault_root

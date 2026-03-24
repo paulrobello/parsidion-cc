@@ -702,7 +702,9 @@ def run_hooks(last_n: int = 20, vault: Path | None = None) -> None:
     _CONSOLE.print(t)
 
 
-def run_weekly(conn: sqlite3.Connection | None, dry_run: bool = False, vault: Path | None = None) -> None:
+def run_weekly(
+    conn: sqlite3.Connection | None, dry_run: bool = False, vault: Path | None = None
+) -> None:
     """Generate or preview a weekly rollup note for the current ISO week.
 
     Reads all daily notes from the current week's directory, extracts
@@ -723,9 +725,7 @@ def run_weekly(conn: sqlite3.Connection | None, dry_run: bool = False, vault: Pa
     monday = today - timedelta(days=iso_weekday - 1)
     sunday = monday + timedelta(days=6)
 
-    month_dir = (
-        vault / "Daily" / f"{today.year:04d}-{today.month:02d}"
-    )
+    month_dir = vault / "Daily" / f"{today.year:04d}-{today.month:02d}"
 
     # Collect daily note paths for this week (supports both DD.md and DD-{user}.md)
     import re as _re
@@ -734,9 +734,7 @@ def run_weekly(conn: sqlite3.Connection | None, dry_run: bool = False, vault: Pa
     daily_paths: list[Path] = []
     for delta in range(7):
         day = monday + timedelta(days=delta)
-        day_month_dir = (
-            vault / "Daily" / f"{day.year:04d}-{day.month:02d}"
-        )
+        day_month_dir = vault / "Daily" / f"{day.year:04d}-{day.month:02d}"
         day_prefix = f"{day.day:02d}"
         if day_month_dir.exists():
             for p in sorted(day_month_dir.glob(f"{day_prefix}*.md")):
@@ -845,7 +843,9 @@ related: [{related_field}]
     )
 
 
-def run_monthly(conn: sqlite3.Connection | None, dry_run: bool = False, vault: Path | None = None) -> None:
+def run_monthly(
+    conn: sqlite3.Connection | None, dry_run: bool = False, vault: Path | None = None
+) -> None:
     """Generate or preview a monthly rollup note for the current month.
 
     Reads all daily notes from the current month's directory, extracts
@@ -861,9 +861,7 @@ def run_monthly(conn: sqlite3.Connection | None, dry_run: bool = False, vault: P
     import calendar
 
     today = date.today()
-    month_dir = (
-        vault / "Daily" / f"{today.year:04d}-{today.month:02d}"
-    )
+    month_dir = vault / "Daily" / f"{today.year:04d}-{today.month:02d}"
 
     # Collect all daily note files in this month's directory (DD.md and DD-{user}.md)
     import re as _re
@@ -972,7 +970,9 @@ related: [{related_field}]
     )
 
 
-def run_timeline(conn: sqlite3.Connection | None, days: int = 30, vault: Path | None = None) -> None:
+def run_timeline(
+    conn: sqlite3.Connection | None, days: int = 30, vault: Path | None = None
+) -> None:
     """Print a bar chart of notes created per day for the last N days.
 
     Uses mtime from note_index. Falls back to a file walk if DB is absent.

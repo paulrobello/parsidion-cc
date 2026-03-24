@@ -298,7 +298,9 @@ def query(
 # ---------------------------------------------------------------------------
 
 
-def _get_all_notes_as_results(limit: int, vault: Path | None = None) -> list[dict[str, Any]]:
+def _get_all_notes_as_results(
+    limit: int, vault: Path | None = None
+) -> list[dict[str, Any]]:
     """Return all vault notes as result dicts suitable for grep filtering.
 
     Tries the note_index DB first; falls back to a file walk via
