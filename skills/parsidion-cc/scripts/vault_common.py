@@ -21,6 +21,11 @@ __all__: list[str] = [
     "TEMPLATES_DIR",
     "VAULT_DIRS",
     "EXCLUDE_DIRS",
+    # Vault resolver (multi-vault support)
+    "VaultConfigError",
+    "get_vaults_config_path",
+    "list_named_vaults",
+    "resolve_vault",
     # Environment helpers
     "env_without_claudecode",
     # Frontmatter and content parsing
@@ -98,6 +103,176 @@ VAULT_DIRS: list[str] = [
 EXCLUDE_DIRS: set[str] = {".obsidian", "Templates", ".git", ".trash", "TagsRoutes"}
 
 EMBEDDINGS_DB_FILENAME: str = "embeddings.db"
+
+
+class VaultConfigError(Exception):
+    """Raised when vault configuration is invalid."""
+
+    pass
+
+
+# -----------------------------------------------------------------------------
+# Vault Resolver (multi-vault support)
+# -----------------------------------------------------------------------------
+
+
+def get_vaults_config_path() -> Path:
+    """Return the path to the vaults configuration file.
+
+    Uses XDG config home with fallback to ~/.parsidion-cc/ for legacy support.
+
+    Returns:
+        Path to vaults.yaml configuration file.
+    """
+    xdg_config = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_config:
+        config_dir = Path(xdg_config) / "parsidion-cc"
+    else:
+        config_dir = Path.home() / ".config" / "parsidion-cc"
+
+    # Fallback to legacy location if XDG dir doesn't exist
+    if not config_dir.exists():
+        legacy_dir = Path.home() / ".parsidion-cc"
+        if legacy_dir.exists():
+            config_dir = legacy_dir
+
+    return config_dir / "vaults.yaml"
+
+
+def list_named_vaults() -> dict[str, Path]:
+    """Load named vaults from vaults.yaml configuration.
+
+    Parses a simple YAML file with top-level 'vaults:' key containing
+    name-to-path mappings.
+
+    Returns:
+        Dictionary mapping vault names to their absolute paths.
+        Empty dict if config file doesn't exist or has no vaults section.
+    """
+    config_path = get_vaults_config_path()
+    if not config_path.exists():
+        return {}
+
+    try:
+        content = config_path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+
+    vaults: dict[str, Path] = {}
+    in_vaults_section = False
+
+    for line in content.splitlines():
+        stripped = line.strip()
+
+        # Skip empty lines and comments
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        # Detect vaults section start
+        if stripped == "vaults:" or stripped.startswith("vaults:"):
+            in_vaults_section = True
+            continue
+
+        # Detect end of vaults section (new top-level key)
+        if (
+            in_vaults_section
+            and stripped
+            and not stripped.startswith("-")
+            and ":" in stripped
+        ):
+            # Check if this is a new top-level key (no leading spaces)
+            if line and not line[0].isspace():
+                break
+
+        # Parse vault entries
+        if in_vaults_section and ":" in stripped:
+            # Handle both "name: path" and "name:" formats
+            parts = stripped.split(":", 1)
+            if len(parts) == 2:
+                name = parts[0].strip().strip('"').strip("'")
+                path_str = parts[1].strip().strip('"').strip("'")
+                if name and path_str:
+                    vaults[name] = Path(path_str).expanduser().resolve()
+
+    return vaults
+
+
+def _resolve_vault_reference(reference: str) -> Path:
+    """Resolve a vault reference (name or path) to an absolute Path.
+
+    Args:
+        reference: Either a vault name from vaults.yaml or an absolute/relative path.
+
+    Returns:
+        Absolute Path to the vault directory.
+
+    Raises:
+        VaultConfigError: If reference is a name that doesn't exist in vaults.yaml.
+    """
+    # First, try as a path
+    ref_path = Path(reference).expanduser()
+    if ref_path.is_absolute() or ref_path.exists():
+        return ref_path.resolve()
+
+    # If not a valid path, look up by name
+    named_vaults = list_named_vaults()
+    if reference in named_vaults:
+        return named_vaults[reference]
+
+    # Not found
+    raise VaultConfigError(
+        f"Vault '{reference}' not found in {get_vaults_config_path()}. "
+        f"Available vaults: {', '.join(named_vaults.keys()) or '(none configured)'}"
+    )
+
+
+@functools.lru_cache(maxsize=8)
+def resolve_vault(
+    explicit: str | None = None,
+    cwd: str | Path | None = None,
+) -> Path:
+    """Resolve which vault to use based on precedence order.
+
+    Precedence (highest to lowest):
+    1. explicit flag (path or vault name)
+    2. cwd/.claude/vault file (project-local vault)
+    3. CLAUDE_VAULT environment variable
+    4. Default ~/ClaudeVault
+
+    Args:
+        explicit: Optional explicit vault reference (name or path).
+        cwd: Optional working directory for project-local vault lookup.
+            If None, uses current working directory.
+
+    Returns:
+        Absolute Path to the resolved vault directory.
+
+    Note:
+        This function is cached with @functools.lru_cache(maxsize=8).
+        The cache key is based on (explicit, cwd) arguments.
+    """
+    # 1. Explicit flag takes highest precedence
+    if explicit:
+        return _resolve_vault_reference(explicit)
+
+    # 2. Project-local vault (.claude/vault file)
+    work_dir = Path(cwd) if cwd else Path.cwd()
+    project_vault_file = work_dir / ".claude" / "vault"
+    if project_vault_file.exists():
+        try:
+            vault_ref = project_vault_file.read_text(encoding="utf-8").strip()
+            if vault_ref:
+                return _resolve_vault_reference(vault_ref)
+        except OSError:
+            pass  # Fall through to next option
+
+    # 3. Environment variable
+    env_vault = os.environ.get("CLAUDE_VAULT")
+    if env_vault:
+        return _resolve_vault_reference(env_vault)
+
+    # 4. Default vault
+    return VAULT_ROOT
 
 
 def get_embeddings_db_path() -> Path:
