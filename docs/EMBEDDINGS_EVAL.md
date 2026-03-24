@@ -448,16 +448,20 @@ and a results array:
 }
 ```
 
+> **📝 Note:** The `recall_at_{top_k}` key name is dynamic — it matches the value of `--top-k`.
+> With `--top-k 5`, the key is `recall_at_5`; with `--top-k 20`, it is `recall_at_20`.
+
 | Field | Description |
 |---|---|
 | `metadata.generated_at` | ISO 8601 timestamp of when the eval was run |
-| `metadata.notes_sampled` | Number of notes included in ground truth |
+| `metadata.notes_sampled` | Number of eval items (notes with successfully generated queries) |
 | `metadata.total_queries` | Total ground-truth queries evaluated |
 | `metadata.models` | List of model IDs evaluated |
 | `metadata.chunking_strategies` | List of chunking strategy names evaluated |
 | `metadata.top_k` | Recall@K cutoff used |
 | `metadata.workers` | Number of parallel worker threads used |
 | `results` | Array of per-combo metric objects |
+| `results[].recall_at_{top_k}` | Dynamic key matching the `--top-k` value (e.g., `recall_at_5`) |
 
 Use `--output` to override the auto-timestamped default path:
 

@@ -13,6 +13,7 @@ An interactive web application for exploring and navigating a ClaudeVault knowle
   - [File Explorer Sidebar](#file-explorer-sidebar)
   - [Unified Search](#unified-search)
   - [Keyboard Shortcuts](#keyboard-shortcuts)
+  - [Real-Time Vault Sync](#real-time-vault-sync)
 - [Running the Visualizer](#running-the-visualizer)
 - [Building Graph Data](#building-graph-data)
 - [Data Model](#data-model)
@@ -51,11 +52,19 @@ graph TB
         Graph[GraphCanvas]
         Search[UnifiedSearch]
         Sidebar[FileExplorer]
+        Conflict[ConflictDialog]
+    end
+
+    subgraph "Server"
+        Server[Custom server.ts]
+        WS[WebSocketServer]
+        Watcher[Chokidar Watcher]
     end
 
     subgraph "Data"
         GJ[graph.json]
         API["/api/note?stem="]
+        FilesAPI["/api/files"]
         HistAPI["/api/note/history"]
         DiffAPI["/api/note/diff"]
         Vault[ClaudeVault Notes]
@@ -72,10 +81,18 @@ graph TB
     App --> Search
     App --> Sidebar
     App --> History[HistoryView]
+    Read --> Conflict
+
+    Server --> WS
+    Server --> Watcher
+    Watcher --> Vault
+    WS -->|file:created/deleted/modified| App
 
     App -->|fetch on load| GJ
     Read -->|fetch on open| API
+    Sidebar -->|fetch on mount| FilesAPI
     API --> Vault
+    FilesAPI --> Vault
     HistAPI --> Git
     DiffAPI --> Git
     History -->|git log| HistAPI
@@ -90,8 +107,13 @@ graph TB
     style Search fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
     style Sidebar fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
     style History fill:#006064,stroke:#00acc1,stroke-width:2px,color:#ffffff
+    style Conflict fill:#b71c1c,stroke:#f44336,stroke-width:2px,color:#ffffff
+    style Server fill:#4a148c,stroke:#9c27b0,stroke-width:3px,color:#ffffff
+    style WS fill:#880e4f,stroke:#c2185b,stroke-width:2px,color:#ffffff
+    style Watcher fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
     style GJ fill:#1a237e,stroke:#3f51b5,stroke-width:2px,color:#ffffff
     style API fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
+    style FilesAPI fill:#37474f,stroke:#78909c,stroke-width:2px,color:#ffffff
     style HistAPI fill:#006064,stroke:#00acc1,stroke-width:1px,color:#ffffff
     style DiffAPI fill:#006064,stroke:#00acc1,stroke-width:1px,color:#ffffff
     style Vault fill:#37474f,stroke:#78909c,stroke-width:1px,color:#ffffff
@@ -119,7 +141,7 @@ graph TD
     Toolbar[Toolbar.tsx]
     TabBar[TabBar.tsx]
     Search[UnifiedSearch.tsx]
-    ViewToggle[ViewToggle.tsx]
+    WsIndicator[WS Status Dot]
     Sidebar[FileExplorer.tsx]
     ReadPane[ReadingPane.tsx]
     GraphCanvas[GraphCanvas.tsx]
@@ -127,6 +149,7 @@ graph TD
     TempBar[TemperatureBar.tsx]
     NewNote[NewNoteDialog.tsx]
     Confirm[ConfirmDialog.tsx]
+    Conflict[ConflictDialog.tsx]
     FmEditor[FrontmatterEditor.tsx]
     HistView[HistoryView.tsx]
     CommitList[CommitList.tsx]
@@ -135,13 +158,14 @@ graph TD
     Page --> Toolbar
     Toolbar --> TabBar
     Toolbar --> Search
-    Toolbar --> ViewToggle
+    Toolbar --> WsIndicator
     Page --> Sidebar
     Page --> ReadPane
     Page --> GraphCanvas
     Page --> NewNote
     Page --> HistView
     ReadPane --> Confirm
+    ReadPane --> Conflict
     ReadPane --> FmEditor
     GraphCanvas --> HUD
     GraphCanvas --> TempBar
@@ -156,10 +180,11 @@ graph TD
     style ReadPane fill:#1b5e20,stroke:#4caf50,stroke-width:1px,color:#ffffff
     style TabBar fill:#37474f,stroke:#78909c,stroke-width:1px,color:#ffffff
     style Search fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
-    style ViewToggle fill:#37474f,stroke:#78909c,stroke-width:1px,color:#ffffff
+    style WsIndicator fill:#880e4f,stroke:#c2185b,stroke-width:1px,color:#ffffff
     style TempBar fill:#37474f,stroke:#78909c,stroke-width:1px,color:#ffffff
     style NewNote fill:#880e4f,stroke:#c2185b,stroke-width:1px,color:#ffffff
     style Confirm fill:#880e4f,stroke:#c2185b,stroke-width:1px,color:#ffffff
+    style Conflict fill:#b71c1c,stroke:#f44336,stroke-width:1px,color:#ffffff
     style FmEditor fill:#880e4f,stroke:#c2185b,stroke-width:1px,color:#ffffff
     style HistView fill:#006064,stroke:#00acc1,stroke-width:2px,color:#ffffff
     style CommitList fill:#006064,stroke:#00acc1,stroke-width:1px,color:#ffffff
@@ -344,10 +369,39 @@ Activated with **⌘K** — three modes selectable by prefix:
 | ⌘K / Ctrl+K | Focus search input |
 | ⌘B / Ctrl+B | Toggle sidebar |
 | ⌘\ / Ctrl+\ | Toggle Read / Graph mode |
-| Esc | Close search dropdown or deselect graph node |
+| ⌘E / Ctrl+E | Enter edit mode (when viewing a note) |
+| ⌘S / Ctrl+S | Save note (when editing) |
+| Esc | Close search dropdown, cancel edit, or deselect graph node |
 | ↑ ↓ (search) | Navigate results |
 | ⏎ (search) | Open selected result |
 | ⌘⏎ (search) | Open selected result in new tab |
+
+### Real-Time Vault Sync
+
+The visualizer maintains a WebSocket connection to the server for live vault updates:
+
+**WebSocket Connection**
+- Endpoint: `/ws/vault`
+- Automatic reconnection with exponential backoff (1s → 30s max)
+- Heartbeat: server pings every 30 seconds; clients must respond with `pong`
+- Connection status indicator in toolbar: green (connected), amber (connecting), red (disconnected)
+
+**Live Updates**
+- New notes appear in FileExplorer immediately (no reload)
+- Deleted notes are removed from the sidebar instantly
+- Modified notes auto-refresh in read mode (scroll position preserved)
+- When `graph.json` is rebuilt server-side, clients refetch automatically
+
+**Conflict Detection**
+- When saving a note that was modified externally, a `ConflictDialog` appears
+- Three resolution options:
+  1. **Take theirs** — use the server version
+  2. **Keep mine** — overwrite with your edits
+  3. **Merge** — manual editor with split/unified diff view
+
+**External Modification Warning**
+- If a note is modified externally while you are editing it, a warning appears
+- Saving triggers conflict detection to prevent data loss
 
 ## Running the Visualizer
 
@@ -476,7 +530,23 @@ graph LR
 }
 ```
 
-### API Route
+### `VaultFile` (WebSocket and API)
+
+```typescript
+{
+  stem: string         // Filename without extension — e.g. "foo" for "Patterns/foo.md"
+  path: string         // Path relative to vault root — e.g. "Patterns/foo.md"
+  noteType?: string    // Frontmatter `type` field, if present
+}
+```
+
+### `WsStatus`
+
+```typescript
+type WsStatus = 'connecting' | 'connected' | 'disconnected'
+```
+
+### API Routes
 
 **`GET /api/note?stem=<stem>`**
 
@@ -485,20 +555,28 @@ Returns the Markdown content for a note identified by its stem ID.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `stem` | string | Yes | Vault note stem (filename without extension) |
+| `path` | string | No | Vault-relative path (for disambiguation when multiple notes share the same stem) |
 
 **Response (200):** JSON `{ content: string, path: string }` — raw Markdown and vault-relative path
 
 **Response (404):** JSON error — note not found
 
 **`POST /api/note`** — Update (overwrite) an existing note.
-Body: `{ stem: string, content: string }`
+Body: `{ stem: string, content: string, lastModified?: number }`
+- If `lastModified` is provided, server checks for conflicts (409 if note was modified externally)
+- Response (409): `{ conflict: true, serverContent: string }` — conflict detected
+- Response (200): `{ ok: true }`
 
 **`PUT /api/note`** — Create a new note at a vault-relative path.
 Body: `{ path: string, content: string }`. Returns 409 if the note already exists.
 
 **`DELETE /api/note?stem=<stem>`** — Delete a note by stem.
 
-**`POST /api/graph/rebuild`** — Trigger a server-side `build_graph.py` run to regenerate `graph.json`.
+**`POST /api/graph/rebuild`** — Trigger a server-side `build_graph.py` run to regenerate `graph.json`. Broadcasts `graph:rebuilt` event to all connected WebSocket clients.
+
+**`GET /api/files`** — Returns the complete vault file tree.
+
+**Response (200):** `{ files: VaultFile[] }` — flat array of all vault markdown files with stem, path, and noteType
 
 **`GET /api/note/history?stem=<stem>`** — Returns the git commit log for a note.
 
@@ -522,7 +600,7 @@ Both history routes path-traverse-protect with `guardPath()` (same pattern as `/
 
 ## State Management
 
-All application state is managed by the `useVisualizerState` hook (`lib/useVisualizerState.ts`). State is split into categories:
+All application state is managed by the `useVisualizerState` hook (`lib/useVisualizerState.ts`) and the `useVaultFiles` hook (`lib/useVaultFiles.ts`). State is split into categories:
 
 **Tab / View State**
 
@@ -548,6 +626,22 @@ All application state is managed by the `useVisualizerState` hook (`lib/useVisua
 |-----|------|-------------|
 | `sidebarWidth` | `number` | Width in pixels (180–400) |
 | `sidebarCollapsed` | `boolean` | Whether sidebar is hidden |
+
+**Content Cache & Sync**
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `contentCache` | `Map<string, string>` | In-memory cache of note content (stem/path → content) |
+| `invalidateNote(stem, path)` | callback | Evict cached content when external modification detected |
+| `saveNote(stem, content, lastModified, path)` | callback | Save with optional conflict detection |
+
+**WebSocket State** (from `useVaultFiles`)
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `fileTree` | `VaultFileTree` | Nested Map<folder, Map<subfolder, VaultFile[]>> |
+| `wsStatus` | `WsStatus` | Connection state |
+| `totalFiles` | `number` | Total vault note count |
 
 **Graph Controls** (all persisted to `localStorage` with `vv:` prefix)
 
@@ -646,12 +740,14 @@ All graph controls and UI layout are persisted to `localStorage` using the `vv:`
 ```
 parsidion-cc/
 ├── visualizer/                       # Next.js app root
+│   ├── server.ts                     # Custom server: Next.js + WebSocket + chokidar
 │   ├── app/
 │   │   ├── page.tsx                  # Main layout and state wiring
 │   │   ├── layout.tsx                # HTML head, global styles
 │   │   ├── api/note/route.ts         # Note CRUD API (GET, POST, PUT, DELETE)
 │   │   ├── api/note/history/route.ts # Git log for a note (GET)
 │   │   ├── api/note/diff/route.ts    # Git diff between two commits (GET)
+│   │   ├── api/files/route.ts        # Vault file tree (GET)
 │   │   └── api/graph/rebuild/route.ts  # Trigger graph.json rebuild (POST)
 │   ├── components/
 │   │   ├── GraphCanvas.tsx           # Sigma.js WebGL renderer + node right-click menu
@@ -661,17 +757,20 @@ parsidion-cc/
 │   │   ├── HistoryView.tsx           # Split-screen git history viewer
 │   │   ├── CommitList.tsx            # Scrollable commit list with FROM/TO selection
 │   │   ├── DiffViewer.tsx            # Diff renderer (unified / split / words modes)
-│   │   ├── Toolbar.tsx               # Top bar with hamburger + tabs
+│   │   ├── Toolbar.tsx               # Top bar with hamburger + tabs + WS status dot
 │   │   ├── TabBar.tsx                # Scrollable tab strip
 │   │   ├── UnifiedSearch.tsx         # ⌘K search input + dropdown
-│   │   ├── ViewToggle.tsx            # Read / Graph pill toggle
 │   │   ├── TemperatureBar.tsx        # Simulation energy indicator
 │   │   ├── NewNoteDialog.tsx         # Dialog for creating new vault notes
 │   │   ├── ConfirmDialog.tsx         # Reusable confirmation prompt
+│   │   ├── ConflictDialog.tsx        # Edit conflict resolution (take theirs / keep mine / merge)
 │   │   └── FrontmatterEditor.tsx    # Structured YAML frontmatter editor
 │   ├── lib/
 │   │   ├── graph.ts                  # Data types and fetch helpers
 │   │   ├── useVisualizerState.ts     # Central state management hook (incl. history mode)
+│   │   ├── useVaultFiles.ts          # WebSocket hook for real-time vault sync
+│   │   ├── vaultFile.ts              # VaultFile type (shared client/server)
+│   │   ├── vaultBroadcast.server.ts  # Global EventEmitter for server-side events
 │   │   ├── parseDiff.ts              # Client-side unified diff parser (DiffHunk, DiffLine)
 │   │   ├── sigma-colors.ts           # Note type → color mapping
 │   │   ├── frontmatter.ts           # Frontmatter parse/serialize helpers
@@ -680,6 +779,7 @@ parsidion-cc/
 │   │   └── graph.json                # Pre-computed graph (generated)
 │   ├── package.json
 │   ├── tsconfig.json
+│   ├── tsconfig.server.json          # TypeScript config for server.ts
 │   └── next.config.ts
 │
 ├── scripts/
@@ -693,18 +793,3 @@ parsidion-cc/
 - [Architecture](ARCHITECTURE.md) — Full system component map
 - [Embeddings](EMBEDDINGS.md) — How embeddings are built and evaluated
 - [CLAUDE.md](../CLAUDE.md) — Project conventions and script reference
-
-## Changelog
-
-## [Unreleased]
-
-### Added
-- Real-time `FileExplorer` via WebSocket vault watcher — new and deleted notes appear instantly without a page reload
-- Custom `server.ts` replacing `next dev/start` — bootstraps Next.js + WebSocket server + chokidar file watcher in a single process
-- Auto-refresh for notes open in read mode when externally modified (scroll position preserved)
-- Conflict detection on save: if a note was modified externally since it was last loaded, a `ConflictDialog` is shown before overwriting
-- `ConflictDialog` with three resolution paths: Take theirs / Keep mine / Merge (manual editor with diff view)
-- WebSocket connection status indicator dot in Toolbar (green = connected, amber = connecting, red = disconnected)
-- `GET /api/files` endpoint for initial vault file tree used by `useVaultFiles` hook
-- `useVaultFiles` custom hook encapsulating WebSocket lifecycle, retry backoff, and file tree state
-- `WsStatus` type and `VaultFile` type for typed WebSocket message handling

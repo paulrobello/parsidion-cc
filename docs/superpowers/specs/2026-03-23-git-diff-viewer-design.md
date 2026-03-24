@@ -1,8 +1,10 @@
 # Git Diff Viewer — Design Spec
 
+Design specification for the git diff viewer feature in the parsidion-cc web visualizer, enabling users to browse version history and compare commits for vault notes.
+
 **Date:** 2026-03-23
 **Project:** parsidion-cc visualizer
-**Status:** Approved
+**Status:** Implemented
 
 ---
 
@@ -30,8 +32,10 @@ A new top-level `HistoryView` component replaces `ReadingPane` when history mode
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/note/history` | GET `?stem=<stem>` | Returns git log for the note file |
-| `/api/note/diff` | GET `?stem=<stem>&from=<hash>&to=<hash>` | Returns diff between two commits |
+| `/api/note/history` | GET `?stem=<stem>` or `?path=<path>` | Returns git log for the note file |
+| `/api/note/diff` | GET `?stem=<stem>&from=<hash>&to=<hash>` or `?path=<path>&from=<hash>&to=<hash>` | Returns diff between two commits |
+
+Both routes accept either `stem` (filename without `.md`) or `path` (vault-relative path like `Daily/MANIFEST.md`). The `path` parameter is preferred when multiple notes share the same stem in different folders.
 
 Both routes shell out to git inside `VAULT_ROOT`. Both routes must verify the resolved file path starts with `VAULT_ROOT` before executing any git command (path traversal protection, same pattern as the existing `guardPath()` in `/api/note/route.ts`).
 
@@ -40,11 +44,12 @@ Both routes shell out to git inside `VAULT_ROOT`. Both routes must verify the re
 ```typescript
 historyMode: boolean
 historyNote: string | null        // stem of note being viewed
-openHistory: (stem: string) => void
+historyPath: string | null        // vault-relative path for disambiguation (optional)
+openHistory: (stem: string, notePath?: string) => void
 closeHistory: () => void
 ```
 
-`openHistory` saves the current `viewMode` into a `prevViewMode` field before setting `historyMode: true`. `closeHistory` restores `viewMode` from `prevViewMode` and clears `historyMode` and `historyNote`.
+`openHistory` saves the current `viewMode` into a `prevViewModeRef` before setting `historyMode: true`. The optional `notePath` parameter allows disambiguating notes with the same stem in different folders. `closeHistory` restores `viewMode` from `prevViewModeRef` and clears `historyMode`, `historyNote`, and `historyPath`.
 
 ---
 
@@ -104,7 +109,11 @@ All modes: monospace font, scrollable, respects the existing dark sci-fi color s
 
 ## API Design
 
-### GET `/api/note/history?stem=<stem>`
+### GET `/api/note/history?stem=<stem>` or `?path=<path>`
+
+Accepts either:
+- `stem` — filename without `.md` extension (e.g., `my-note`)
+- `path` — vault-relative path (e.g., `Daily/2026-03/23-username.md`)
 
 Runs:
 ```bash
@@ -123,10 +132,11 @@ interface CommitEntry {
 // Returns: { commits: CommitEntry[] }
 ```
 
-Returns empty `commits: []` if the file has no git history (not an error).
+Returns empty `commits: []` if the file has no git history (not an error). Returns `{ commits: [] }` if `VAULT_ROOT` is not a git repository.
 
-### GET `/api/note/diff?stem=<stem>&from=<hash>&to=<hash>`
+### GET `/api/note/diff?stem=<stem>&from=<hash>&to=<hash>` or `?path=<path>&from=<hash>&to=<hash>`
 
+Accepts either `stem` or `path` (same as history route), plus:
 - `from` and `to` are full or short git SHAs. The special value `working` for `to` means the current on-disk file (uncommitted working tree).
 - Git commands used:
   - Normal case (both SHAs): `git diff <from> <to> -- <filepath>`
@@ -136,8 +146,10 @@ Returns empty `commits: []` if the file has no git history (not an error).
 
 Response:
 ```typescript
-{ diff: string }   // raw unified diff output
+{ diff: string, truncated: boolean }   // raw unified diff output + truncation flag
 ```
+
+When the diff exceeds 5000 lines, `truncated: true` is returned and the diff is capped.
 
 ---
 
@@ -145,20 +157,20 @@ Response:
 
 ### 1. ReadingPane toolbar button
 
-Add a clock/history icon button to the existing toolbar row in `ReadingPane`. On click: `openHistory(activeStem)`.
+Add a "HISTORY" button to the existing toolbar row in `ReadingPane`. On click: `openHistory(activeStem, node.path)`.
 
 ### 2. File Explorer right-click context menu
 
 Add a context menu to file items in `FileExplorer`. Right-clicking a file shows:
 - Open
-- **View History** → `openHistory(stem)`
+- **View History** → `openHistory(stem, path)`
 - Delete
 
 ### 3. Graph node right-click
 
-Add a right-click handler to `GraphCanvas` nodes. Shows same context menu:
+Add a right-click handler to `GraphCanvas` nodes. Shows context menu:
 - Open in Reading Pane
-- **View History** → `openHistory(stem)`
+- **View History** → `openHistory(stem)` (graph nodes use stem only since path is derived from graph.json)
 
 ---
 
@@ -208,11 +220,11 @@ For WORDS mode, apply a secondary word-level diff on changed line pairs using th
 - `visualizer/lib/parseDiff.ts`
 
 ### Modified files
-- `visualizer/lib/useVisualizerState.ts` — add `historyMode`, `historyNote`, `openHistory`, `closeHistory`
-- `visualizer/app/page.tsx` — render `HistoryView` instead of `ReadingPane` when `historyMode` is true
-- `visualizer/components/ReadingPane.tsx` — add History button to toolbar
-- `visualizer/components/FileExplorer.tsx` — add right-click context menu
-- `visualizer/components/GraphCanvas.tsx` — add right-click handler on nodes
+- `visualizer/lib/useVisualizerState.ts` — add `historyMode`, `historyNote`, `historyPath`, `openHistory`, `closeHistory`
+- `visualizer/app/page.tsx` — render `HistoryView` instead of `ReadingPane` when `historyMode` is true; pass `historyPath` to `HistoryView`
+- `visualizer/components/ReadingPane.tsx` — add HISTORY button to toolbar
+- `visualizer/components/FileExplorer.tsx` — add right-click context menu with Open, View History, Delete options
+- `visualizer/components/GraphCanvas.tsx` — add right-click handler on nodes with Open in Reading Pane, View History options
 
 ---
 
@@ -222,3 +234,10 @@ For WORDS mode, apply a secondary word-level diff on changed line pairs using th
 - Diffing across branches
 - Showing diffs for notes outside `VAULT_ROOT`
 - Authentication / permissions (single-user local tool)
+
+---
+
+## Related Documentation
+
+- [Visualizer Overview](../../VISUALIZER.md) - Overall visualizer architecture
+- [DOCUMENTATION_STYLE_GUIDE.md](../../DOCUMENTATION_STYLE_GUIDE.md) - Documentation standards for this project

@@ -157,7 +157,7 @@ CREATE TABLE note_index (
     folder         TEXT    NOT NULL DEFAULT '',
     title          TEXT    NOT NULL DEFAULT '',
     summary        TEXT    NOT NULL DEFAULT '',
-    tags           TEXT    NOT NULL DEFAULT '',     -- comma-separated: "python, sqlite"
+    tags           TEXT    NOT NULL DEFAULT '',     -- comma-space-separated: "python, sqlite"
     note_type      TEXT    NOT NULL DEFAULT '',
     project        TEXT    NOT NULL DEFAULT '',
     confidence     TEXT    NOT NULL DEFAULT '',
@@ -365,12 +365,12 @@ uv run ~/.claude/skills/parsidion-cc/scripts/vault_search.py "qdrant embeddings"
 ```
 
 The global default minimum score is controlled by `embeddings.min_score` in `config.yaml`.
-The template sets it to `0.35`; when `config.yaml` is absent the built-in default is `0.0`
-(all results returned). The CLI flag overrides it for a single invocation. You can also set it via
+The template sets it to `0.45`; when `config.yaml` is absent the built-in default is `0.45`.
+The CLI flag overrides it for a single invocation. You can also set it via
 environment variable: `VAULT_SEARCH_MIN_SCORE=0.5 vault-search "query"`.
 
 > **Tip:** A score above `0.5` indicates strong topical overlap. Use `--min-score 0.5` when
-> you want only high-confidence matches. Use the default `0.35` when exploring a new topic where
+> you want only high-confidence matches. Use the default `0.45` when exploring a new topic where
 > the vault may have only tangentially related notes.
 
 ### Controlling Result Count

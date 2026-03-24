@@ -1,7 +1,16 @@
 # Vault Explorer Agent — Design Spec
 
 **Date:** 2026-03-13
-**Status:** Approved
+**Status:** Implemented
+
+---
+
+## Table of Contents
+- [Problem](#problem)
+- [Solution](#solution)
+- [Components](#components)
+- [Files Changed](#files-changed)
+- [Out of Scope](#out-of-scope)
 
 ---
 
@@ -13,10 +22,10 @@ Every vault search runs inside the main Claude session's context window. A typic
 
 ## Solution
 
-A dedicated `vault-explorer` subagent (Haiku model) that accepts a natural language query, performs all Grep/Read work in its own context, and returns a compact two-section result to the main session. The main session's context grows by one agent result block instead of N Grep results + M Read results.
+A dedicated `vault-explorer` subagent (Haiku model) that accepts a natural language query, performs all search/Read work in its own context, and returns a compact two-section result to the main session. The main session's context grows by one agent result block instead of N Grep results + M Read results.
 
 **Escalation chain (main session decides — not auto-dispatched):**
-vault-explorer → (no results) → main session dispatches research-documentation-agent
+vault-explorer → (no results) → main session dispatches research-agent
 
 ---
 
@@ -28,12 +37,21 @@ vault-explorer → (no results) → main session dispatches research-documentati
 - **Color:** `purple`
 - **Role:** Read-only vault search specialist. No writes, no index rebuilds.
 
-**Behaviour:**
-1. Check `~/ClaudeVault/CLAUDE.md` index to orient on available notes. No staleness check — the index check is informational only; actual search uses Grep directly on vault files, so index freshness does not affect correctness.
-2. Extract key signals from the query (error class, package name, feature keyword).
-3. Run targeted Grep searches across relevant subfolders per the folder search strategy table below.
-4. Rank results: files in the highest-priority folder from the strategy table rank first; within a folder, files are ranked by frequency of the search signal (most occurrences first). Read the top 5 ranked files.
-5. Synthesize and return in the standard two-section format.
+**Search Procedure (cascading):**
+
+1. **Semantic search (if available):** Run `vault_search.py` with the full natural-language query. If 3+ results with score ≥ 0.35 are returned, use those paths and skip to step 6.
+
+2. **Metadata search:** Infer filters from the query (folder, type, project, tag, recency) and run `vault-search` with those filters. If 3+ results, use those paths and skip to step 6.
+
+3. **Orient:** Read `~/ClaudeVault/CLAUDE.md` (the vault index) to understand what notes exist and which folders are relevant.
+
+4. **Extract signals:** From the query, identify the key search terms — exception class name, package/library name, feature keyword, or concept. Use the most distinctive term as the primary signal.
+
+5. **Search by priority folder:** Run Grep searches across relevant subfolders per the folder search strategy table below. Widen to lower-priority folders only if the top folder yields 0 or 1 candidate files. Stop widening when you have 3+ files.
+
+6. **Rank and read:** Rank candidate files by: (a) semantic score if available, (b) folder priority position, (c) frequency of the search signal in the file. Read the top 5 ranked files.
+
+7. **Synthesize and return** in the standard two-section format.
 
 **Return format:**
 ```
@@ -42,22 +60,32 @@ vault-explorer → (no results) → main session dispatches research-documentati
  "No relevant vault notes found." if nothing matches.]
 
 ## Sources
-- ~/ClaudeVault/Debugging/foo.md — one-line relevance note
-- ~/ClaudeVault/Patterns/retry-pattern.md — one-line relevance note
+- /absolute/path/to/note.md — one-line relevance note
+- /absolute/path/to/other.md — one-line relevance note
 ```
 
+> **Important:** Use absolute paths only — expand `~` to the full home directory path. Never output tilde paths.
+
 **No-match response (the main session decides what to do next):**
-> "No relevant vault notes found. Consider dispatching the `research-documentation-agent` to research this topic externally and save findings to the vault."
+```
+## Answer
+No relevant vault notes found. Consider dispatching the
+`research-agent` to research this topic externally and save
+findings to the vault.
+
+## Sources
+(none)
+```
 
 **Folder search strategy** (baked into the agent's instructions):
 
 | Query type | Folders searched, in priority order |
 |---|---|
-| Error / exception / bug | `Debugging/` → `Frameworks/` → `Languages/` |
-| Feature / pattern / integration | `Patterns/` → `Frameworks/` → `Projects/` |
-| Cross-project / prior art | `Projects/` → `Patterns/` |
-| Library / tool / CLI | `Tools/` → `Frameworks/` |
-| Research / concepts | `Research/` → all |
+| Error / exception / bug | `~/ClaudeVault/Debugging/` → `~/ClaudeVault/Frameworks/` → `~/ClaudeVault/Languages/` |
+| Feature / pattern / integration | `~/ClaudeVault/Patterns/` → `~/ClaudeVault/Frameworks/` → `~/ClaudeVault/Projects/` |
+| Cross-project / prior art | `~/ClaudeVault/Projects/` → `~/ClaudeVault/Patterns/` |
+| Library / tool / CLI | `~/ClaudeVault/Tools/` → `~/ClaudeVault/Frameworks/` |
+| Research / concepts | `~/ClaudeVault/Research/` → all folders |
 
 ---
 
@@ -78,7 +106,7 @@ To:
 > Dispatch the `vault-explorer` agent with a natural language query describing what you're looking for.
 >
 > - **Answer returned?** Proceed. `Read` specific source files only if you need more depth than the Answer section provides.
-> - **"No relevant vault notes found"?** Dispatch the `research-documentation-agent` for external research and vault note creation.
+> - **"No relevant vault notes found"?** Dispatch the `research-agent` for external research and vault note creation.
 
 The Grep strategy table (currently in this section) moves inside the vault-explorer agent's own instructions.
 
@@ -97,24 +125,24 @@ The following specific sections change (SKILL.md has a different structure from 
 
 ### 4. `install.py` — multi-agent support
 
-`AGENT_SRC: Path` → `AGENT_SRCS: list[Path]`:
+`AGENT_SRCS: list[Path]` contains all agents to install:
 
 ```python
 AGENT_SRCS: list[Path] = [
-    REPO_ROOT / "agents" / "research-documentation-agent.md",
+    REPO_ROOT / "agents" / "research-agent.md",
     REPO_ROOT / "agents" / "vault-explorer.md",
+    REPO_ROOT / "agents" / "project-explorer.md",
 ]
 ```
 
-All of the following code paths must be updated to iterate `AGENT_SRCS` rather than referencing the single `AGENT_SRC`:
+> **Note:** Additional agents may be added over time. The installer iterates this list for all install/uninstall operations.
 
-1. **`install_agent()` → `install_agents()`** — iterates list, copies each file to `~/.claude/agents/`
-2. **`uninstall()` function** — currently builds `agent_dest = claude_dir / "agents" / AGENT_SRC.name`; must iterate `AGENT_SRCS` and remove each
-3. **Installation plan printout** — currently prints a single `Install agent:` line; must print one line per agent in `AGENT_SRCS`
-4. **`--skip-agent` help text** — update from "Do not install the research agent" to "Do not install any agents"
-5. **Module docstring** (top of `install.py`) — update `--skip-agent` description to match
-6. **Call site in `install()`** — the `install_agent(claude_dir, dry_run=dry_run)` call must become `install_agents(claude_dir, dry_run=dry_run)`
-7. **Agent source existence guard** — the `if AGENT_SRC.exists(): ... _warn(f"... {AGENT_SRC} ...")` block must iterate `AGENT_SRCS` and check/warn for each source path individually
+**Implementation details:**
+- `install_agents()` iterates the list, copying each file to `~/.claude/agents/`
+- `uninstall()` iterates the list to remove each agent
+- Installation plan printout shows one line per agent
+- `--skip-agent` flag prevents installation of all agents
+- Agent source existence guards check each source path individually
 
 ---
 
@@ -134,4 +162,4 @@ All of the following code paths must be updated to iterate `AGENT_SRCS` rather t
 - The vault-explorer agent does not write notes, save findings, or rebuild the index.
 - The vault-explorer agent does not replace the `session_start_hook.py` AI selection mode.
 - No changes to hook scripts, summarizer, or vault structure.
-- The main session does not auto-dispatch `research-documentation-agent` on no-match — it follows the updated CLAUDE-VAULT.md guidance and decides.
+- The main session does not auto-dispatch `research-agent` on no-match — it follows the updated CLAUDE-VAULT.md guidance and decides.

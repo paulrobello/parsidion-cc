@@ -1,6 +1,6 @@
 # AgentChrome
 
-A fast native CLI that lets AI coding agents control a Chrome or Chromium browser via the Chrome DevTools Protocol, enabling real-time web interaction, page inspection, form automation, and screenshot capture without any Node.js or Python runtime.
+A fast native Rust CLI that lets AI coding agents control a Chrome or Chromium browser via the Chrome DevTools Protocol, enabling real-time web interaction, page inspection, form automation, and screenshot capture without any Node.js or Python runtime.
 
 ## Table of Contents
 - [Overview](#overview)
@@ -20,7 +20,7 @@ A fast native CLI that lets AI coding agents control a Chrome or Chromium browse
 - Single Rust binary — no Node.js, no Python, no runtime dependencies
 - Communicates with Chrome via the Chrome DevTools Protocol (CDP)
 - Outputs structured JSON responses suitable for programmatic parsing
-- Sub-50 ms startup time; binary under 10 MB
+- Fast startup time; small binary size
 - Dual-licensed MIT / Apache 2.0
 
 **Repository:** [https://github.com/Nunley-Media-Group/AgentChrome](https://github.com/Nunley-Media-Group/AgentChrome)
@@ -64,10 +64,8 @@ Download the latest release binary for your platform from the [GitHub Releases p
 
 | Platform | Architecture |
 |----------|-------------|
-| macOS | Apple Silicon (ARM64) |
-| macOS | Intel (x86_64) |
-| Linux | x86_64 |
-| Linux | ARM64 |
+| macOS | Apple Silicon (ARM64), Intel (x86_64) |
+| Linux | x86_64, ARM64 |
 | Windows | x86_64 |
 
 Place the binary somewhere on your `PATH` (e.g., `/usr/local/bin/agentchrome` on macOS/Linux).
@@ -97,21 +95,21 @@ This auto-detects the active agentic environment. Use `agentchrome skill list` t
 
 | Feature | Description |
 |---------|-------------|
-| **Page text extraction** | Extracts visible text from the rendered page |
-| **DOM HTML extraction** | Retrieves outer HTML of any element after JavaScript execution |
+| **Page text extraction** | Extracts visible text from the rendered page (`page text`) |
+| **DOM HTML extraction** | Retrieves outer HTML of any element after JavaScript execution (`dom get-html`) |
 | **Accessibility tree snapshots** | Returns stable UIDs for reliable element targeting (`page snapshot`) |
-| **Screenshot capture** | Full-page, viewport, or element PNG/JPEG/WebP screenshots |
-| **Form automation** | Fill, clear, upload, and submit form fields by UID or CSS selector |
+| **Screenshot capture** | Full-page, viewport, or element PNG/JPEG/WebP screenshots (`page screenshot`) |
+| **Form automation** | Fill, clear, and submit form fields by UID or CSS selector (`form fill`) |
 | **JavaScript execution** | Run arbitrary JS in the page context (`js exec`) |
-| **Console monitoring** | Read and monitor browser console messages (`console read`) |
-| **Network monitoring** | Inspect and intercept requests and responses (`network list`) |
-| **Cookie management** | List, set, delete, and clear browser cookies (`cookie`) |
-| **Tab management** | List, create, close, and activate tabs (`tabs list`) |
+| **Console monitoring** | Read browser console messages (`console read`) |
+| **Network monitoring** | Inspect requests and responses (`network list`) |
+| **Cookie management** | List, set, delete, and clear browser cookies (`cookie list/set/delete/clear`) |
+| **Tab management** | List, create, close, and activate tabs (`tabs list/create/close/activate`) |
 | **Device emulation** | Simulate mobile viewports and network conditions (`emulate set`) |
 | **Performance tracing** | Capture Core Web Vitals (`perf vitals`) |
-| **Dialog handling** | Auto-accept or dismiss alerts and confirmations (`dialog`) |
-| **Skill management** | Install agentchrome skill files for AI coding tools (`skill install`) |
-| **Configuration** | Manage connection config via TOML config file (`config show`, `config init`, `config path`) |
+| **Dialog handling** | Inspect and dismiss alerts, confirms, prompts (`dialog info/accept/dismiss`) |
+| **Skill management** | Install agentchrome skill files for AI coding tools (`skill install/list`) |
+| **Configuration** | Manage connection config via TOML config file (`config show/init/path`) |
 | **Capabilities manifest** | Output a machine-readable manifest of all CLI commands and flags (`capabilities`) |
 | **Man pages** | Display man pages for agentchrome commands (`man`) |
 | **Shell completions** | Generate shell completion scripts (`completions`) |
@@ -175,7 +173,7 @@ agentchrome connect --launch --headless
 # Check current connection status
 agentchrome connect --status
 
-# Navigate to a URL
+# Navigate to a URL (wait-until options: load, domcontentloaded, networkidle, none)
 agentchrome navigate https://example.com
 agentchrome navigate https://example.com --wait-until networkidle
 
@@ -188,8 +186,15 @@ agentchrome dom get-html "css:html"
 # Take a full-page screenshot
 agentchrome page screenshot --full-page --file screenshot.png
 
+# Take a screenshot of a specific element by UID
+agentchrome page screenshot --uid s3 --file element.png
+
 # Get accessibility tree (assigns UIDs to elements, e.g. s1, s2, s3)
 agentchrome page snapshot
+
+# Find elements by text or selector
+agentchrome page find "Sign in"
+agentchrome page find --selector "button.submit"
 
 # Interact with an element (requires UID from page snapshot)
 agentchrome interact click s5
@@ -204,11 +209,20 @@ agentchrome js exec "document.title"
 # List all open tabs
 agentchrome tabs list
 
+# Create a new tab
+agentchrome tabs create https://example.com
+
 # Read browser console output
 agentchrome console read
 
 # List recent network requests
 agentchrome network list
+
+# List cookies for current page
+agentchrome cookie list
+
+# Set a cookie
+agentchrome cookie set session_id abc123 --domain example.com
 
 # Capture Core Web Vitals
 agentchrome perf vitals
@@ -218,6 +232,9 @@ agentchrome examples
 
 # Install the agentchrome skill for the current AI coding tool
 agentchrome skill install
+
+# List supported AI tools and installation status
+agentchrome skill list
 
 # Output machine-readable manifest of all commands and flags
 agentchrome capabilities
@@ -237,7 +254,7 @@ The binary is not on your `PATH`. Either install via `cargo install agentchrome`
 
 ### Chrome not found
 
-AgentChrome looks for Chrome or Chromium in standard installation paths. If you use a non-standard location, pass `--chrome-path /path/to/chrome` to `agentchrome connect --launch`, use `--channel` to target a specific release channel (stable, beta, dev, canary), or set `chrome_path` in the TOML config file (`agentchrome config init` to create one, `agentchrome config show` to inspect).
+AgentChrome looks for Chrome or Chromium in standard installation paths. If you use a non-standard location, pass `--chrome-path /path/to/chrome` to `agentchrome connect --launch`, or use `--channel` to target a specific release channel (`stable`, `beta`, `dev`, `canary`). You can also set `chrome_path` in the TOML config file (`agentchrome config init` to create one, `agentchrome config show` to inspect).
 
 ### Falls back to curl in the research agent
 

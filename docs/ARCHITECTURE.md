@@ -355,7 +355,7 @@ Fires before Claude Code compacts the conversation context. Snapshots the curren
 Fires after Claude Code compacts the conversation context. Restores the pre-compaction working state so Claude can resume the session without manually re-reading files.
 
 **Behavior:**
-1. Reads today's daily note (`Daily/YYYY-MM/DD.md`)
+1. Reads today's daily note (`Daily/YYYY-MM/DD-{username}.md`)
 2. Scans backwards for the most recent `## Pre-Compact Snapshot` section written by `pre_compact_hook.py`
 3. Returns the snapshot content as `additionalContext` in the hook output
 4. If no snapshot is found (e.g. first compact of a session), returns an empty context gracefully
@@ -622,7 +622,7 @@ The shared utility library used by all hook scripts and the index generator. Use
 | `build_context_block()` | Assemble notes into a character-budgeted context string (verbose mode) |
 | `get_project_name()` | Derive project name from cwd or git root |
 | `ensure_vault_dirs()` | Create missing vault directories and Templates symlink |
-| `today_daily_path()` | Return the `Daily/YYYY-MM/DD.md` path for today |
+| `today_daily_path()` | Return the `Daily/YYYY-MM/DD-{username}.md` path for today |
 | `create_daily_note_if_missing()` | Create today's daily note from template |
 | `slugify()` | Convert text to kebab-case filename |
 | `all_vault_notes()` | Return all `.md` files in the vault (excluding `EXCLUDE_DIRS`) |
@@ -1014,7 +1014,7 @@ defaults:            # Centralized model IDs; all scripts fall back to these
 embeddings:          # build_embeddings.py, vault_search.py
   enabled: true                    # Set false to disable embedding builds and note_index writes
   model: BAAI/bge-small-en-v1.5   # ~67 MB ONNX model, cached after first run
-  min_score: 0.35                  # Minimum cosine similarity for search results
+  min_score: 0.45                  # Minimum cosine similarity for search results
   top_k: 10                        # Default result count for vault_search.py
 
 git:
@@ -1027,6 +1027,9 @@ event_log:           # all hooks — structured JSON event log
 adaptive_context:    # session_start_hook.py — derank notes never referenced by Claude
   enabled: false     # Track per-note usefulness; derank unreferenced notes over time
   decay_days: 30     # Days without reference before score decays
+
+vault:               # Vault identity — used for per-user daily note filenames (team vault sharing)
+  username: ""       # Username suffix for daily notes (DD-{username}.md). Defaults to $USER if blank.
 ```
 
 **Model defaults:** Hook scripts (`session_start_hook.py`, `session_stop_hook.py`) default to `claude-haiku-4-5-20251001` when AI mode is enabled. The summarizer defaults to `claude-sonnet-4-6`. Override any model via the corresponding config key or CLI flag. Setting `ai_model` to a model ID in config enables AI mode without needing the `--ai` CLI flag. The `defaults.haiku_model` and `defaults.sonnet_model` keys provide a centralized place to change model IDs across all scripts at once.
@@ -1238,7 +1241,7 @@ parsidion-cc/
 ├── embeddings.db                    # SQLite: note_embeddings (vectors) + note_index (metadata)
 ├── Daily/
 │   ├── MANIFEST.md                  # Auto-generated folder index (rebuilt by update_index.py)
-│   └── YYYY-MM/DD.md                # e.g. 2026-03/13.md
+│   └── YYYY-MM/DD-{username}.md    # e.g. 2026-03/23-probello.md
 ├── Projects/
 │   └── MANIFEST.md
 ├── Languages/

@@ -2,6 +2,13 @@
 
 Navigation guide for all documentation in the `docs/` directory.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Documents](#documents)
+- [Where to Start](#where-to-start)
+- [Related Documentation](#related-documentation)
+
 ## Overview
 
 This directory contains technical documentation for Parsidion CC. Each file is described
@@ -20,7 +27,7 @@ below with its intended audience and purpose.
 | [VISUALIZER.md](VISUALIZER.md) | Vault Visualizer: interactive web app for reading and graph-exploring vault notes — architecture, graph engine, data model, and configuration. |
 | [VAULT_SYNC.md](VAULT_SYNC.md) | Multi-machine vault sync: strategies, recommended git-based setup, post-merge hook, conflict handling, and troubleshooting. |
 | [DOCUMENTATION_STYLE_GUIDE.md](DOCUMENTATION_STYLE_GUIDE.md) | Documentation standards for this project: formatting, diagrams, code block conventions, and the review checklist. |
-| [superpowers/](superpowers/) | Implementation plans and design specs for major features (vault-explorer agent, subagent stop hook, parsidion-mcp, visualizer redesign). |
+| [superpowers/](superpowers/) | Implementation plans and design specs for major features (vault-explorer agent, subagent stop hook, parsidion-mcp, visualizer redesign, git diff viewer). |
 
 ## Where to Start
 

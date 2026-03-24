@@ -3,6 +3,9 @@
 Share a single ClaudeVault across multiple machines so that debugging solutions,
 patterns, and project context are available everywhere you work.
 
+This guide covers the recommended git-based sync strategy, post-merge automation,
+team vault configuration, and troubleshooting common sync issues.
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -11,6 +14,7 @@ patterns, and project context are available everywhere you work.
 - [What Gets Synced](#what-gets-synced)
 - [Post-Merge Hook](#post-merge-hook)
 - [Architecture](#architecture)
+- [Team Vault (Multiple Users)](#team-vault-multiple-users)
 - [Handling Conflicts](#handling-conflicts)
 - [Troubleshooting](#troubleshooting)
 - [Related Documentation](#related-documentation)

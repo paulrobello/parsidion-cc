@@ -209,14 +209,28 @@ mcpl config files --reset       # Clear saved preferences; re-prompts on next ru
 
 ### Environment Variables
 
+#### Connection Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCPL_CONNECTION_TIMEOUT` | `45` | MCP server connection/initialization timeout (seconds) |
+| `MCPL_RECONNECT_DELAY` | `5` | Delay before retrying a failed server connection (seconds) |
+| `MCPL_MAX_RECONNECT_ATTEMPTS` | `3` | Max reconnection attempts before giving up |
+
+#### Daemon Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCPL_DAEMON_START_TIMEOUT` | `30` | Max time to wait for daemon startup (seconds) |
+| `MCPL_DAEMON_CONNECT_RETRY_DELAY` | `0.2` | Delay between connection attempts to daemon (seconds) |
+| `MCPL_PARENT_CHECK_INTERVAL` | `5` | How often daemon checks if parent process is alive (seconds) |
+
+#### IDE/Session Settings
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MCPL_CONFIG_FILES` | (auto-discover) | Comma-separated list of config file paths |
-| `MCPL_CONNECTION_TIMEOUT` | `45` | Server connection/initialization timeout (seconds) |
-| `MCPL_RECONNECT_DELAY` | `5` | Delay before retrying a failed server connection (seconds) |
-| `MCPL_MAX_RECONNECT_ATTEMPTS` | `3` | Max reconnection attempts before giving up |
 | `MCPL_IDLE_TIMEOUT` | `3600` | Daemon idle shutdown timeout (seconds; `0` disables) |
-| `MCPL_DAEMON_START_TIMEOUT` | `30` | Max time to wait for daemon startup (seconds) |
 | `MCPL_SESSION_ID` | (auto) | Override session ID for multi-session setups |
 | `MCPL_IDE_ANCHOR_CHECK_INTERVAL` | `10` | How often to check if IDE session is alive (seconds) |
 
