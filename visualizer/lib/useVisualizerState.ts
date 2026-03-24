@@ -171,6 +171,7 @@ export function useVisualizerState(graphData: GraphData | null) {
     stem: string,
     content: string,
     lastModified?: number,
+    notePath?: string,
   ): Promise<{ conflict: true; serverContent: string } | { ok: true }> => {
     const res = await fetch('/api/note', {
       method: 'POST',
@@ -182,14 +183,16 @@ export function useVisualizerState(graphData: GraphData | null) {
     if (data.conflict && data.serverContent) {
       return { conflict: true, serverContent: data.serverContent }
     }
-    // Only cache on successful save
+    // Cache under both stem and path so fetches always hit
     contentCache.current.set(stem, content)
+    if (notePath) contentCache.current.set(notePath, content)
     return { ok: true }
   }, [])
 
   // --- Invalidate cached note (called when vault watcher detects external edit) ---
-  const invalidateNote = useCallback((stem: string): void => {
+  const invalidateNote = useCallback((stem: string, notePath?: string): void => {
     contentCache.current.delete(stem)
+    if (notePath) contentCache.current.delete(notePath)
   }, [])
 
   // --- Delete note ---

@@ -7,6 +7,7 @@ import type { GraphData, NoteNode } from '@/lib/graph'
 import type { GraphCanvasHandle } from '@/components/GraphCanvas'
 import { useVisualizerState } from '@/lib/useVisualizerState'
 import { useVaultFiles } from '@/lib/useVaultFiles'
+import type { VaultFile } from '@/lib/vaultFile'
 import { FileExplorer } from '@/components/FileExplorer'
 import { Toolbar } from '@/components/Toolbar'
 import { ReadingPane } from '@/components/ReadingPane'
@@ -37,6 +38,9 @@ export default function Home() {
   const [showNewNote, setShowNewNote] = useState(false)
   const [pendingOpenStem, setPendingOpenStem] = useState<string | null>(null)
   const [noteRefreshTrigger, setNoteRefreshTrigger] = useState(0)
+  // Tracks the explicit vault-relative path last selected from the sidebar.
+  // Needed when multiple notes share the same stem (e.g. MANIFEST.md in every folder).
+  const [selectedVaultPath, setSelectedVaultPath] = useState<string | null>(null)
 
   useEffect(() => {
     localStorage.removeItem('vv:isLayoutRunning')
@@ -54,7 +58,7 @@ export default function Home() {
 
   const handleNoteModified = useCallback((notePath: string) => {
     const stem = notePath.replace(/\.md$/, '').split('/').pop() ?? notePath
-    state.invalidateNote(stem)
+    state.invalidateNote(stem, notePath)
     if (stem === state.activeTab) {
       setNoteRefreshTrigger(n => n + 1)
     }
@@ -85,11 +89,24 @@ export default function Home() {
     return map
   }, [fileTree])
 
-  // Synthesize a minimal NoteNode for notes that exist in the vault but not in graph.json
+  // Flat path→VaultFile lookup (complement to stem-keyed vaultFileMap)
+  const vaultFileByPath = useMemo(() => {
+    const map = new Map<string, VaultFile>()
+    for (const [, subMap] of fileTree)
+      for (const [, files] of subMap)
+        for (const f of files) map.set(f.path, f)
+    return map
+  }, [fileTree])
+
+  // Synthesize a minimal NoteNode for notes that exist in the vault but not in graph.json.
+  // Prefer selectedVaultPath for disambiguation when multiple files share the same stem.
   const activeNode: NoteNode | null = useMemo(() => {
     if (state.activeNode) return state.activeNode
     if (!state.activeTab) return null
-    const vf = vaultFileMap.get(state.activeTab)
+    // Use explicit path if it belongs to the active stem, else fall back to stem lookup
+    const vf = (selectedVaultPath && vaultFileByPath.get(selectedVaultPath)?.stem === state.activeTab)
+      ? vaultFileByPath.get(selectedVaultPath)!
+      : vaultFileMap.get(state.activeTab)
     if (!vf) return null
     const parts = vf.path.replace(/\.md$/, '').split('/')
     return {
@@ -102,7 +119,7 @@ export default function Home() {
       incoming_links: 0,
       mtime: 0,
     }
-  }, [state.activeNode, state.activeTab, vaultFileMap])
+  }, [state.activeNode, state.activeTab, vaultFileMap, vaultFileByPath, selectedVaultPath])
 
   // Auto-collapse sidebar on narrow viewports
   useEffect(() => {
@@ -233,7 +250,9 @@ export default function Home() {
               fileTree={fileTree}
               activeTab={state.activeTab}
               activePath={activeNode?.path ?? null}
-              onSelectNote={(stem, newTab) => {
+              onSelectNote={(stem, newTab, path) => {
+                // Capture the explicit path so same-stem notes in different folders resolve correctly
+                if (path) setSelectedVaultPath(path)
                 state.openNote(stem, newTab)
                 if (state.viewMode === 'graph') {
                   graphCanvasRef.current?.flyToNode(stem)

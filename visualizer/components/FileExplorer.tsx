@@ -10,7 +10,7 @@ interface Props {
   activeTab: string | null
   /** Vault-relative path of the active note — used for highlighting when stems collide */
   activePath: string | null
-  onSelectNote: (stem: string, newTab: boolean) => void
+  onSelectNote: (stem: string, newTab: boolean, path?: string) => void
   onOpenHistory: (stem: string) => void
   onDeleteNote?: (stem: string) => void
   width: number
@@ -256,12 +256,12 @@ function NoteItem({ file, isActive, indent, onSelect, onContextMenu }: {
   file: VaultFile
   isActive: boolean
   indent: number
-  onSelect: (stem: string, newTab: boolean) => void
+  onSelect: (stem: string, newTab: boolean, path: string) => void
   onContextMenu: (stem: string, x: number, y: number) => void
 }) {
   return (
     <div
-      onClick={(e) => onSelect(file.stem, e.metaKey || e.ctrlKey)}
+      onClick={(e) => onSelect(file.stem, e.metaKey || e.ctrlKey, file.path)}
       onContextMenu={(e) => {
         e.preventDefault()
         onContextMenu(file.stem, e.clientX, e.clientY)
