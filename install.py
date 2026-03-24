@@ -307,7 +307,9 @@ def patch_vault_common(
     templates_repr = f'Path(r"{templates_dir}")'
 
     new_content = _VAULT_ROOT_RE.sub(lambda m: m.group(1) + vault_repr, content)
-    new_content = _TEMPLATES_DIR_RE.sub(lambda m: m.group(1) + templates_repr, new_content)
+    new_content = _TEMPLATES_DIR_RE.sub(
+        lambda m: m.group(1) + templates_repr, new_content
+    )
 
     if new_content == content:
         _print(
@@ -745,8 +747,7 @@ def create_templates_symlink(
             try:
                 link.symlink_to(templates_src)
             except OSError:
-                import shutil
-                shutil.copytree(templates_src, link)
+                shutil.copytree(templates_src, link, dirs_exist_ok=True)
     elif link.exists():
         # It's a real directory — only replace if empty
         try:
@@ -763,8 +764,7 @@ def create_templates_symlink(
                 try:
                     link.symlink_to(templates_src)
                 except OSError:
-                    import shutil
-                    shutil.copytree(templates_src, link)
+                    shutil.copytree(templates_src, link, dirs_exist_ok=True)
         else:
             _warn("Templates/ exists and is non-empty; skipping symlink creation")
     else:
@@ -773,8 +773,7 @@ def create_templates_symlink(
             try:
                 link.symlink_to(templates_src)
             except OSError:
-                import shutil
-                shutil.copytree(templates_src, link)
+                shutil.copytree(templates_src, link, dirs_exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1585,7 +1584,9 @@ def install(args: argparse.Namespace) -> int:
     # --- Vault username prompt ---
     import os as _os_import
 
-    _detected_user = _os_import.environ.get("USER", _os_import.environ.get("USERNAME", ""))
+    _detected_user = _os_import.environ.get(
+        "USER", _os_import.environ.get("USERNAME", "")
+    )
     vault_username: str = args.vault_username
     if not args.yes and not vault_username:
         print()
