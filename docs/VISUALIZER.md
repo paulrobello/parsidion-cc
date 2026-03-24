@@ -14,6 +14,7 @@ An interactive web application for exploring and navigating a ClaudeVault knowle
   - [Unified Search](#unified-search)
   - [Keyboard Shortcuts](#keyboard-shortcuts)
   - [Real-Time Vault Sync](#real-time-vault-sync)
+  - [Multi-Vault Support](#multi-vault-support)
 - [Running the Visualizer](#running-the-visualizer)
 - [Building Graph Data](#building-graph-data)
 - [Data Model](#data-model)
@@ -406,6 +407,57 @@ The visualizer maintains a WebSocket connection to the server for live vault upd
 - If a note is modified externally while you are editing it, a warning appears
 - Saving triggers conflict detection to prevent data loss
 
+### Multi-Vault Support
+
+The visualizer supports multiple isolated vaults, allowing you to switch between work, personal, or project-specific knowledge bases.
+
+**Setup**
+
+Create a vaults configuration file at `~/.config/parsidion-cc/vaults.yaml`:
+
+```yaml
+vaults:
+  work: ~/WorkVault
+  personal: ~/PersonalVault
+  team: ~/shared/team-vault
+```
+
+**Vault Selector**
+
+- Dropdown in the toolbar (left of WebSocket status indicator)
+- Shows all configured vaults plus "default"
+- Persists selection to localStorage (`vv:selectedVault`)
+- Switching vaults clears the content cache and resets tabs
+
+**Vault-Aware Components**
+
+| Component | Behavior |
+|-----------|----------|
+| FileExplorer | Re-fetches file list from `/api/files?vault=name` |
+| ReadingPane | Loads notes via `/api/note?vault=name&stem=...` |
+| GraphCanvas | Graph data is vault-specific (separate `graph.json` per vault) |
+| WebSocket | Reconnects to `/ws/vault?vault=name` on switch |
+
+**API Endpoints**
+
+All API routes accept an optional `vault` query parameter:
+
+| Endpoint | Vault Parameter |
+|----------|-----------------|
+| `GET /api/files?vault=<name>` | List files in specified vault |
+| `GET /api/note?vault=<name>&stem=<stem>` | Read note from vault |
+| `POST /api/note?vault=<name>` | Save note to vault |
+| `GET /api/note/history?vault=<name>&stem=<stem>` | Git history for vault |
+| `GET /api/note/diff?vault=<name>&...` | Git diff in vault |
+| `POST /api/graph/rebuild?vault=<name>` | Rebuild vault's graph.json |
+| `GET /api/vaults` | List available vaults |
+
+**Fallback Behavior**
+
+When no `vaults.yaml` exists or only one vault is configured:
+- Vault selector is hidden in the toolbar
+- All operations use the default vault (`~/ClaudeVault` or `VAULT_ROOT`)
+
 ## Running the Visualizer
 
 ### Development
@@ -607,6 +659,13 @@ Both history routes path-traverse-protect with `guardPath()` (same pattern as `/
 
 All application state is managed by the `useVisualizerState` hook (`lib/useVisualizerState.ts`) and the `useVaultFiles` hook (`lib/useVaultFiles.ts`). State is split into categories:
 
+**Vault State**
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `selectedVault` | `string \| null` | Currently selected vault name (null = default) |
+| `setSelectedVault(vault)` | callback | Switch vaults (clears cache and tabs on change) |
+
 **Tab / View State**
 
 | Key | Type | Description |
@@ -748,7 +807,7 @@ All graph controls and UI layout are persisted to `localStorage` using the `vv:`
 ```
 parsidion-cc/
 ├── visualizer/                       # Next.js app root
-│   ├── server.ts                     # Custom server: Next.js + WebSocket + chokidar
+│   ├── server.ts                     # Custom server: Next.js + WebSocket + chokidar (multi-vault)
 │   ├── app/
 │   │   ├── page.tsx                  # Main layout and state wiring
 │   │   ├── layout.tsx                # HTML head, global styles
@@ -756,6 +815,7 @@ parsidion-cc/
 │   │   ├── api/note/history/route.ts # Git log for a note (GET)
 │   │   ├── api/note/diff/route.ts    # Git diff between two commits (GET)
 │   │   ├── api/files/route.ts        # Vault file tree (GET)
+│   │   ├── api/vaults/route.ts       # List available vaults (GET)
 │   │   └── api/graph/rebuild/route.ts  # Trigger graph.json rebuild (POST)
 │   ├── components/
 │   │   ├── GraphCanvas.tsx           # Sigma.js WebGL renderer + node right-click menu
@@ -765,7 +825,8 @@ parsidion-cc/
 │   │   ├── HistoryView.tsx           # Split-screen git history viewer
 │   │   ├── CommitList.tsx            # Scrollable commit list with FROM/TO selection
 │   │   ├── DiffViewer.tsx            # Diff renderer (unified / split / words modes)
-│   │   ├── Toolbar.tsx               # Top bar with hamburger + tabs + WS status dot
+│   │   ├── Toolbar.tsx               # Top bar with tabs + vault selector + WS status
+│   │   ├── VaultSelector.tsx         # Multi-vault dropdown switcher
 │   │   ├── TabBar.tsx                # Scrollable tab strip
 │   │   ├── UnifiedSearch.tsx         # ⌘K search input + dropdown
 │   │   ├── ViewToggle.tsx            # Read/Graph mode toggle button
@@ -776,9 +837,10 @@ parsidion-cc/
 │   │   └── FrontmatterEditor.tsx    # Structured YAML frontmatter editor
 │   ├── lib/
 │   │   ├── graph.ts                  # Data types and fetch helpers
-│   │   ├── useVisualizerState.ts     # Central state management hook (incl. history mode)
+│   │   ├── useVisualizerState.ts     # Central state management hook (incl. vault + history)
 │   │   ├── useVaultFiles.ts          # WebSocket hook for real-time vault sync
 │   │   ├── vaultFile.ts              # VaultFile type (shared client/server)
+│   │   ├── vaultResolver.ts          # Multi-vault path resolution (server-side)
 │   │   ├── vaultBroadcast.server.ts  # Global EventEmitter for server-side events
 │   │   ├── parseDiff.ts              # Client-side unified diff parser (DiffHunk, DiffLine)
 │   │   ├── sigma-colors.ts           # Note type → color mapping
