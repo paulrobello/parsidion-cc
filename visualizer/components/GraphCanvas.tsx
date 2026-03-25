@@ -1021,6 +1021,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
                     pathNodesRef.current = new Set()
                     pathEdgesRef.current = new Set()
                     showToast('No wiki-link path found')
+                    sigmaRef.current?.refresh()
+                    return // keep pathSourceRef set so user can pick a different destination
                   }
                   pathSourceRef.current = null
                   sigmaRef.current?.refresh()

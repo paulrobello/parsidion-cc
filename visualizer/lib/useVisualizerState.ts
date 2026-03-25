@@ -440,7 +440,7 @@ export function useVisualizerState(graphData: GraphData | null) {
     const degrees = [...degree.values()]
     const total = degrees.reduce((s, d) => s + d, 0)
     const avgDegree = n > 0 ? total / n : 0
-    const maxDegree = n > 0 ? Math.max(...degrees) : 0
+    const maxDegree = n > 0 ? degrees.reduce((m, d) => (d > m ? d : m), 0) : 0
     const density = n > 1 ? wikiEdgeCount / (n * (n - 1) / 2) : 0
 
     // Top 5 hubs
