@@ -67,6 +67,55 @@ function pruneEdges(edges: GraphEdge[], k: number): GraphEdge[] {
   return edges.filter(e => kept.has(e))
 }
 
+function findWikiPath(
+  from: string,
+  to: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  graph: any
+): { path: string[]; edgeIds: string[] } | null {
+  const adj = new Map<string, Array<{ neighbor: string; edgeId: string }>>()
+  ;(graph.nodes() as string[]).forEach((n: string) => adj.set(n, []))
+  ;(graph.edges() as string[]).forEach((e: string) => {
+    if (graph.getEdgeAttribute(e, 'kind') !== 'wiki') return
+    if (graph.getEdgeAttribute(e, 'overlay')) return
+    const src = graph.source(e) as string
+    const tgt = graph.target(e) as string
+    adj.get(src)?.push({ neighbor: tgt, edgeId: e })
+    adj.get(tgt)?.push({ neighbor: src, edgeId: e })
+  })
+
+  const parent = new Map<string, { from: string; edgeId: string }>()
+  const visited = new Set<string>([from])
+  const queue = [from]
+  let found = false
+
+  while (queue.length > 0 && !found) {
+    const curr = queue.shift()!
+    for (const { neighbor, edgeId } of (adj.get(curr) ?? [])) {
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor)
+        parent.set(neighbor, { from: curr, edgeId })
+        if (neighbor === to) { found = true; break }
+        queue.push(neighbor)
+      }
+    }
+  }
+
+  if (!found) return null
+
+  const path: string[] = []
+  const edgeIds: string[] = []
+  let curr = to
+  while (curr !== from) {
+    path.unshift(curr)
+    const p = parent.get(curr)!
+    edgeIds.unshift(p.edgeId)
+    curr = p.from
+  }
+  path.unshift(from)
+  return { path, edgeIds }
+}
+
 export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCanvas(
   {
     data, threshold, graphSource, activeTypes, showDaily, hideIsolated, labelsOnHoverOnly, showOverlayEdges, filterNodesBySimilarity, edgeColorMode, edgePruning, edgePruningK, nodeSizeMode, nodeSizeMap, selectedNode,
@@ -120,6 +169,12 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
 
   const [nodeContextMenu, setNodeContextMenu] = useState<{ stem: string; x: number; y: number } | null>(null)
 
+  const pathSourceRef = useRef<string | null>(null)
+  const pathNodesRef = useRef<Set<string>>(new Set())
+  const pathEdgesRef = useRef<Set<string>>(new Set())
+  const [toastMsg, setToastMsg] = useState<string | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // Compute neighborhood BFS when in local mode.
   // Uses wiki edges only — semantic edges are too dense (19K+) and would
   // reach ~70% of the graph in 2 hops, defeating the purpose of local view.
@@ -157,6 +212,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
 
   const neighborhoodRef = useRef(neighborhoodInfo)
   useEffect(() => { neighborhoodRef.current = neighborhoodInfo }, [neighborhoodInfo])
+
+  const showToast = useCallback((msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setToastMsg(msg)
+    toastTimerRef.current = setTimeout(() => setToastMsg(null), 4000)
+  }, [])
+
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current) }
+  }, [])
 
   useEffect(() => {
     sigmaRef.current?.refresh()
@@ -468,6 +533,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const nodeReducer = (node: string, data: any) => {
+        const pn = pathNodesRef.current
+        if (pn.size > 0 && pn.has(node)) {
+          const showLabel = labelsOnHoverOnlyRef.current ? node === hoveredNodeRef.current : true
+          return { ...data, color: '#FFD700', zIndex: 10, label: showLabel ? data.label : '' }
+        }
+        if (pathSourceRef.current === node) {
+          return { ...data, color: '#FFD700', zIndex: 5 }
+        }
         const nh = neighborhoodRef.current
         if (nh && !nh.nodes.has(node)) {
           return { ...data, hidden: true, label: '' }
@@ -507,6 +580,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const edgeReducer = (edge: string, data: any) => {
+        const pe = pathEdgesRef.current
+        if (pe.size > 0 && pe.has(edge)) {
+          return { ...data, color: '#FFD700', size: 3, hidden: false }
+        }
         const nh = neighborhoodRef.current
         if (nh) {
           const src = graph.source(edge)
@@ -643,6 +720,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       sigma.on('clickStage', () => {
         onBackgroundClick()
         setNodeContextMenu(null)
+        pathSourceRef.current = null
+        pathNodesRef.current = new Set()
+        pathEdgesRef.current = new Set()
         highlightedNodesRef.current = new Set()
         highlightedEdgesRef.current = new Set()
         sigma.refresh()
@@ -832,6 +912,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       isDraggingRef.current = false
       draggedNodeRef.current = null
       dragPositionRef.current = null
+      pathSourceRef.current = null
+      pathNodesRef.current = new Set()
+      pathEdgesRef.current = new Set()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
@@ -886,34 +969,115 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
         ref={containerRef}
         style={{ width: '100%', height: '100%', background: 'transparent' }}
       />
-      {nodeContextMenu && (
-        <div
-          style={{
-            position: 'fixed', left: nodeContextMenu.x, top: nodeContextMenu.y,
-            background: '#0a0e1a', border: '1px solid #1a2040', borderRadius: 4,
-            zIndex: 1000, minWidth: 160, boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
-            fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
-          }}
-          onClick={e => e.stopPropagation()}
-        >
+      {nodeContextMenu && (() => {
+        // Capture ref value once per render — prevents stale comparisons in JSX conditionals
+        const pathSource = pathSourceRef.current
+        return (
           <div
-            style={{ padding: '6px 12px', cursor: 'pointer', color: '#ccc' }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            onClick={() => { onNodeClick(nodeContextMenu.stem, false); setNodeContextMenu(null) }}
+            style={{
+              position: 'fixed', left: nodeContextMenu.x, top: nodeContextMenu.y,
+              background: '#0a0e1a', border: '1px solid #1a2040', borderRadius: 4,
+              zIndex: 1000, minWidth: 160, boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+            }}
+            onClick={e => e.stopPropagation()}
           >
-            Open in Reading Pane
-          </div>
-          {onOpenHistory && (
             <div
-              style={{ padding: '6px 12px', cursor: 'pointer', color: '#00FFC8' }}
+              style={{ padding: '6px 12px', cursor: 'pointer', color: '#ccc' }}
               onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-              onClick={() => { onOpenHistory(nodeContextMenu.stem); setNodeContextMenu(null) }}
+              onClick={() => { onNodeClick(nodeContextMenu.stem, false); setNodeContextMenu(null) }}
             >
-              View History
+              Open in Reading Pane
             </div>
-          )}
+            {onOpenHistory && (
+              <div
+                style={{ padding: '6px 12px', cursor: 'pointer', color: '#00FFC8' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                onClick={() => { onOpenHistory!(nodeContextMenu.stem); setNodeContextMenu(null) }}
+              >
+                View History
+              </div>
+            )}
+            {/* Path finder */}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '2px 0' }} />
+            {pathSource && pathSource !== nodeContextMenu.stem && (
+              <div
+                style={{ padding: '6px 12px', cursor: 'pointer', color: '#FFD700' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                onClick={() => {
+                  const result = findWikiPath(pathSourceRef.current!, nodeContextMenu.stem, graphRef.current)
+                  setNodeContextMenu(null)
+                  if (result) {
+                    pathNodesRef.current = new Set(result.path)
+                    pathEdgesRef.current = new Set(result.edgeIds)
+                    const d = dataRef.current
+                    const titleMap = new Map(d?.nodes.map(n => [n.id, n.title]) ?? [])
+                    const breadcrumb = result.path.map(id => titleMap.get(id) ?? id).join(' → ')
+                    showToast(breadcrumb)
+                  } else {
+                    pathNodesRef.current = new Set()
+                    pathEdgesRef.current = new Set()
+                    showToast('No wiki-link path found')
+                  }
+                  pathSourceRef.current = null
+                  sigmaRef.current?.refresh()
+                }}
+              >
+                ⚡ Find Path Here
+              </div>
+            )}
+            {pathSource === nodeContextMenu.stem ? (
+              <div
+                style={{ padding: '6px 12px', cursor: 'pointer', color: '#6B7A99' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                onClick={() => {
+                  pathSourceRef.current = null
+                  pathNodesRef.current = new Set()
+                  pathEdgesRef.current = new Set()
+                  setNodeContextMenu(null)
+                  sigmaRef.current?.refresh()
+                }}
+              >
+                ✕ Clear Path Origin
+              </div>
+            ) : (
+              <div
+                style={{ padding: '6px 12px', cursor: 'pointer', color: pathSource ? '#f59e0b' : '#6B7A99' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                onClick={() => {
+                  pathSourceRef.current = nodeContextMenu.stem
+                  pathNodesRef.current = new Set()
+                  pathEdgesRef.current = new Set()
+                  setNodeContextMenu(null)
+                  sigmaRef.current?.refresh()
+                }}
+              >
+                {pathSource
+                  ? `Origin: ${pathSource.slice(0, 18)}…`
+                  : '◎ Set Path Origin'}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+      {toastMsg && (
+        <div style={{
+          position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(6, 8, 18, 0.95)',
+          border: '1px solid rgba(255, 215, 0, 0.4)',
+          borderRadius: 6, padding: '8px 16px',
+          color: '#FFD700', fontSize: 11,
+          fontFamily: "'JetBrains Mono', monospace",
+          maxWidth: '80%', textAlign: 'center',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
+          zIndex: 500, pointerEvents: 'none',
+        }}>
+          {toastMsg}
         </div>
       )}
     </div>
