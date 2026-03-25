@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback, useMemo, useState, forwardRef, useImper
 import type { GraphData, GraphEdge, GraphSource } from '@/lib/graph'
 import { filterEdges } from '@/lib/graph'
 import { getNodeColor, getNodeSize, getSemanticEdgeColor } from '@/lib/sigma-colors'
-import type { EdgeColorMode } from '@/lib/sigma-colors'
+import type { EdgeColorMode, NodeSizeMode } from '@/lib/sigma-colors'
 
 export interface GraphCanvasHandle {
   flyToNode: (stem: string) => void
@@ -25,6 +25,8 @@ interface Props {
   edgeColorMode: EdgeColorMode
   edgePruning: boolean
   edgePruningK: number
+  nodeSizeMode: NodeSizeMode
+  nodeSizeMap: Map<string, number> | null
   selectedNode: string | null
   onNodeClick: (stem: string, newTab: boolean) => void
   onBackgroundClick: () => void
@@ -67,7 +69,7 @@ function pruneEdges(edges: GraphEdge[], k: number): GraphEdge[] {
 
 export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCanvas(
   {
-    data, threshold, graphSource, activeTypes, showDaily, hideIsolated, labelsOnHoverOnly, showOverlayEdges, filterNodesBySimilarity, edgeColorMode, edgePruning, edgePruningK, selectedNode,
+    data, threshold, graphSource, activeTypes, showDaily, hideIsolated, labelsOnHoverOnly, showOverlayEdges, filterNodesBySimilarity, edgeColorMode, edgePruning, edgePruningK, nodeSizeMode, nodeSizeMap, selectedNode,
     onNodeClick, onBackgroundClick, onOpenHistory,
     scalingRatio, gravity, slowDown, edgeWeightInfluence, startTemperature, stopThreshold, isLayoutRunning, onLayoutStop, onLayoutRestart,
     neighborhoodCenter, neighborhoodHops,
@@ -106,6 +108,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   const dataRef = useRef(data)
   const edgePruningRef = useRef(edgePruning)
   const edgePruningKRef = useRef(edgePruningK)
+  const nodeSizeModeRef = useRef(nodeSizeMode)
+  const nodeSizeMapRef = useRef(nodeSizeMap)
   const hoveredNodeRef = useRef<string | null>(null)
   const highlightedNodesRef = useRef<Set<string>>(new Set())
   const highlightedEdgesRef = useRef<Set<string>>(new Set())
@@ -266,6 +270,35 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   useEffect(() => { edgeColorModeRef.current = edgeColorMode }, [edgeColorMode])
   useEffect(() => { edgePruningRef.current = edgePruning }, [edgePruning])
   useEffect(() => { edgePruningKRef.current = edgePruningK }, [edgePruningK])
+  useEffect(() => { nodeSizeModeRef.current = nodeSizeMode }, [nodeSizeMode])
+  useEffect(() => { nodeSizeMapRef.current = nodeSizeMap }, [nodeSizeMap])
+
+  useEffect(() => {
+    const graph = graphRef.current
+    const sigma = sigmaRef.current
+    const d = dataRef.current
+    if (!graph || !sigma || !d) return
+    // Skip while betweenness is still computing — the computation effect will re-trigger this
+    if (nodeSizeMode === 'betweenness' && nodeSizeMap === null) return
+    const nodeDataMap = new Map(d.nodes.map(n => [n.id, n]))
+    ;(graph.nodes() as string[]).forEach((nodeId: string) => {
+      const nd = nodeDataMap.get(nodeId)
+      if (!nd) return
+      let size: number
+      if (nodeSizeMode === 'uniform') {
+        size = 4
+      } else if (nodeSizeMode === 'betweenness') {
+        size = nodeSizeMap?.get(nodeId) ?? getNodeSize(nd.incoming_links)
+      } else if (nodeSizeMode === 'recency') {
+        const ageDays = (Date.now() / 1000 - nd.mtime) / 86400
+        size = Math.max(2, 10 - Math.log(ageDays + 1) * 1.5)
+      } else {
+        size = getNodeSize(nd.incoming_links)
+      }
+      graph.setNodeAttribute(nodeId, 'size', size)
+    })
+    sigma.refresh()
+  }, [nodeSizeMode, nodeSizeMap])
 
   useEffect(() => {
     const graph = graphRef.current
@@ -377,10 +410,23 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
         }
 
         placed.set(node.id, { x, y })
+        const nsMode = nodeSizeModeRef.current
+        const nsMap = nodeSizeMapRef.current
+        let nodeSize: number
+        if (nsMode === 'uniform') {
+          nodeSize = 4
+        } else if (nsMode === 'betweenness' && nsMap) {
+          nodeSize = nsMap.get(node.id) ?? getNodeSize(node.incoming_links)
+        } else if (nsMode === 'recency') {
+          const ageDays = (Date.now() / 1000 - node.mtime) / 86400
+          nodeSize = Math.max(2, 10 - Math.log(ageDays + 1) * 1.5)
+        } else {
+          nodeSize = getNodeSize(node.incoming_links)
+        }
         graph.addNode(node.id, {
           label: node.title,
           color: getNodeColor(node.type),
-          size: getNodeSize(node.incoming_links),
+          size: nodeSize,
           x, y,
           nodeType: node.type,
           originalColor: getNodeColor(node.type),

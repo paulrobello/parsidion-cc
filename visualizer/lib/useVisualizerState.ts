@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { useLocalStorage } from '@/lib/useLocalStorage'
 import type { GraphData, GraphSource, NoteNode } from '@/lib/graph'
 import { filterEdges } from '@/lib/graph'
-import { TYPE_COLORS, EdgeColorMode } from '@/lib/sigma-colors'
+import { TYPE_COLORS, EdgeColorMode, NodeSizeMode } from '@/lib/sigma-colors'
 
 const SIM_DEFAULTS = {
   scalingRatio: 10,
@@ -20,6 +20,58 @@ const MAX_TABS = 20
 export interface TabInfo {
   stem: string
   node: NoteNode
+}
+
+function computeBetweenness(nodes: string[], wikiAdj: Map<string, string[]>): Map<string, number> {
+  const bc = new Map<string, number>()
+  for (const n of nodes) bc.set(n, 0)
+
+  for (const s of nodes) {
+    const stack: string[] = []
+    const pred = new Map<string, string[]>()
+    for (const n of nodes) pred.set(n, [])
+    const sigma = new Map<string, number>()
+    for (const n of nodes) sigma.set(n, 0)
+    sigma.set(s, 1)
+    const dist = new Map<string, number>()
+    for (const n of nodes) dist.set(n, -1)
+    dist.set(s, 0)
+    const queue: string[] = [s]
+
+    while (queue.length > 0) {
+      const v = queue.shift()!
+      stack.push(v)
+      for (const w of (wikiAdj.get(v) ?? [])) {
+        if (dist.get(w) === -1) {
+          queue.push(w)
+          dist.set(w, dist.get(v)! + 1)
+        }
+        if (dist.get(w) === dist.get(v)! + 1) {
+          sigma.set(w, sigma.get(w)! + sigma.get(v)!)
+          pred.get(w)!.push(v)
+        }
+      }
+    }
+
+    const delta = new Map<string, number>()
+    for (const n of nodes) delta.set(n, 0)
+    while (stack.length > 0) {
+      const w = stack.pop()!
+      for (const v of (pred.get(w) ?? [])) {
+        const ratio = (sigma.get(v)! / sigma.get(w)!) * (1 + delta.get(w)!)
+        delta.set(v, delta.get(v)! + ratio)
+      }
+      if (w !== s) bc.set(w, bc.get(w)! + delta.get(w)!)
+    }
+  }
+
+  // Normalize to [2, 14]
+  let maxVal = 0
+  for (const v of bc.values()) if (v > maxVal) maxVal = v
+  if (maxVal === 0) maxVal = 1
+  const result = new Map<string, number>()
+  for (const [id, val] of bc) result.set(id, 2 + (val / maxVal) * 12)
+  return result
 }
 
 export function useVisualizerState(graphData: GraphData | null) {
@@ -270,6 +322,41 @@ export function useVisualizerState(graphData: GraphData | null) {
   const [edgePruning, setEdgePruning] = useLocalStorage('vv:edgePruning', false)
   const [edgePruningK, setEdgePruningK] = useLocalStorage('vv:edgePruningK', 8)
   const toggleEdgePruning = useCallback(() => setEdgePruning(s => !s), [setEdgePruning])
+  const [nodeSizeMode, setNodeSizeMode] = useLocalStorage<NodeSizeMode>('vv:nodeSizeMode', 'incoming_links')
+  // null = not computed yet or non-betweenness mode; a Map = computed result
+  const [nodeSizeMap, setNodeSizeMap] = useState<Map<string, number> | null>(null)
+  // 'idle' | 'queued' (timer set, not started) | 'done'
+  const [nodeSizeStatus, setNodeSizeStatus] = useState<'idle' | 'queued' | 'done'>('idle')
+  const nodeSizeComputing = nodeSizeStatus === 'queued'
+
+  useEffect(() => {
+    if (nodeSizeMode !== 'betweenness' || !graphData) {
+      // Use functional updater to avoid synchronous setState-in-effect lint warning
+      // by deferring via the scheduler
+      const id = setTimeout(() => {
+        setNodeSizeMap(null)
+        setNodeSizeStatus('idle')
+      }, 0)
+      return () => clearTimeout(id)
+    }
+    // Mark as queued immediately (shows "Computing…")
+    const idStatus = setTimeout(() => setNodeSizeStatus('queued'), 0)
+    // Defer heavy computation to next tick so "Computing…" renders first
+    const id = setTimeout(() => {
+      const nodes = graphData.nodes.map(n => n.id)
+      const adj = new Map<string, string[]>()
+      for (const n of nodes) adj.set(n, [])
+      for (const e of graphData.edges) {
+        if (e.kind !== 'wiki') continue
+        adj.get(e.s)?.push(e.t)
+        adj.get(e.t)?.push(e.s)
+      }
+      const result = computeBetweenness(nodes, adj)
+      setNodeSizeMap(result)
+      setNodeSizeStatus('done')
+    }, 50)
+    return () => { clearTimeout(idStatus); clearTimeout(id) }
+  }, [nodeSizeMode, graphData])
 
   const handleToggleType = useCallback((type: string) => {
     setActiveTypes(prev => {
@@ -348,6 +435,9 @@ export function useVisualizerState(graphData: GraphData | null) {
     selectedNode, setSelectedNode,
     edgeColorMode, setEdgeColorMode,
     edgePruning, toggleEdgePruning, edgePruningK, setEdgePruningK,
+    nodeSizeMode, setNodeSizeMode,
+    nodeSizeMap,
+    nodeSizeComputing,
     resetSimSettings,
     stats,
     SIM_DEFAULTS,
