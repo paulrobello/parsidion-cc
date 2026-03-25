@@ -16,3 +16,24 @@ export function getNodeColor(type: string): string {
 export function getNodeSize(incomingLinks: number): number {
   return Math.max(2, Math.log(incomingLinks + 1) * 2)
 }
+
+export type EdgeColorMode = 'binary' | 'gradient'
+export type NodeSizeMode = 'uniform' | 'incoming_links' | 'betweenness' | 'recency'
+
+/**
+ * Returns the color for an edge.
+ * Wiki edges always use binary coloring regardless of mode.
+ * Semantic edges: binary = opacity-based gray, gradient = blue→red by weight.
+ */
+export function getSemanticEdgeColor(
+  weight: number,
+  kind: 'wiki' | 'semantic',
+  mode: EdgeColorMode
+): string {
+  if (kind === 'wiki') return 'rgba(123,97,255,0.35)'
+  if (mode === 'binary') return `rgba(150,150,160,${Math.min(0.45, weight * 0.5)})`
+  // gradient: HSL blue (220°) → red (0°) for weight in [0.7, 1.0]
+  const t = Math.max(0, Math.min(1, (weight - 0.7) / 0.3))
+  const hue = Math.round(220 * (1 - t))
+  return `hsl(${hue}, 80%, 55%)`
+}
