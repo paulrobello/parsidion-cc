@@ -17,7 +17,6 @@ least 30000ms to allow time for the AI call to complete.
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import time
@@ -25,15 +24,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-# These scripts are not a proper package — sys.path.insert is intentional so
-# each script can run standalone via ``uv run`` or ``python`` without requiring
-# pip install or editable installs.  See ARC-009 in AUDIT.md.
-# SEC-011: SHADOWING RISK — a ``vault_common.py`` in the process cwd at hook
-# invocation time would shadow the real module.  Accepted risk under the
-# stdlib-only constraint; proper packaging would eliminate it.
-sys.path.insert(0, str(Path(__file__).parent))
-
-import vault_common  # noqa: E402
+import vault_common
 
 _DEFAULT_AI_MODEL: str = vault_common.get_config(
     "defaults", "haiku_model", "claude-haiku-4-5-20251001"
@@ -171,69 +162,9 @@ extract_text_from_content = vault_common.extract_text_from_content
 read_last_n_lines = vault_common.read_last_n_lines
 
 
-def append_session_to_daily(
-    project: str,
-    categories: dict[str, list[str]],
-    first_summary: str,
-    vault_path: Path,
-) -> None:
-    """Append a session summary section to today's daily note.
-
-    Args:
-        project: The project name.
-        categories: Detected category keys mapped to excerpts.
-        first_summary: The first significant assistant message summary.
-        vault_path: The vault root path.
-    """
-    daily_path = vault_common.today_daily_path(vault=vault_path)
-    # Ensure the daily note exists
-    if not daily_path.exists():
-        vault_common.ensure_vault_dirs(vault=vault_path)
-        from datetime import date as _date
-
-        _month = f"{_date.today().year:04d}-{_date.today().month:02d}"
-        daily_dir = vault_path / "Daily" / _month
-        daily_dir.mkdir(parents=True, exist_ok=True)
-        daily_path.touch()
-
-    now_time = datetime.now().strftime("%H:%M")
-
-    topic_labels = [_CATEGORY_LABELS.get(cat, cat) for cat in categories]
-    topics_str = ", ".join(topic_labels) if topic_labels else "General"
-
-    # Truncate the summary for the daily note
-    summary_text = first_summary[:300].replace("\n", " ").strip()
-    if not summary_text:
-        summary_text = "Session completed"
-
-    section = (
-        f"\n### Session: {project} ({now_time})\n"
-        f"- **Topics**: {topics_str}\n"
-        f"- **Summary**: {summary_text}\n"
-    )
-
-    try:
-        existing = daily_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        existing = ""
-
-    # Append under the ## Sessions heading if it exists, else append at end
-    if "## Sessions" in existing:
-        # Find the end of the Sessions section (next ## heading or end of file)
-        sessions_idx = existing.index("## Sessions")
-        rest = existing[sessions_idx + len("## Sessions") :]
-
-        # Find the next ## heading after Sessions
-        next_heading_match = re.search(r"\n## ", rest)
-        if next_heading_match:
-            insert_pos = sessions_idx + len("## Sessions") + next_heading_match.start()
-            updated = existing[:insert_pos] + section + existing[insert_pos:]
-        else:
-            updated = existing + section
-    else:
-        updated = existing + "\n## Sessions\n" + section
-
-    daily_path.write_text(updated, encoding="utf-8")
+# QA-010: append_session_to_daily moved to vault_common.py (canonical implementation).
+# Local alias preserves all existing call sites unchanged.
+append_session_to_daily = vault_common.append_session_to_daily
 
 
 def _launch_summarizer_if_pending(vault_path: Path) -> None:
@@ -293,7 +224,7 @@ def _launch_summarizer_if_pending(vault_path: Path) -> None:
         pass
 
 
-_HOOK_ERROR_LOG = "/tmp/parsidion-cc-hook-errors.log"
+_HOOK_ERROR_LOG = vault_common.secure_log_dir() / "parsidion-cc-hook-errors.log"
 
 
 def _update_adaptive_scores(project: str, all_lines: list[str]) -> None:
@@ -341,6 +272,7 @@ def _log_hook_error(hook_name: str) -> None:
         ts = datetime.now().isoformat(timespec="seconds")
         tb = traceback.format_exc()
         entry = f"[{ts}] {hook_name}\n{tb}\n"
+        vault_common.rotate_log_file(_HOOK_ERROR_LOG)
         with open(_HOOK_ERROR_LOG, "a", encoding="utf-8") as fh:
             fh.write(entry)
     except Exception:  # noqa: BLE001 — logging must never raise
@@ -410,6 +342,16 @@ def main() -> None:
         if not transcript_path.is_file():
             print(
                 f"[session_stop_hook] skipping: transcript not found: {transcript_path}",
+                file=sys.stderr,
+            )
+            sys.stdout.write("{}")
+            return
+
+        # SEC-004: Validate transcript path is under ~/.claude/
+        _claude_dir = Path.home() / ".claude"
+        if not transcript_path.resolve().is_relative_to(_claude_dir.resolve()):
+            print(
+                f"[session_stop_hook] skipping: transcript outside ~/.claude/: {transcript_path}",
                 file=sys.stderr,
             )
             sys.stdout.write("{}")

@@ -54,8 +54,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-import vault_common  # noqa: E402
+import vault_common
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -135,7 +134,9 @@ class Issue:
 # "skipped"      — only non-repairable issues; skip indefinitely (manual fix needed)
 # ---------------------------------------------------------------------------
 
-# Module-level vault path, set by main() after argument parsing
+# Module-level vault path, set by main() after argument parsing.
+# QA-003: _rel() falls back gracefully instead of raising RuntimeError
+# when _vault_path is None.
 _vault_path: Path | None = None
 
 
@@ -144,11 +145,16 @@ def _get_state_file(vault_path: Path) -> Path:
     return vault_path / "doctor_state.json"
 
 
-def _rel(path: Path) -> str:
-    """Return path relative to vault root as a string key."""
-    if _vault_path is None:
-        raise RuntimeError("Vault path not initialized - call main() first")
-    return str(path.relative_to(_vault_path))
+def _rel(path: Path, vault_path: Path | None = None) -> str:
+    """Return path relative to vault root as a string key.
+
+    Args:
+        path: Absolute note path.
+        vault_path: Explicit vault root. Falls back to module-level
+            ``_vault_path``, then to ``vault_common.resolve_vault()``.
+    """
+    vp = vault_path or _vault_path or vault_common.resolve_vault()
+    return str(path.relative_to(vp))
 
 
 def load_state(vault_path: Path) -> dict:
@@ -186,15 +192,9 @@ def should_skip(key: str, state: dict) -> bool:
     return False  # "fixed", "failed", "timeout" — always retry
 
 
-def is_process_running(pid: int) -> bool:
-    """Return True if a process with *pid* is currently running."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True  # process exists; we lack permission to signal it
+# QA-007: is_process_running moved to vault_common.py (canonical implementation).
+# Local alias preserves all existing call sites unchanged.
+is_process_running = vault_common.is_process_running
 
 
 def _write_pid(state: dict, vault_path: Path) -> None:
@@ -569,6 +569,7 @@ def fix_prefix_cluster(
         moves = [m for m in moves if m not in failed_set]
 
     def _patch(path: Path) -> None:
+        """Rewrite wikilinks in *path* according to *stem_map* renames."""
         try:
             content = path.read_text(encoding="utf-8")
         except OSError:
@@ -713,13 +714,11 @@ def run_migrate_subfolders(vault_root: Path, dry_run: bool = True) -> None:
         )
         print(f"\nMoved {total_moved} note(s). Running update_index.py…")
         update_index_script = Path(__file__).parent / "update_index.py"
-        env = os.environ.copy()
-        env.pop("CLAUDECODE", None)
         try:
             subprocess.run(
                 ["uv", "run", "--no-project", str(update_index_script)],
                 check=True,
-                env=env,
+                env=vault_common.env_without_claudecode(),
                 timeout=60,
             )
             print("Index rebuilt.")
@@ -952,8 +951,6 @@ def _find_link_replacement(
                 return m.stem
 
     # 3. Semantic fallback
-    env = os.environ.copy()
-    env.pop("CLAUDECODE", None)
     try:
         result = subprocess.run(
             [
@@ -963,10 +960,10 @@ def _find_link_replacement(
                 "--top=2",
                 f"--min-score={min_score}",
             ],
+            env=vault_common.env_without_claudecode(),
             capture_output=True,
             text=True,
             timeout=30,
-            env=env,
         )
         if result.returncode != 0:
             return None
@@ -1095,16 +1092,13 @@ def _find_semantic_candidates(path: Path, top_k: int = 5) -> list[str]:
     title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
     query = title_match.group(1).strip() if title_match else path.stem.replace("-", " ")
 
-    env = os.environ.copy()
-    env.pop("CLAUDECODE", None)  # permit nested invocation
-
     try:
         result = subprocess.run(
             ["vault-search", query, "--json", f"--top={top_k + 1}"],
             capture_output=True,
             text=True,
             timeout=30,
-            env=env,
+            env=vault_common.env_without_claudecode(),
         )
         if result.returncode != 0:
             return []
@@ -2022,13 +2016,11 @@ def run_migrate_daily_notes(
     )
     print(f"\nMigrated {len(moved)} note(s). Running update_index.py…")
     update_index_script = Path(__file__).parent / "update_index.py"
-    env = os.environ.copy()
-    env.pop("CLAUDECODE", None)
     try:
         subprocess.run(
             ["uv", "run", "--no-project", str(update_index_script)],
             check=True,
-            env=env,
+            env=vault_common.env_without_claudecode(),
             timeout=60,
         )
         print("Index rebuilt.")
@@ -2040,6 +2032,7 @@ def run_migrate_daily_notes(
 
 
 def main() -> None:
+    """Parse CLI arguments, acquire the singleton PID lock, and dispatch to the requested repair mode."""
     parser = argparse.ArgumentParser(
         description="Vault Doctor — find and optionally repair vault note issues",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -2197,6 +2190,11 @@ def main() -> None:
     global _vault_path
     _vault_path = vault_common.resolve_vault(explicit=args.vault, cwd=os.getcwd())
 
+    # QA-001/QA-003: Restore VAULT_ROOT on exit to prevent cross-contamination
+    original_vault_root = vault_common.VAULT_ROOT
+    vault_common.VAULT_ROOT = _vault_path
+    atexit.register(lambda: setattr(vault_common, "VAULT_ROOT", original_vault_root))
+
     # Load persistent state
     state = (
         load_state(_vault_path)
@@ -2220,6 +2218,7 @@ def main() -> None:
     _write_pid(state, _vault_path)  # claim the lock immediately
 
     def _release_pid_wrapper() -> None:
+        """Release the singleton PID lock on process exit via atexit."""
         if _vault_path is not None:
             _release_pid(_vault_path)
 

@@ -5,15 +5,9 @@ without a live vault.  Full integration tests (index build, MANIFEST generation,
 DB writes) require a populated vault and are left as future work.
 """
 
-import sys
 from pathlib import Path
 
-sys.path.insert(
-    0,
-    str(Path(__file__).resolve().parent.parent / "skills" / "parsidion-cc" / "scripts"),
-)
-
-import update_index  # noqa: E402
+import update_index
 
 
 class TestExtractTitle:

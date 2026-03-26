@@ -47,30 +47,37 @@ _USE_COLOUR = sys.stdout.isatty() and "NO_COLOR" not in os.environ
 
 
 def _colorize(code: str, text: str) -> str:
+    """Wrap *text* in ANSI escape *code*, respecting NO_COLOR and non-TTY output."""
     return f"\033[{code}m{text}\033[0m" if _USE_COLOUR else text
 
 
 def bold(t: str) -> str:
+    """Return *t* rendered in bold."""
     return _colorize("1", t)
 
 
 def green(t: str) -> str:
+    """Return *t* in bright green."""
     return _colorize("92", t)
 
 
 def yellow(t: str) -> str:
+    """Return *t* in bright yellow."""
     return _colorize("93", t)
 
 
 def red(t: str) -> str:
+    """Return *t* in bright red."""
     return _colorize("91", t)
 
 
 def cyan(t: str) -> str:
+    """Return *t* in bright cyan."""
     return _colorize("96", t)
 
 
 def dim(t: str) -> str:
+    """Return *t* in dim (faint) style."""
     return _colorize("2", t)
 
 
@@ -105,23 +112,49 @@ _HOOK_OPTIONS: dict[str, dict] = {
     "SubagentStop": {"async": True},
 }
 
-# Vault subdirectories to create.
-# IMPORTANT: vault_common.py VAULT_DIRS is the canonical source for this list.
-# This copy exists because install.py must remain stdlib-only and cannot import
-# vault_common at runtime (it runs before the skill is installed).
-# Keep this list identical to vault_common.VAULT_DIRS.  See ARC-012 in AUDIT.md.
-VAULT_DIRS: list[str] = [
-    "Daily",
-    "Projects",
-    "Languages",
-    "Frameworks",
-    "Patterns",
-    "Debugging",
-    "Tools",
-    "Research",
-    "Templates",
-    "History",
-]
+
+# ARC-003: Extract VAULT_DIRS from the canonical source (vault_common.py) at
+# import time by parsing its source text with a regex.  This eliminates the
+# duplicate list and the manual sync requirement.  install.py remains
+# stdlib-only -- no import of vault_common is needed.
+def _extract_vault_dirs() -> list[str]:
+    """Parse VAULT_DIRS from vault_common.py source code.
+
+    Uses a regex to find the ``VAULT_DIRS: list[str] = [...]`` assignment
+    in the canonical source file.  Falls back to a hardcoded list if the
+    parse fails (should never happen in a correct checkout).
+    """
+    source_path = SKILL_SRC / "scripts" / "vault_common.py"
+    fallback = [
+        "Daily",
+        "Projects",
+        "Languages",
+        "Frameworks",
+        "Patterns",
+        "Debugging",
+        "Tools",
+        "Research",
+        "Templates",
+        "History",
+    ]
+    try:
+        text = source_path.read_text(encoding="utf-8")
+    except OSError:
+        return fallback
+    # Match the VAULT_DIRS assignment block (list of quoted strings)
+    m = re.search(
+        r"^VAULT_DIRS:\s*list\[str\]\s*=\s*\[(.*?)\]",
+        text,
+        re.DOTALL | re.MULTILINE,
+    )
+    if not m:
+        return fallback
+    # Extract all quoted strings from the matched block
+    dirs = re.findall(r'"([^"]+)"', m.group(1))
+    return dirs if dirs else fallback
+
+
+VAULT_DIRS: list[str] = _extract_vault_dirs()
 
 
 # ---------------------------------------------------------------------------
@@ -192,19 +225,23 @@ def _confirm(prompt: str, default: bool = True) -> bool:
 
 
 def _step(label: str, dry_run: bool = False) -> None:
+    """Print an installation step with a green '+' prefix, or '[dry-run]' when previewing."""
     prefix = yellow("[dry-run]") if dry_run else green("  +")
     print(f"{prefix} {label}")
 
 
 def _warn(msg: str) -> None:
+    """Print a yellow warning message to stdout."""
     print(f"{yellow('  !')} {msg}")
 
 
 def _err(msg: str) -> None:
+    """Print a red error message to stderr."""
     print(f"{red('  ✗')} {msg}", file=sys.stderr)
 
 
 def _ok(msg: str) -> None:
+    """Print a green success message to stdout."""
     print(f"{green('  ✓')} {msg}")
 
 
@@ -283,49 +320,6 @@ def prompt_vault_path(default: Path) -> Path:
 # Skill installation
 # ---------------------------------------------------------------------------
 
-# Regex patterns to patch vault_common.py paths
-_VAULT_ROOT_RE = re.compile(r"^(VAULT_ROOT\s*:\s*Path\s*=\s*).*$", re.MULTILINE)
-_TEMPLATES_DIR_RE = re.compile(r"^(TEMPLATES_DIR\s*:\s*Path\s*=\s*).*$", re.MULTILINE)
-
-
-def patch_vault_common(
-    installed_path: Path,
-    vault_root: Path,
-    templates_dir: Path,
-    dry_run: bool = False,
-    verbose: bool = False,
-) -> None:
-    """Patch VAULT_ROOT and TEMPLATES_DIR in the installed vault_common.py."""
-    target = installed_path / "scripts" / "vault_common.py"
-    if not target.exists():
-        _warn(f"vault_common.py not found at {target} — skipping patch")
-        return
-
-    content = target.read_text(encoding="utf-8")
-
-    vault_repr = f'Path(r"{vault_root}")'
-    templates_repr = f'Path(r"{templates_dir}")'
-
-    new_content = _VAULT_ROOT_RE.sub(lambda m: m.group(1) + vault_repr, content)
-    new_content = _TEMPLATES_DIR_RE.sub(
-        lambda m: m.group(1) + templates_repr, new_content
-    )
-
-    if new_content == content:
-        _print(
-            dim("  vault_common.py paths already match — no patch needed"),
-            verbose_only=True,
-            verbose=verbose,
-        )
-        return
-
-    _step(
-        f"Patch vault_common.py: VAULT_ROOT={vault_root}, TEMPLATES_DIR={templates_dir}",
-        dry_run=dry_run,
-    )
-    if not dry_run:
-        target.write_text(new_content, encoding="utf-8")
-
 
 def _can_symlink(target: Path) -> bool:
     """Return True if the OS supports directory symlinks at *target*'s location.
@@ -360,8 +354,11 @@ def install_skill(
     immediately live without reinstalling.
 
     On Windows (or when symlinks are unavailable): falls back to copytree,
-    matching the original behaviour. vault_common.py is patched in both cases
-    when the vault is in a non-default location.
+    matching the original behaviour.
+
+    Non-default vault paths are resolved at runtime via the CLAUDE_VAULT
+    environment variable or a .claude/vault file (ARC-001: no more
+    source-file patching).
 
     Returns the installed skill path.
     """
@@ -375,9 +372,6 @@ def install_skill(
                 dim(f"  Skill symlink already correct: {dest} → {SKILL_SRC}"),
                 verbose_only=True,
                 verbose=verbose,
-            )
-            _maybe_patch_vault_common(
-                dest, vault_root, dry_run=dry_run, verbose=verbose
             )
             return dest
 
@@ -426,36 +420,7 @@ def install_skill(
                 for script in (dest / "scripts").glob("*.sh"):
                     script.chmod(script.stat().st_mode | 0o755)
 
-    _maybe_patch_vault_common(dest, vault_root, dry_run=dry_run, verbose=verbose)
-
     return dest
-
-
-def _maybe_patch_vault_common(
-    installed_path: Path,
-    vault_root: Path,
-    dry_run: bool = False,
-    verbose: bool = False,
-) -> None:
-    """Patch vault_common.py only when vault_root is non-default.
-
-    Skips patching when vault_root matches the runtime default (Path.home() /
-    "ClaudeVault") to avoid dirtying the source repo with a trivial no-op.
-    When the vault IS in a non-default location the source is patched in-place
-    (acceptable for single-user installs; the patched file can be committed).
-    """
-    default_vault = Path.home() / "ClaudeVault"
-    if vault_root.resolve() == default_vault.resolve():
-        _print(
-            dim("  vault_common.py: default vault path — skipping patch"),
-            verbose_only=True,
-            verbose=verbose,
-        )
-        return
-    templates_dir = installed_path / "templates"
-    patch_vault_common(
-        installed_path, vault_root, templates_dir, dry_run=dry_run, verbose=verbose
-    )
 
 
 def install_agents(
@@ -593,9 +558,9 @@ def _build_launchd_plist(
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/tmp/parsidion-cc-summarizer.log</string>
+    <string>{Path.home() / ".claude" / "logs" / "parsidion-cc-summarizer.log"}</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/parsidion-cc-summarizer.log</string>
+    <string>{Path.home() / ".claude" / "logs" / "parsidion-cc-summarizer.log"}</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>HOME</key>
@@ -632,6 +597,10 @@ def schedule_summarizer(
     """
     scripts_dir = claude_dir / "skills" / "parsidion-cc" / "scripts"
     script_path = scripts_dir / "summarize_sessions.py"
+
+    # Ensure the secure log directory exists for scheduled output
+    log_dir = Path.home() / ".claude" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     # Find uv
     uv_path = shutil.which("uv") or "uv"
@@ -749,9 +718,10 @@ def _schedule_summarizer_cron(
         extra += " --rebuild-graph"
     if graph_include_daily:
         extra += " --graph-include-daily"
+    _cron_log = Path.home() / ".claude" / "logs" / "parsidion-cc-summarizer.log"
     cron_line = (
         f"0 {hour} * * * {uv_path} run --no-project {script_path} --run-doctor{extra}"
-        f" >> /tmp/parsidion-cc-summarizer.log 2>&1  {_CRON_MARKER}"
+        f" >> {_cron_log} 2>&1  {_CRON_MARKER}"
     )
     _step(f"Schedule nightly summarizer via cron (hour={hour})", dry_run=dry_run)
     if dry_run:

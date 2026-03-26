@@ -1,25 +1,12 @@
-"""ARC-002: Assert that VAULT_DIRS in vault_common.py and install.py are identical.
+"""ARC-003: Assert that install.py extracts VAULT_DIRS from vault_common.py at runtime.
 
-This test is the programmatic enforcement of the "keep in sync" comment that
-previously existed only as a manual reminder.  It catches the case where a
-developer adds a new vault folder to one file but forgets to update the other.
+After the ARC-003 fix, install.py no longer maintains a separate copy of
+VAULT_DIRS.  Instead it parses vault_common.py source text via regex.  This
+test verifies that the extracted list matches the canonical constant.
 """
 
-import sys
-from pathlib import Path
-
-# vault_common
-sys.path.insert(
-    0,
-    str(Path(__file__).resolve().parent.parent / "skills" / "parsidion-cc" / "scripts"),
-)
-import vault_common  # noqa: E402
-
-# install
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-import install  # noqa: E402
+import install
+import vault_common
 
 
 class TestVaultDirsSync:
@@ -31,7 +18,7 @@ class TestVaultDirsSync:
             "VAULT_DIRS mismatch!\n"
             f"  vault_common: {sorted(vault_common.VAULT_DIRS)}\n"
             f"  install.py:   {sorted(install.VAULT_DIRS)}\n"
-            "Add the missing directory to both files."
+            "install.py should extract VAULT_DIRS from vault_common.py source."
         )
 
     def test_vault_dirs_same_length(self) -> None:
@@ -40,4 +27,12 @@ class TestVaultDirsSync:
             f"VAULT_DIRS length mismatch: "
             f"vault_common has {len(vault_common.VAULT_DIRS)} entries, "
             f"install.py has {len(install.VAULT_DIRS)} entries."
+        )
+
+    def test_vault_dirs_preserves_order(self) -> None:
+        """VAULT_DIRS extracted by install.py should preserve the order from vault_common.py."""
+        assert vault_common.VAULT_DIRS == install.VAULT_DIRS, (
+            "VAULT_DIRS order mismatch!\n"
+            f"  vault_common: {vault_common.VAULT_DIRS}\n"
+            f"  install.py:   {install.VAULT_DIRS}"
         )

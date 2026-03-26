@@ -1068,11 +1068,11 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pyright", specifier = ">=1.1" },
-    { name = "pytest", specifier = ">=9.0" },
-    { name = "pytest-cov", specifier = ">=4.0" },
-    { name = "pytest-timeout", specifier = ">=0.5" },
-    { name = "ruff", specifier = ">=0.9" },
+    { name = "pyright", specifier = ">=1.1.408" },
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
+    { name = "pytest-timeout", specifier = ">=2.4.0" },
+    { name = "ruff", specifier = ">=0.15.6" },
 ]
 
 [[package]]

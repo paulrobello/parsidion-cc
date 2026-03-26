@@ -5,18 +5,23 @@ from pathlib import Path
 
 import vault_common
 
-# TEMPLATES_DIR is always <skill_root>/templates/.
-# Scripts are one level up: <skill_root>/scripts/.
-# This invariant holds because the installer only patches VAULT_ROOT and
-# TEMPLATES_DIR always points into ~/.claude/skills/parsidion-cc/.
-SCRIPTS_DIR: Path = vault_common.TEMPLATES_DIR.parent / "scripts"
+# ARC-007: Use the canonical SCRIPTS_DIR exported from vault_common.py
+# instead of deriving it via fragile path arithmetic from TEMPLATES_DIR.
+SCRIPTS_DIR: Path = vault_common.SCRIPTS_DIR
+
+
+class OpsToolError(Exception):
+    """Raised when an ops MCP tool encounters an error."""
 
 
 def rebuild_index() -> str:
     """Rebuild the vault index (CLAUDE.md, MANIFEST.md files, note_index table).
 
     Returns:
-        Script output on success, or an ERROR string on failure.
+        Script output on success.
+
+    Raises:
+        OpsToolError: On command failure, timeout, or missing binary.
     """
     script = SCRIPTS_DIR / "update_index.py"
     try:
@@ -28,12 +33,14 @@ def rebuild_index() -> str:
         )
         output = (result.stdout + result.stderr).strip()
         if result.returncode != 0:
-            return f"ERROR: {output}"
+            raise OpsToolError(output)
         return output or "Index rebuilt successfully."
     except subprocess.TimeoutExpired:
-        return "ERROR: command timed out after 30s"
-    except (FileNotFoundError, OSError) as exc:
-        return f"ERROR: {exc}"
+        raise OpsToolError("command timed out after 30s")
+    except FileNotFoundError as exc:
+        raise OpsToolError(str(exc)) from exc
+    except OSError as exc:
+        raise OpsToolError(str(exc)) from exc
 
 
 def vault_doctor(
@@ -50,7 +57,10 @@ def vault_doctor(
         limit: Maximum number of notes to repair (only relevant when fix=True).
 
     Returns:
-        Scan/repair report, or an ERROR string on failure.
+        Scan/repair report.
+
+    Raises:
+        OpsToolError: On command failure, timeout, or missing binary.
     """
     script = SCRIPTS_DIR / "vault_doctor.py"
     args: list[str] = ["uv", "run", "--no-project", str(script)]
@@ -70,9 +80,11 @@ def vault_doctor(
         )
         output = (result.stdout + result.stderr).strip()
         if result.returncode != 0:
-            return f"ERROR: {output}"
+            raise OpsToolError(output)
         return output or "Doctor scan complete."
     except subprocess.TimeoutExpired:
-        return "ERROR: command timed out after 120s"
-    except (FileNotFoundError, OSError) as exc:
-        return f"ERROR: {exc}"
+        raise OpsToolError("command timed out after 120s")
+    except FileNotFoundError as exc:
+        raise OpsToolError(str(exc)) from exc
+    except OSError as exc:
+        raise OpsToolError(str(exc)) from exc

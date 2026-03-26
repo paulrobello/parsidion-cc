@@ -9,18 +9,9 @@ so the tests don't depend on brittle string formatting.
 """
 
 import json
-import sys
 from pathlib import Path
 
-
-# Mirror the sys.path.insert pattern used by all hook scripts (ARC-009).
-sys.path.insert(
-    0,
-    str(Path(__file__).resolve().parent.parent / "skills" / "parsidion-cc" / "scripts"),
-)
-
 # Import functions under test directly from pre_compact_hook.
-# The module uses sys.path.insert so this import resolves correctly.
 import importlib.util
 
 _SCRIPTS_DIR = (

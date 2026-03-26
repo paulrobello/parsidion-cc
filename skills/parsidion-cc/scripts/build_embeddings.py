@@ -21,17 +21,13 @@ Usage:
 import argparse
 import sqlite3
 import struct
-import sys
 import time
 from pathlib import Path
 
 import sqlite_vec  # type: ignore[import-untyped]
 from fastembed import TextEmbedding  # type: ignore[import-untyped]
 
-# These scripts are not a proper package — sys.path.insert is intentional so
-# each script can run standalone via ``uv run`` without requiring pip install.
-sys.path.insert(0, str(Path(__file__).parent))
-import vault_common  # noqa: E402
+import vault_common
 
 _DEFAULT_MODEL: str = "BAAI/bge-small-en-v1.5"
 _EMBED_DIM: int = 384
@@ -411,22 +407,22 @@ def main() -> None:
                 )
                 args.incremental = False
 
-    # Replace VAULT_ROOT with vault_path for this run
+    # QA-001: Replace VAULT_ROOT with try/finally restore pattern
     original_vault_root = vault_common.VAULT_ROOT
     vault_common.VAULT_ROOT = vault_path
 
-    start = time.time()
-    if args.incremental:
-        incremental_update(vault_path, args.model, args.dry_run)
-    else:
-        full_rebuild(vault_path, args.model, args.dry_run)
+    try:
+        start = time.time()
+        if args.incremental:
+            incremental_update(vault_path, args.model, args.dry_run)
+        else:
+            full_rebuild(vault_path, args.model, args.dry_run)
 
-    # Restore original VAULT_ROOT
-    vault_common.VAULT_ROOT = original_vault_root
-
-    elapsed = time.time() - start
-    if not args.dry_run:
-        print(f"Done in {elapsed:.1f}s using {args.model}")
+        elapsed = time.time() - start
+        if not args.dry_run:
+            print(f"Done in {elapsed:.1f}s using {args.model}")
+    finally:
+        vault_common.VAULT_ROOT = original_vault_root
 
 
 if __name__ == "__main__":

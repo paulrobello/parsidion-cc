@@ -347,9 +347,20 @@ export function useVisualizerState(graphData: GraphData | null) {
       }, 0)
       return () => clearTimeout(id)
     }
-    // Mark as queued immediately (shows "Computing…")
+    // QA-011: Gate betweenness centrality behind a node-count limit to prevent
+    // O(n*(n+m)) computation from blocking the main UI thread on large graphs.
+    const MAX_BETWEENNESS_NODES = 500
+    if (graphData.nodes.length > MAX_BETWEENNESS_NODES) {
+      const id = setTimeout(() => {
+        // Fall back to null (GraphCanvas uses incoming_links as fallback)
+        setNodeSizeMap(null)
+        setNodeSizeStatus('done')
+      }, 0)
+      return () => clearTimeout(id)
+    }
+    // Mark as queued immediately (shows "Computing...")
     const idStatus = setTimeout(() => setNodeSizeStatus('queued'), 0)
-    // Defer heavy computation to next tick so "Computing…" renders first
+    // Defer heavy computation to next tick so "Computing..." renders first
     const id = setTimeout(() => {
       const nodes = graphData.nodes.map(n => n.id)
       const adj = new Map<string, string[]>()

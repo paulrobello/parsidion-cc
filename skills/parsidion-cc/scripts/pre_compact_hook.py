@@ -14,15 +14,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-# These scripts are not a proper package — sys.path.insert is intentional so
-# each script can run standalone via ``uv run`` or ``python`` without requiring
-# pip install or editable installs.  See ARC-009 in AUDIT.md.
-# SEC-011: SHADOWING RISK — a ``vault_common.py`` in the process cwd at hook
-# invocation time would shadow the real module.  Accepted risk under the
-# stdlib-only constraint; proper packaging would eliminate it.
-sys.path.insert(0, str(Path(__file__).parent))
-
-import vault_common  # noqa: E402
+import vault_common
 
 # Tool names and the input fields that contain file paths
 _FILE_TOOLS: dict[str, list[str]] = {
@@ -254,7 +246,7 @@ def append_snapshot_to_daily(
 
 _DEFAULT_LINES = 200
 
-_HOOK_ERROR_LOG = "/tmp/parsidion-cc-hook-errors.log"
+_HOOK_ERROR_LOG = vault_common.secure_log_dir() / "parsidion-cc-hook-errors.log"
 
 
 def _log_hook_error(hook_name: str) -> None:
@@ -272,6 +264,7 @@ def _log_hook_error(hook_name: str) -> None:
         ts = datetime.now().isoformat(timespec="seconds")
         tb = traceback.format_exc()
         entry = f"[{ts}] {hook_name}\n{tb}\n"
+        vault_common.rotate_log_file(_HOOK_ERROR_LOG)
         with open(_HOOK_ERROR_LOG, "a", encoding="utf-8") as fh:
             fh.write(entry)
     except Exception:  # noqa: BLE001 — logging must never raise

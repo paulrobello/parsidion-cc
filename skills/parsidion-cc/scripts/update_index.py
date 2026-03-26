@@ -19,11 +19,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
-# These scripts are not a proper package — sys.path.insert is intentional so
-# each script can run standalone via ``uv run`` or ``python`` without requiring
-# pip install or editable installs.  See ARC-009 in AUDIT.md.
-sys.path.insert(0, str(Path(__file__).parent))
-
 from vault_common import (
     VAULT_ROOT,
     all_vault_notes,
@@ -33,6 +28,7 @@ from vault_common import (
     get_config,
     get_embeddings_db_path,
     git_commit_vault,
+    is_process_running,
     parse_frontmatter,
     resolve_vault,
 )
@@ -98,15 +94,9 @@ class NoteEntry(NamedTuple):
     incoming_links: int
 
 
-def _is_process_running(pid: int) -> bool:
-    """Return True if a process with *pid* is currently running."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True  # process exists; we lack permission to signal it
+# QA-007: _is_process_running removed — now imported from vault_common.
+# Local alias preserves all existing call sites unchanged.
+_is_process_running = is_process_running
 
 
 def _write_pid() -> None:
@@ -149,13 +139,9 @@ def _singleton_guard() -> None:
     atexit.register(_release_pid)
 
 
-def _extract_title(content: str, filename_stem: str) -> str:
-    """Extract the title from the first ``#`` heading in the body, falling back to filename.
-
-    Delegates to ``vault_common.extract_title`` — the canonical implementation.
-    See ARC-009.
-    """
-    return extract_title(content, filename_stem)
+# QA-013: _extract_title thin wrapper removed — call extract_title() directly.
+# Local alias kept for call-site compatibility.
+_extract_title = extract_title
 
 
 def _extract_summary(content: str) -> str:
@@ -766,7 +752,8 @@ def main() -> None:
     # Update embeddings.db in the background when enabled.
     # Incremental when the DB already exists; full rebuild when it does not.
     # ARC-011: stderr is redirected to a log file so silent failures are
-    # visible.  Check /tmp/parsidion-cc-embed.log when embeddings seem stale.
+    # visible.  Check ~/.claude/logs/parsidion-cc-embed.log when embeddings
+    # seem stale.
     if get_config("embeddings", "enabled", True):
         db_path = get_embeddings_db_path(vault=vault_path)
         build_script = Path(__file__).parent / "build_embeddings.py"
@@ -777,10 +764,17 @@ def main() -> None:
                 label = "incremental"
             else:
                 label = "full"
+            _embed_log_dir = Path.home() / ".claude" / "logs"
+            _embed_log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            _embed_log = open(  # noqa: SIM115
+                _embed_log_dir / "parsidion-cc-embed.log",
+                "a",
+                encoding="utf-8",
+            )
             subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
-                stderr=open("/tmp/parsidion-cc-embed.log", "a"),  # noqa: SIM115
+                stderr=_embed_log,
                 start_new_session=True,
             )
             print(f"Embeddings: {label} rebuild launched in background")

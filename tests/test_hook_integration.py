@@ -5,7 +5,7 @@ Each test:
 - Feeds minimal valid JSON on stdin
 - Asserts exit code 0 and valid JSON on stdout
 
-VAULT_ROOT is pointed at tmp_path to avoid touching the real vault.
+CLAUDE_VAULT is pointed at tmp_path to avoid touching the real vault.
 CLAUDE_VAULT_STOP_ACTIVE is unset to allow the hooks to run (otherwise
 session_stop_hook and subagent_stop_hook skip themselves).
 """
@@ -34,7 +34,7 @@ def _run_hook(
     Args:
         script_name: Filename of the script under _SCRIPTS_DIR.
         payload: Dict to serialize as JSON and pass on stdin.
-        tmp_vault: Temporary directory to use as VAULT_ROOT.
+        tmp_vault: Temporary directory to use as CLAUDE_VAULT.
         extra_env: Additional environment variables to set.
 
     Returns:
@@ -43,7 +43,7 @@ def _run_hook(
     script_path = _SCRIPTS_DIR / script_name
     env = {
         **os.environ,
-        "VAULT_ROOT": str(tmp_vault),
+        "CLAUDE_VAULT": str(tmp_vault),
         # Unset recursion guard so hooks actually run
         "CLAUDE_VAULT_STOP_ACTIVE": "",
     }
@@ -91,7 +91,7 @@ class TestSessionStopHookIntegration:
         script_path = _SCRIPTS_DIR / "session_stop_hook.py"
         env = {
             **os.environ,
-            "VAULT_ROOT": str(tmp_path),
+            "CLAUDE_VAULT": str(tmp_path),
             "CLAUDE_VAULT_STOP_ACTIVE": "",
         }
         result = subprocess.run(
@@ -179,7 +179,7 @@ class TestPreCompactHookIntegration:
 
     def test_invalid_json_stdin_exits_cleanly(self, tmp_path: Path) -> None:
         script_path = _SCRIPTS_DIR / "pre_compact_hook.py"
-        env = {**os.environ, "VAULT_ROOT": str(tmp_path)}
+        env = {**os.environ, "CLAUDE_VAULT": str(tmp_path)}
         result = subprocess.run(
             [sys.executable, str(script_path)],
             input="{ bad json !!",
@@ -239,11 +239,9 @@ class TestPostCompactHookIntegration:
     """Integration tests for post_compact_hook.py."""
 
     def test_no_daily_note_exits_cleanly(self, tmp_path: Path) -> None:
-        # post_compact_hook reads VAULT_ROOT from the module constant (not env var),
-        # so we cannot redirect it to tmp_path via the environment.  We can only
-        # guarantee the process exits with code 0 and returns valid JSON; the
-        # specific payload depends on whether today's daily note exists in the
-        # real vault.
+        # post_compact_hook resolves the vault via CLAUDE_VAULT env var (set by
+        # _run_hook), so the hook will look in tmp_path for the daily note.
+        # Since the daily note won't exist there, the hook returns {}.
         result = _run_hook(
             "post_compact_hook.py",
             {},
@@ -255,7 +253,7 @@ class TestPostCompactHookIntegration:
 
     def test_empty_stdin_exits_cleanly(self, tmp_path: Path) -> None:
         script_path = _SCRIPTS_DIR / "post_compact_hook.py"
-        env = {**os.environ, "VAULT_ROOT": str(tmp_path)}
+        env = {**os.environ, "CLAUDE_VAULT": str(tmp_path)}
         result = subprocess.run(
             [sys.executable, str(script_path)],
             input="",
@@ -340,7 +338,7 @@ class TestSubagentStopHookIntegration:
         script_path = _SCRIPTS_DIR / "subagent_stop_hook.py"
         env = {
             **os.environ,
-            "VAULT_ROOT": str(tmp_path),
+            "CLAUDE_VAULT": str(tmp_path),
             "CLAUDE_VAULT_STOP_ACTIVE": "",
         }
         result = subprocess.run(

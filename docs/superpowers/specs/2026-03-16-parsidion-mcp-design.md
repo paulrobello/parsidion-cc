@@ -24,7 +24,7 @@ This document specifies the architecture and implementation of `parsidion-mcp`, 
 ## Overview
 
 **Date:** 2026-03-16
-**Status:** Approved
+**Status:** Implemented
 
 `parsidion-mcp` is a FastMCP-based MCP server that exposes the Claude Vault knowledge management system to Claude Desktop (and any other MCP-capable client). It lives at `parsidion-cc/parsidion-mcp/` as an independent Python package.
 
@@ -93,7 +93,7 @@ Searches vault notes using semantic (vector) or metadata (filter) mode.
 - `project: str | None` - filter by project
 - `recent_days: int | None` - only notes modified within N days
 - `top_k: int = 10` - max results
-- `min_score: float = 0.35` - minimum cosine similarity (semantic mode only)
+- `min_score: float = 0.45` - minimum cosine similarity (semantic mode only)
 
 **Behavior:** Semantic mode when `query` is provided (calls `vault_search.search()`); metadata mode otherwise (calls `vault_search.query()`). Returns JSON array of all fields returned by the underlying functions: `score`, `stem`, `title`, `folder`, `tags`, `path`, `summary`, `note_type`, `project`, `confidence`, `mtime`, `related`, `is_stale`, `incoming_links`. Score is `null` for metadata results.
 

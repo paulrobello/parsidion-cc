@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import fs from 'fs'
+import fs from 'fs/promises'
 import path from 'path'
 import { resolveVault } from '@/lib/vaultResolver'
 
-function findNote(dir: string, stemToFind: string): string | null {
+// QA-006: Replaced all synchronous fs calls with async fs.promises equivalents.
+// findNote is now async to avoid blocking the Node.js event loop during
+// recursive directory walks.
+
+async function findNote(dir: string, stemToFind: string): Promise<string | null> {
   try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    const entries = await fs.readdir(dir, { withFileTypes: true })
     for (const entry of entries) {
       if (entry.name.startsWith('.')) continue
       const full = path.join(dir, entry.name)
       if (entry.isDirectory()) {
-        const found = findNote(full, stemToFind)
+        const found = await findNote(full, stemToFind)
         if (found) return found
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
         const fileStem = entry.name.replace(/\.md$/, '')
@@ -35,14 +39,19 @@ export async function GET(req: NextRequest) {
     if (!guardPath(candidate, vaultRoot)) {
       return NextResponse.json({ error: 'Path traversal rejected' }, { status: 403 })
     }
-    notePath = fs.existsSync(candidate) ? candidate : null
+    try {
+      await fs.access(candidate)
+      notePath = candidate
+    } catch {
+      notePath = null
+    }
   } else {
-    notePath = findNote(vaultRoot, stem!)
+    notePath = await findNote(vaultRoot, stem!)
   }
   if (!notePath) return NextResponse.json({ error: `Note not found: ${relPath ?? stem}` }, { status: 404 })
 
   try {
-    const content = fs.readFileSync(notePath, 'utf-8')
+    const content = await fs.readFile(notePath, 'utf-8')
     const relativePath = path.relative(vaultRoot, notePath)
     return NextResponse.json({ content, path: relativePath })
   } catch {
@@ -69,7 +78,7 @@ export async function POST(req: NextRequest) {
   }
 
   const vaultRoot = resolveVault(vault)
-  const notePath = findNote(vaultRoot, stem)
+  const notePath = await findNote(vaultRoot, stem)
   if (!notePath) return NextResponse.json({ error: `Note not found: ${stem}` }, { status: 404 })
 
   if (!guardPath(notePath, vaultRoot)) {
@@ -80,9 +89,9 @@ export async function POST(req: NextRequest) {
   // has been modified since then, return the current content instead of saving.
   if (lastModified !== undefined) {
     try {
-      const stat = fs.statSync(notePath)
+      const stat = await fs.stat(notePath)
       if (stat.mtimeMs > lastModified) {
-        const serverContent = fs.readFileSync(notePath, 'utf-8')
+        const serverContent = await fs.readFile(notePath, 'utf-8')
         return NextResponse.json({ conflict: true, serverContent })
       }
     } catch {
@@ -91,7 +100,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    fs.writeFileSync(notePath, content, 'utf-8')
+    await fs.writeFile(notePath, content, 'utf-8')
     return NextResponse.json({ ok: true })
   } catch {
     return NextResponse.json({ error: 'Failed to write note' }, { status: 500 })
@@ -113,13 +122,16 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Path traversal rejected' }, { status: 403 })
   }
 
-  if (fs.existsSync(notePath)) {
+  try {
+    await fs.access(notePath)
     return NextResponse.json({ error: 'Note already exists' }, { status: 409 })
+  } catch {
+    // File doesn't exist — proceed to create it
   }
 
   try {
-    fs.mkdirSync(path.dirname(notePath), { recursive: true })
-    fs.writeFileSync(notePath, content, 'utf-8')
+    await fs.mkdir(path.dirname(notePath), { recursive: true })
+    await fs.writeFile(notePath, content, 'utf-8')
     return NextResponse.json({ ok: true, path: relPath })
   } catch {
     return NextResponse.json({ error: 'Failed to create note' }, { status: 500 })
@@ -132,7 +144,7 @@ export async function DELETE(req: NextRequest) {
   if (!stem) return NextResponse.json({ error: 'stem required' }, { status: 400 })
 
   const vaultRoot = resolveVault(vault)
-  const notePath = findNote(vaultRoot, stem)
+  const notePath = await findNote(vaultRoot, stem)
   if (!notePath) return NextResponse.json({ error: `Note not found: ${stem}` }, { status: 404 })
 
   if (!guardPath(notePath, vaultRoot)) {
@@ -140,7 +152,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    fs.unlinkSync(notePath)
+    await fs.unlink(notePath)
     return NextResponse.json({ ok: true })
   } catch {
     return NextResponse.json({ error: 'Failed to delete note' }, { status: 500 })

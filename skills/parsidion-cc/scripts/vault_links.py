@@ -5,22 +5,15 @@ or semantic similarity) and injecting bidirectional wikilinks into note
 frontmatter.  It is stdlib-only and can be imported by any vault script
 without introducing third-party dependencies.
 
-Extracted from ``summarize_sessions.py`` (see TODO QA-018).
+Extracted from ``summarize_sessions.py`` to enable reuse by both the
+summarizer and ``parsidion-mcp``.
 """
 
 import re
 import subprocess
-import sys
 from pathlib import Path
 
-# These scripts are not a proper package — sys.path.insert is intentional so
-# each script can run standalone via ``uv run`` or ``python`` without requiring
-# pip install or editable installs.  See ARC-009 in AUDIT.md.
-# SEC-011: SHADOWING RISK — a ``vault_common.py`` in the process cwd at script
-# invocation time would shadow the real module.  Accepted risk under the
-# stdlib-only constraint; proper packaging would eliminate it.
-sys.path.insert(0, str(Path(__file__).parent))
-import vault_common  # noqa: E402
+import vault_common
 
 __all__ = [
     "find_related_by_tags",

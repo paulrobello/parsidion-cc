@@ -23,12 +23,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# These scripts are not a proper package — sys.path.insert is intentional so
-# each script can run standalone via ``uv run`` or ``python`` without requiring
-# pip install or editable installs.
-sys.path.insert(0, str(Path(__file__).parent))
-
-import vault_common  # noqa: E402
+import vault_common
 
 _PENDING_PATH: Path = vault_common.VAULT_ROOT / "pending_summaries.jsonl"
 _EXCERPT_LINES: int = 20
@@ -535,7 +530,8 @@ def main() -> None:
     # Resolve vault path
     vault_path = vault_common.resolve_vault(explicit=args.vault, cwd=os.getcwd())
 
-    # Replace module-level VAULT_ROOT with resolved vault path
+    # QA-001: Replace module-level VAULT_ROOT with try/finally restore pattern
+    original_vault_root = vault_common.VAULT_ROOT
     vault_common.VAULT_ROOT = vault_path
 
     try:
@@ -571,6 +567,8 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         sys.exit(0)
+    finally:
+        vault_common.VAULT_ROOT = original_vault_root
 
 
 if __name__ == "__main__":

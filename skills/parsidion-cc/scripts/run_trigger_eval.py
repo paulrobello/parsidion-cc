@@ -19,10 +19,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-# Add the scripts directory to sys.path so we can import vault_common
-sys.path.insert(0, str(Path(__file__).parent))
-
-import vault_common  # noqa: E402
+import vault_common
 
 SKILL_DIR = Path.home() / ".claude" / "skills" / "parsidion-cc"
 RESULTS_FILE = SKILL_DIR / "eval_results.json"

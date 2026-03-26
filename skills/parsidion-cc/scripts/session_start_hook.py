@@ -15,27 +15,18 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import traceback
 from datetime import date, datetime
 from pathlib import Path
 
-# These scripts are not a proper package — sys.path.insert is intentional so
-# each script can run standalone via ``uv run`` or ``python`` without requiring
-# pip install or editable installs.  See ARC-009 in AUDIT.md.
-# SEC-011: SHADOWING RISK — a ``vault_common.py`` in the process cwd at hook
-# invocation time would shadow the real module.  Accepted risk under the
-# stdlib-only constraint; proper packaging would eliminate it.
-sys.path.insert(0, str(Path(__file__).parent))
-
-import vault_common  # noqa: E402
+import vault_common
 
 _DEFAULT_AI_MODEL: str = vault_common.get_config(
     "defaults", "haiku_model", "claude-haiku-4-5-20251001"
 )
 _DEFAULT_AI_TIMEOUT = 25  # seconds; hook timeout in settings.json should be >= 30000ms
 _DEFAULT_MAX_CHARS = 4000
-_DEBUG_FILE = Path(tempfile.gettempdir()) / "parsidion-cc-session-start-debug.log"
+_DEBUG_FILE = vault_common.secure_log_dir() / "parsidion-cc-session-start-debug.log"
 _VAULT_SEARCH_SCRIPT_NAME: str = "vault_search.py"
 _SEMANTIC_TOP_N: int = 5
 _SEMANTIC_TIMEOUT: int = 10  # seconds
@@ -50,6 +41,10 @@ def _build_candidates(project_name: str, vault_path: Path) -> list[Path]:
     Returns project-specific notes first, then all other notes sorted by
     most recently modified.
 
+    ARC-011: Uses ``query_note_index()`` (SQLite) first for fast project
+    matching without reading every file.  Falls back to the full filesystem
+    walk when the database is absent or the table is missing.
+
     Args:
         project_name: The current project name (used to prioritize notes).
         vault_path: The vault root path.
@@ -57,6 +52,17 @@ def _build_candidates(project_name: str, vault_path: Path) -> list[Path]:
     Returns:
         Ordered list of note paths; project notes first, then others by mtime.
     """
+    # ARC-011: Try SQLite first for project notes (O(1) index lookup)
+    db_project_notes = vault_common.query_note_index(project=project_name, limit=500)
+    db_recent_notes = vault_common.query_note_index(recent_days=30, limit=500)
+
+    if db_project_notes is not None and db_recent_notes is not None:
+        # SQLite path: fast, no file reads needed for candidate list
+        project_set = set(str(p) for p in db_project_notes)
+        other_notes = [p for p in db_recent_notes if str(p) not in project_set]
+        return db_project_notes + other_notes
+
+    # Fallback: full filesystem walk (when embeddings.db is absent)
     all_notes = vault_common.all_vault_notes(vault=vault_path)
     project_lower = project_name.lower()
 
@@ -612,7 +618,7 @@ def _write_debug_log(
         pass  # debug logging is best-effort
 
 
-_HOOK_ERROR_LOG = "/tmp/parsidion-cc-hook-errors.log"
+_HOOK_ERROR_LOG = vault_common.secure_log_dir() / "parsidion-cc-hook-errors.log"
 
 
 def _log_hook_error(hook_name: str) -> None:
@@ -630,6 +636,7 @@ def _log_hook_error(hook_name: str) -> None:
         ts = datetime.now().isoformat(timespec="seconds")
         tb = traceback.format_exc()
         entry = f"[{ts}] {hook_name}\n{tb}\n"
+        vault_common.rotate_log_file(_HOOK_ERROR_LOG)
         with open(_HOOK_ERROR_LOG, "a", encoding="utf-8") as fh:
             fh.write(entry)
     except Exception:  # noqa: BLE001 — logging must never raise

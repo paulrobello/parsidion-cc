@@ -191,7 +191,7 @@ Searches vault notes using semantic vector similarity or structured metadata fil
 | `project` | `str \| None` | `None` | Filter by project name |
 | `recent_days` | `int \| None` | `None` | Only notes modified within N days |
 | `top_k` | `int` | `10` | Maximum number of results |
-| `min_score` | `float` | `0.35` | Minimum cosine similarity threshold (semantic mode only) |
+| `min_score` | `float` | `0.45` | Minimum cosine similarity threshold (semantic mode only) |
 
 #### Return Value
 

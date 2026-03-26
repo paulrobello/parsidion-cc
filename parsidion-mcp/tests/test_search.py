@@ -1,8 +1,13 @@
-"""Tests for vault_search tool."""
+"""Tests for vault_search tool.
+
+ARC-008: Updated to expect ValueError instead of sentinel error strings.
+"""
 
 import json
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from parsidion_mcp.tools.search import vault_search
 
@@ -45,17 +50,16 @@ def test_semantic_search_returns_json(tmp_path: Path) -> None:
     parsed = json.loads(result)
     assert len(parsed) == 1
     assert parsed[0]["stem"] == "my-note"
-    mock_vs.search.assert_called_once_with("python patterns", top=10, min_score=0.35)
+    mock_vs.search.assert_called_once_with("python patterns", top=10, min_score=0.45)
 
 
-def test_semantic_search_missing_db_returns_error(tmp_path: Path) -> None:
+def test_semantic_search_missing_db_raises(tmp_path: Path) -> None:
     absent_db = tmp_path / "missing.db"
 
     with patch("parsidion_mcp.tools.search.vault_common") as mock_vc:
         mock_vc.get_embeddings_db_path.return_value = absent_db
-        result = vault_search(query="anything")
-
-    assert result.startswith("ERROR: embeddings DB not found")
+        with pytest.raises(ValueError, match="embeddings DB not found"):
+            vault_search(query="anything")
 
 
 def test_semantic_search_respects_top_k_and_min_score(tmp_path: Path) -> None:

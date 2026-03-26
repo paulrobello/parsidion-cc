@@ -1,3 +1,39 @@
+// ---------------------------------------------------------------------------
+// QA-016: Named constants extracted from GraphCanvas.tsx
+// ---------------------------------------------------------------------------
+
+/** Highlight color for selected/hovered nodes and edges. */
+export const HIGHLIGHT_COLOR = '#FFD700'
+
+/** Canvas background color (dark navy). */
+export const CANVAS_BACKGROUND = '#0d1020'
+
+/** Default label color on the graph. */
+export const LABEL_COLOR = '#FFFFFF'
+
+/** Muted node/edge color for de-emphasized items. */
+export const MUTED_NODE_COLOR = '#6B7A99'
+
+/** Context menu / tooltip background. */
+export const MENU_BACKGROUND = '#0a0e1a'
+
+/** Context menu border color. */
+export const MENU_BORDER = '#1a2040'
+
+/** Accent color for "Open in tab" and similar actions. */
+export const ACCENT_TEAL = '#00FFC8'
+
+/** Physics: velocity decay per frame (0-1). */
+export const PHYSICS_DAMPING = 0.85
+
+/** Physics: integration time step. */
+export const PHYSICS_DT = 0.005
+
+/** Physics: minimum distance to prevent extreme forces. */
+export const PHYSICS_MIN_DIST = 0.5
+
+// ---------------------------------------------------------------------------
+
 function hslToHex(h: number, s: number, l: number): string {
   s /= 100; l /= 100
   const k = (n: number) => (n + h / 30) % 12

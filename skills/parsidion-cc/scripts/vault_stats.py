@@ -36,8 +36,7 @@ import time
 from datetime import datetime, UTC
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-import vault_common  # noqa: E402
+import vault_common
 
 from rich.columns import Columns
 from rich.console import Console
@@ -1038,12 +1037,14 @@ def run_timeline(
 
 
 def run_summarizer_progress() -> None:
-    """Print current summarizer progress from /tmp/parsidion-cc-summarizer-progress.json.
+    """Print current summarizer progress from ~/.claude/logs/parsidion-cc-summarizer-progress.json.
 
     Shows: total, processed, written, skipped, errors, current.
     If the file is absent, reports that no summarizer is currently running.
     """
-    progress_path = Path("/tmp/parsidion-cc-summarizer-progress.json")
+    progress_path = (
+        Path.home() / ".claude" / "logs" / "parsidion-cc-summarizer-progress.json"
+    )
     if not progress_path.exists():
         _CONSOLE.print("[dim]No summarizer currently running.[/dim]")
         return

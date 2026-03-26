@@ -6,17 +6,9 @@ extract_text_from_content, read_last_n_lines, and flock_exclusive/funlock.
 These tests use only stdlib + pytest and do not require a live vault.
 """
 
-import sys
 from pathlib import Path
 
-# Mirror the sys.path.insert pattern used by all scripts so we can import
-# vault_common without pip install.  See ARC-009.
-sys.path.insert(
-    0,
-    str(Path(__file__).resolve().parent.parent / "skills" / "parsidion-cc" / "scripts"),
-)
-
-import vault_common  # noqa: E402
+import vault_common
 
 
 # ---------------------------------------------------------------------------
@@ -432,10 +424,7 @@ class TestValidateVaultPath:
     @staticmethod
     def _import_install():
         """Import install.py from the repo root."""
-        repo_root = Path(__file__).resolve().parent.parent
-        if str(repo_root) not in sys.path:
-            sys.path.insert(0, str(repo_root))
-        import install  # noqa: E402
+        import install
 
         return install
 

@@ -1,6 +1,11 @@
 // lib/vaultResolver.ts
 // Shared vault resolution logic for all API routes.
 // Server-side only (uses fs, path).
+//
+// QA-012: This file duplicates the vault resolution logic from the Python
+// vault_common.py:resolve_vault().  Both implementations must stay in sync.
+// Long-term plan: serve vault resolution through the parsidion-mcp server
+// so only the Python implementation is canonical.  See AUDIT.md [QA-012].
 
 import fs from 'fs'
 import path from 'path'

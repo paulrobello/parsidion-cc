@@ -96,6 +96,10 @@ export function ReadingPane({ node, fetchContent, onNavigate, onSave, onDelete, 
       } catch { /* ignore refresh errors */ }
     })
     return () => { cancelled = true }
+  // QA-017: Only re-fetches when refreshTrigger changes (a counter incremented
+  // by the WebSocket file-watcher).  Including `stem`, `vault`, or `setContent`
+  // would cause re-fetches when switching tabs, which is handled by the initial
+  // load effect above this one.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger])
 

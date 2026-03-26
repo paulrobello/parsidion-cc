@@ -1,5 +1,6 @@
 # Parsidion CC
 
+[![CI](https://github.com/paulrobello/parsidion-cc/actions/workflows/ci.yml/badge.svg)](https://github.com/paulrobello/parsidion-cc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python 3.13+](https://img.shields.io/badge/Python-3.13%2B-blue.svg)
 
@@ -165,7 +166,8 @@ A markdown vault-based knowledge management system that replaces Claude Code's b
   pending_summaries.jsonl    # Queue of sessions awaiting AI summarization
   embeddings.db              # SQLite database: note embeddings + note_index metadata table
   hook_events.log            # Structured JSON log of hook executions (SessionStart/End/SubagentStop/PreCompact)
-  Daily/YYYY-MM/DD.md        # Session summaries (e.g. Daily/2026-03/13.md)
+  graph.json                 # Pre-built knowledge graph for the visualizer (gitignored, rebuilt locally)
+  Daily/YYYY-MM/DD-{username}.md  # Per-user daily notes (e.g. Daily/2026-03/13-alice.md)
   Projects/                  # Per-project context
   Languages/                 # Language-specific knowledge
   Frameworks/                # Framework knowledge
@@ -391,7 +393,7 @@ defaults:
 
 embeddings:
   model: BAAI/bge-small-en-v1.5  # fastembed model for semantic search
-  min_score: 0.35          # Minimum cosine similarity threshold
+  min_score: 0.45          # Minimum cosine similarity threshold
   top_k: 10                # Maximum semantic search results
 
 git:

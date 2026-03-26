@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-25
+
+### Added
+
+- **CI pipeline** (`.github/workflows/ci.yml`) — runs `make checkall` on push/PR for both root and `parsidion-mcp/`; build-status badge added to README
+- **`vault_config.py`** — new sub-module extracted from `vault_common.py`: config loading, YAML parsing, schema validation
+- **`vault_path.py`** — new sub-module: path resolution (`resolve_vault`, `resolve_templates_dir`), vault constants, forbidden-prefix validation, secure log directory helpers
+- **`vault_fs.py`** — new sub-module: file locking, pending queue, git commit, daily note lifecycle, vault directory management
+- **`vault_index.py`** — new sub-module: frontmatter/body parsing, note search, context building, SQLite index queries
+- **`vault_hooks.py`** — new sub-module: hook event logging, env management, transcript helpers, process utilities
+- **`vault_adaptive.py`** — new sub-module: adaptive context scoring, last-seen tracking, usefulness scores
+- **`vault_tui.py`** — new standalone module: curses-based interactive TUI extracted from `vault_search.py`; lazily imported so metadata/grep modes no longer load curses or fastembed eagerly
+- **`embed_eval_common.py`** — shared dataclasses, constants, and utilities for embed eval pipeline
+- **`embed_eval_generate.py`** — Phase 1 of embed eval: ground-truth dataset generation
+- **`embed_eval_run.py`** — Phase 2 of embed eval: evaluation run against embeddings DB
+- **`embed_eval_report.py`** — Phase 3 of embed eval: statistics and HTML/JSON report generation
+- **`tests/test_vault_doctor.py`** — 26 unit tests covering vault_doctor validators, state management, link parsing, tag deduplication, and migration logic
+- **`tests/test_embed_eval.py`** — 42 unit tests covering embed_eval dataclasses, chunking strategies, CLI parsing, and report generation
+- **`resolve_templates_dir()`** in `vault_common.py` — runtime resolution of templates directory (env var `CLAUDE_TEMPLATES_DIR`, sibling `templates/`, or default `~/.claude/skills/parsidion-cc/templates/`)
+- **`secure_log_dir()`** in `vault_common.py` — returns `~/.claude/logs/` created with `mode=0o700`
+- **`rotate_log_file()`** in `vault_common.py` — log rotation with configurable `max_lines` for hook error logs
+- **`is_process_running()`** in `vault_common.py` — canonical implementation (was duplicated in `update_index.py` and `vault_doctor.py`)
+- **`append_session_to_daily()`** in `vault_common.py` — moved from `session_stop_hook.py` for reuse
+- **`SCRIPTS_DIR`** constant exported from `vault_common.py`
+- **`__version__ = "0.5.0"`** exported from `vault_common.py`
+- **`VaultToolError`** and **`OpsToolError`** exception classes in `parsidion-mcp` tools
+- **`_extract_vault_dirs()`** in `install.py` — reads `VAULT_DIRS` from `vault_common.py` source at runtime, eliminating the duplicate hardcoded list
+
+### Changed
+
+- **`vault_common.py`** is now a thin re-export facade (8 lines) — all public symbols are preserved for full backward compatibility; direct `import vault_common; vault_common.X()` patterns continue to work unchanged
+- **`embed_eval.py`** refactored into a thin orchestrator that delegates to the three phase sub-scripts
+- **`session_start_hook.py` `_build_candidates()`** — now queries SQLite via `query_note_index()` first; filesystem walk used only as fallback when DB is absent
+- **`append_to_pending()` deduplication** — replaced O(n) list scan with O(1) `set[str]` membership test
+- **`resolve_vault()` LRU cache** — split into public wrapper (normalizes `Path` → `str`) and private `_resolve_vault_cached()` to fix cache-key inconsistency between `Path("/x")` and `"/x"`
+- **`load_config()`** — `@lru_cache` applied directly; `_load_config_cached` indirection removed
+- **MCP tools** — all `return "ERROR: ..."` sentinel strings replaced with raised exceptions (`VaultToolError`, `OpsToolError`, `ValueError`)
+- **`parsidion-mcp` dev dependencies** — aligned `pytest`, `ruff`, `pyright` versions with root `pyproject.toml`
+- **`visualizer/app/api/note/route.ts`** — all synchronous `fs` calls replaced with `fs/promises` + `await`
+- **`visualizer/components/GraphCanvas.tsx`** — replaced `useRef<any>` with typed `Sigma` and `AbstractGraph` refs; extracted magic color/numeric constants to `sigma-colors.ts`
+- **`visualizer/lib/useVisualizerState.ts`** — betweenness centrality computation now gated behind a 500-node limit
+- **`MIN_SCORE` default** corrected to `0.45` in `parsidion-mcp/tools/search.py` (was `0.35`)
+- `ideas.md` and `reddit-release.md` moved from repo root to `docs/`
+
+### Fixed
+
+- **Shell injection** (`SEC-001`) — `vault_new.py` `--open` flag: replaced `os.system(f'{editor} "{path}"')` with `subprocess.run([*shlex.split(editor), str(path)], check=False)`
+- **World-readable `/tmp` log files** (`SEC-002`) — all `/tmp/parsidion-cc-*` paths redirected to `~/.claude/logs/` (`mode=0o700`)
+- **`vault_doctor.py` credential leakage** (`SEC-003`) — replaced 4 `os.environ.copy(); env.pop("CLAUDECODE")` call sites with `vault_common.env_without_claudecode()`
+- **Transcript path boundary check** (`SEC-004`) — `session_stop_hook.py` and `subagent_stop_hook.py` now validate transcript path is under `~/.claude/`
+- **`vault_write` content size limit** (`SEC-006`) — 10 MB guard added; raises `VaultToolError` on oversized content
+- **`vault_write` file extension allow-list** (`SEC-009`) — non-`.md` extensions rejected
+- **`cwd` vault path validation** (`SEC-007`) — `resolve_vault()` validates resolved path against `_VAULT_FORBIDDEN_PREFIXES`
+- **`VAULT_ROOT` mutation without restore** (`QA-001`) — `try/finally` restore pattern added to `vault_merge.py`, `vault_review.py`, `vault_export.py`, `build_embeddings.py`
+- **Installer regex-patching removed** (`ARC-001`) — `install.py` no longer mutates installed `.py` source files; vault path resolved at runtime via `resolve_vault()`
+- **`sys.path.insert(0, ...)` removed** (`ARC-002`) — eliminated from all 21 hook scripts and 6 test files
+- **`parsidion-mcp` uses `resolve_vault()`** (`ARC-004`) — replaced direct `VAULT_ROOT` references with `resolve_vault()` calls
+- **`_CONFIG_SCHEMA`** now includes `"vault": {"username": (str,)}` section (`ARC-010`)
+- **`ops.py` `SCRIPTS_DIR`** — now uses `vault_common.SCRIPTS_DIR` instead of fragile path arithmetic (`ARC-007`)
+- **`flock_*` type annotations** (`QA-009`) — `f: IO[Any]` added to all 6 flock function signatures
+- **`_extract_title` thin wrapper** removed from `update_index.py`; calls `extract_title()` directly (`QA-013`)
+- **Stale TODO reference** in `vault_links.py` module docstring updated (`QA-014`)
+- **`daily note path format`** in README corrected to `DD-{username}.md` (`DOC-001`)
+- **`min_score` default** corrected to `0.45` in README, `docs/EMBEDDINGS.md`, `docs/MCP.md`, `SKILL.md` (`DOC-002`)
+- **CONTRIBUTING.md stdlib-only rule** updated to cover all scripts under `skills/parsidion-cc/scripts/` (`DOC-003`, `DOC-004`)
+- **`DOCUMENTATION_STYLE_GUIDE.md`** project name corrected to "Parsidion CC" (`DOC-005`)
+- **`graph.json`** added to README vault structure block (`DOC-010`)
+- **`console.log` → `console.info`** in `visualizer/server.ts` (`DOC-015`)
+
 ## [0.4.1] - 2026-03-25
 
 ### Added

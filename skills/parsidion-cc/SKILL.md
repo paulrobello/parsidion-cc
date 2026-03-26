@@ -458,7 +458,7 @@ summarizer:
 
 embeddings:
   model: BAAI/bge-small-en-v1.5  # fastembed model ID; ~67 MB ONNX model, cached after first run
-  min_score: 0.35                 # Minimum cosine similarity for search results
+  min_score: 0.45                 # Minimum cosine similarity for search results
   top_k: 10                       # Default result count
 
 git:

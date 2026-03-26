@@ -1,9 +1,14 @@
-"""Tests for rebuild_index and vault_doctor tools."""
+"""Tests for rebuild_index and vault_doctor tools.
+
+ARC-008: Updated to expect OpsToolError instead of sentinel error strings.
+"""
 
 import subprocess
 from unittest.mock import patch, MagicMock
 
-from parsidion_mcp.tools.ops import rebuild_index, vault_doctor
+import pytest
+
+from parsidion_mcp.tools.ops import OpsToolError, rebuild_index, vault_doctor
 
 
 def _make_proc(returncode: int = 0, stdout: str = "ok", stderr: str = "") -> MagicMock:
@@ -30,21 +35,18 @@ def test_rebuild_index_success() -> None:
     assert cmd[:3] == ["uv", "run", "--no-project"]
 
 
-def test_rebuild_index_nonzero_exit_returns_error() -> None:
+def test_rebuild_index_nonzero_exit_raises() -> None:
     with patch("parsidion_mcp.tools.ops.subprocess.run") as mock_run:
         mock_run.return_value = _make_proc(returncode=1, stderr="something failed")
-        result = rebuild_index()
-
-    assert result.startswith("ERROR:")
-    assert "something failed" in result
+        with pytest.raises(OpsToolError, match="something failed"):
+            rebuild_index()
 
 
-def test_rebuild_index_timeout_returns_error() -> None:
+def test_rebuild_index_timeout_raises() -> None:
     with patch("parsidion_mcp.tools.ops.subprocess.run") as mock_run:
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="uv", timeout=30)
-        result = rebuild_index()
-
-    assert "timed out" in result
+        with pytest.raises(OpsToolError, match="timed out"):
+            rebuild_index()
 
 
 def test_rebuild_index_timeout_is_30s() -> None:
@@ -107,20 +109,18 @@ def test_vault_doctor_limit_none_omits_flag() -> None:
     assert "--limit" not in cmd
 
 
-def test_vault_doctor_nonzero_exit_returns_error() -> None:
+def test_vault_doctor_nonzero_exit_raises() -> None:
     with patch("parsidion_mcp.tools.ops.subprocess.run") as mock_run:
         mock_run.return_value = _make_proc(returncode=1, stderr="crashed")
-        result = vault_doctor()
+        with pytest.raises(OpsToolError):
+            vault_doctor()
 
-    assert result.startswith("ERROR:")
 
-
-def test_vault_doctor_timeout_returns_error() -> None:
+def test_vault_doctor_timeout_raises() -> None:
     with patch("parsidion_mcp.tools.ops.subprocess.run") as mock_run:
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="uv", timeout=120)
-        result = vault_doctor()
-
-    assert "timed out" in result
+        with pytest.raises(OpsToolError, match="timed out"):
+            vault_doctor()
 
 
 def test_vault_doctor_timeout_is_120s() -> None:

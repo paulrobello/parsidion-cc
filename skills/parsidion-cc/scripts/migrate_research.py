@@ -20,11 +20,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-# These scripts are not a proper package — sys.path.insert is intentional so
-# each script can run standalone via ``uv run`` or ``python`` without requiring
-# pip install or editable installs.  See ARC-009 in AUDIT.md.
-sys.path.insert(0, str(Path(__file__).parent))
-
 from vault_common import (
     VAULT_ROOT,
     ensure_vault_dirs,

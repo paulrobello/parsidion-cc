@@ -55,6 +55,8 @@ export default function Home() {
       .then(setGraphData)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
+  // QA-017: Mount-only effect for initial graph data load and localStorage
+  // migration.  Must not re-run when state changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -133,6 +135,9 @@ export default function Home() {
     if (mq.matches) state.setSidebarCollapsed(true)
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
+  // QA-017: Mount-only effect for responsive sidebar collapse on mobile.
+  // state.setSidebarCollapsed is stable (useCallback), but including it
+  // would make this depend on the entire state object.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -179,6 +184,9 @@ export default function Home() {
     } else {
       if (simWasRunningRef.current) state.setIsLayoutRunning(true)
     }
+  // QA-017: Only reacts to viewMode changes.  Including state.isLayoutRunning
+  // or state.setIsLayoutRunning would create an infinite loop (the effect
+  // toggles isLayoutRunning, which would re-trigger itself).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.viewMode])
 

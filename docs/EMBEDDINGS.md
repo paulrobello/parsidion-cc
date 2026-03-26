@@ -533,7 +533,7 @@ The `use_embeddings` flag for the session start hook lives under `session_start_
 embeddings:
   enabled: true
   model: BAAI/bge-small-en-v1.5
-  min_score: 0.35
+  min_score: 0.45
   top_k: 10
 
 session_start_hook:

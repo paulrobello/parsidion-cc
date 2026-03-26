@@ -9,18 +9,11 @@ use tmp_path for all file I/O to avoid touching the real vault.
 """
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-# Mirror the sys.path.insert pattern used by all hook scripts (ARC-009).
-sys.path.insert(
-    0,
-    str(Path(__file__).resolve().parent.parent / "skills" / "parsidion-cc" / "scripts"),
-)
-
-import vault_common  # noqa: E402
+import vault_common
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +101,7 @@ class TestAppendToPending:
     @pytest.fixture(autouse=True)
     def clear_vault_cache(self) -> None:
         """Clear resolve_vault lru_cache so monkeypatching VAULT_ROOT takes effect."""
-        vault_common.resolve_vault.cache_clear()
+        vault_common.resolve_vault.cache_clear()  # type: ignore[union-attr]
 
     def test_writes_jsonl_entry(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

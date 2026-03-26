@@ -1,7 +1,7 @@
 # Multi-Vault Support Design
 
 **Date:** 2026-03-24
-**Status:** Draft
+**Status:** Implemented
 **Enhancement:** #18 from ENHANCE.md
 
 ## Overview

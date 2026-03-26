@@ -44,11 +44,11 @@ Thank you for your interest in contributing to Parsidion CC. This guide covers t
 
 ### stdlib-only rule
 
-All hook scripts and shared libraries (`install.py`, `vault_common.py`, `session_start_hook.py`, `session_stop_hook.py`, `pre_compact_hook.py`, `update_index.py`) **must use Python stdlib exclusively**. No `pip install`, no `uv add`. The `pyproject.toml` intentionally has no runtime dependencies.
+Any script under `skills/parsidion-cc/scripts/` **must use Python stdlib exclusively**, except the four PEP 723 scripts (`summarize_sessions.py`, `build_embeddings.py`, `vault_search.py`, `vault_new.py`) which declare their own inline dependencies. `install.py` at the repo root follows the same stdlib-only constraint. No `pip install`, no `uv add`. The `pyproject.toml` intentionally has no runtime dependencies.
 
 **Why:** Hook scripts run inside Claude Code's lifecycle events. Adding third-party dependencies would break the zero-dependency guarantee and complicate installation.
 
-**Exception:** `summarize_sessions.py` is a PEP 723 script with inline dependency declarations (`claude-agent-sdk`, `anyio`). Its dependencies are installed automatically by `uv run` into an isolated environment.
+**Exception:** The four PEP 723 scripts listed above have inline dependency declarations (e.g. `claude-agent-sdk`, `anyio`, `fastembed`). Their dependencies are installed automatically by `uv run` into an isolated environment.
 
 ### Type annotations
 
@@ -98,6 +98,16 @@ EOF
 
 # Test pre_compact_hook
 python skills/parsidion-cc/scripts/pre_compact_hook.py <<'EOF'
+{"cwd": "/path/to/project", "transcript_path": "/path/to/transcript.jsonl"}
+EOF
+
+# Test session_stop_wrapper (outputs {} immediately, spawns Python hook detached)
+bash skills/parsidion-cc/scripts/session_stop_wrapper.sh <<'EOF'
+{"cwd": "/path/to/project", "transcript_path": "/path/to/transcript.jsonl"}
+EOF
+
+# Test post_compact_hook (reads last Pre-Compact Snapshot from today's daily note)
+python skills/parsidion-cc/scripts/post_compact_hook.py <<'EOF'
 {"cwd": "/path/to/project", "transcript_path": "/path/to/transcript.jsonl"}
 EOF
 

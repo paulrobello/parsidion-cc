@@ -7,19 +7,12 @@ generates required YAML frontmatter, and optionally opens the note in $EDITOR.
 
 import argparse
 import os
+import shlex
+import subprocess
 import sys
 from datetime import date
-from pathlib import Path
 
-# These scripts are not a proper package — sys.path.insert is intentional so
-# each script can run standalone via ``uv run`` or ``python`` without requiring
-# pip install or editable installs.  See ARC-009 in AUDIT.md.
-# SEC-011: SHADOWING RISK — a ``vault_common.py`` in the process cwd at hook
-# invocation time would shadow the real module.  Accepted risk under the
-# stdlib-only constraint; proper packaging would eliminate it.
-sys.path.insert(0, str(Path(__file__).parent))
-
-import vault_common  # noqa: E402
+import vault_common
 
 # Mapping from note type to vault folder name
 _TYPE_TO_FOLDER: dict[str, str] = {
@@ -242,7 +235,7 @@ Examples:
     if args.open:
         editor = os.environ.get("EDITOR", "")
         if editor:
-            os.system(f'{editor} "{target_path}"')  # noqa: S605
+            subprocess.run([*shlex.split(editor), str(target_path)], check=False)
         else:
             print(
                 "Warning: $EDITOR is not set; cannot open note.",

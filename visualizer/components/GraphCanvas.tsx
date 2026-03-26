@@ -3,8 +3,17 @@
 import { useEffect, useRef, useCallback, useMemo, useState, forwardRef, useImperativeHandle } from 'react'
 import type { GraphData, GraphEdge, GraphSource } from '@/lib/graph'
 import { filterEdges } from '@/lib/graph'
-import { getNodeColor, getNodeSize, getSemanticEdgeColor } from '@/lib/sigma-colors'
+import {
+  getNodeColor, getNodeSize, getSemanticEdgeColor,
+  HIGHLIGHT_COLOR, CANVAS_BACKGROUND, LABEL_COLOR, MUTED_NODE_COLOR,
+  MENU_BACKGROUND, MENU_BORDER, ACCENT_TEAL,
+  PHYSICS_DAMPING, PHYSICS_DT, PHYSICS_MIN_DIST,
+} from '@/lib/sigma-colors'
 import type { EdgeColorMode, NodeSizeMode } from '@/lib/sigma-colors'
+// QA-004: Import Sigma and AbstractGraph types for proper ref typing.
+// These are type-only imports; the runtime imports remain dynamic (code-split).
+import type Sigma from 'sigma'
+import type { AbstractGraph } from 'graphology-types'
 
 export interface GraphCanvasHandle {
   flyToNode: (stem: string) => void
@@ -84,11 +93,11 @@ function pruneEdges(edges: GraphEdge[], k: number): GraphEdge[] {
   return edges.filter(e => kept.has(e))
 }
 
+// QA-004: Properly typed graph parameter instead of `any`.
 function findWikiPath(
   from: string,
   to: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  graph: any
+  graph: AbstractGraph
 ): { path: string[]; edgeIds: string[] } | null {
   const adj = new Map<string, Array<{ neighbor: string; edgeId: string }>>()
   ;(graph.nodes() as string[]).forEach((n: string) => adj.set(n, []))
@@ -143,10 +152,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sigmaRef = useRef<any>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const graphRef = useRef<any>(null)
+  // QA-004: Properly typed refs for Sigma and graphology instances.
+  const sigmaRef = useRef<Sigma | null>(null)
+  const graphRef = useRef<AbstractGraph | null>(null)
   // Simple force simulation state — velocity per node, persists across frames
   const simVelocitiesRef = useRef<Map<string, { vx: number; vy: number }>>(new Map())
 
@@ -559,10 +567,10 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
         const pn = pathNodesRef.current
         if (pn.size > 0 && pn.has(node)) {
           const showLabel = labelsOnHoverOnlyRef.current ? node === hoveredNodeRef.current : true
-          return { ...data, color: '#FFD700', zIndex: 10, label: showLabel ? data.label : '' }
+          return { ...data, color: HIGHLIGHT_COLOR, zIndex: 10, label: showLabel ? data.label : '' }
         }
         if (pathSourceRef.current === node) {
-          return { ...data, color: '#FFD700', zIndex: 5 }
+          return { ...data, color: HIGHLIGHT_COLOR, zIndex: 5 }
         }
         const nh = neighborhoodRef.current
         if (nh && !nh.nodes.has(node)) {
@@ -589,7 +597,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
           : (hn.size === 0 || isHovered || hn.has(node))
         const label = showLabel ? data.label : ''
         if (!isHighlighted && !isHovered) {
-          return { ...data, label, color: '#0d1020', size: data.size * 0.6, zIndex: 0 }
+          return { ...data, label, color: CANVAS_BACKGROUND, size: data.size * 0.6, zIndex: 0 }
         }
         if (nh) {
           const hopDist = nh.distances.get(node)
@@ -605,7 +613,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       const edgeReducer = (edge: string, data: any) => {
         const pe = pathEdgesRef.current
         if (pe.size > 0 && pe.has(edge)) {
-          return { ...data, color: '#FFD700', size: 3, hidden: false }
+          return { ...data, color: HIGHLIGHT_COLOR, size: 3, hidden: false }
         }
         const nh = neighborhoodRef.current
         if (nh) {
@@ -621,7 +629,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
         }
         const he = highlightedEdgesRef.current
         if (he.size === 0 || he.has(edge)) return data
-        return { ...data, color: '#0d1020', size: 0.3 }
+        return { ...data, color: CANVAS_BACKGROUND, size: 0.3 }
       }
 
       const sigma = new Sigma(graph, containerRef.current!, {
@@ -630,7 +638,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
         defaultNodeColor: '#6b7280',
         labelFont: 'Oxanium, sans-serif',
         labelSize: 11,
-        labelColor: { color: '#FFFFFF' },
+        labelColor: { color: LABEL_COLOR },
         minCameraRatio: 0.05,
         maxCameraRatio: 10,
         // Scale nodes with zoom: shrink when zoomed out, grow when zoomed in.
@@ -650,7 +658,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
           context.lineWidth = 3
           context.strokeStyle = 'rgba(3, 4, 10, 0.95)'
           context.strokeText(data.label, x, y)
-          context.fillStyle = '#FFFFFF'
+          context.fillStyle = LABEL_COLOR
           context.fillText(data.label, x, y)
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -760,9 +768,9 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
 
       // Simple force-directed simulation — no FA2, no adaptive state,
       // no hidden convergence issues. Just Newtonian physics + damping.
-      const DAMPING = 0.85       // velocity decay per frame
-      const DT = 0.005          // time step
-      const MIN_DIST = 0.5      // prevent division by zero / extreme forces
+      const DAMPING = PHYSICS_DAMPING
+      const DT = PHYSICS_DT
+      const MIN_DIST = PHYSICS_MIN_DIST
 
       const layoutLoop = () => {
         if (!isRunningRef.current || !graphRef.current || !sigmaRef.current) {
@@ -939,6 +947,11 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
       pathNodesRef.current = new Set()
       pathEdgesRef.current = new Set()
     }
+  // QA-017: Intentionally only depends on `data` — the effect rebuilds the entire
+  // Sigma/graphology instance from scratch when the data source changes.  Including
+  // all prop dependencies (threshold, activeTypes, etc.) would cause the graph to
+  // be destroyed and recreated on every slider change, losing camera position and
+  // layout state.  Incremental updates are handled by separate effects below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
 
@@ -999,7 +1012,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
           <div
             style={{
               position: 'fixed', left: nodeContextMenu.x, top: nodeContextMenu.y,
-              background: '#0a0e1a', border: '1px solid #1a2040', borderRadius: 4,
+              background: MENU_BACKGROUND, border: `1px solid ${MENU_BORDER}`, borderRadius: 4,
               zIndex: 1000, minWidth: 160, boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
               fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
             }}
@@ -1007,7 +1020,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
           >
             <div
               style={{ padding: '6px 12px', cursor: 'pointer', color: '#ccc' }}
-              onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+              onMouseEnter={e => (e.currentTarget.style.background = MENU_BORDER)}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               onClick={() => { onNodeClick(nodeContextMenu.stem, false); setNodeContextMenu(null) }}
             >
@@ -1015,8 +1028,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
             </div>
             {onOpenHistory && (
               <div
-                style={{ padding: '6px 12px', cursor: 'pointer', color: '#00FFC8' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+                style={{ padding: '6px 12px', cursor: 'pointer', color: ACCENT_TEAL }}
+                onMouseEnter={e => (e.currentTarget.style.background = MENU_BORDER)}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 onClick={() => { onOpenHistory!(nodeContextMenu.stem); setNodeContextMenu(null) }}
               >
@@ -1027,10 +1040,11 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
             <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', margin: '2px 0' }} />
             {pathSource && pathSource !== nodeContextMenu.stem && (
               <div
-                style={{ padding: '6px 12px', cursor: 'pointer', color: '#FFD700' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+                style={{ padding: '6px 12px', cursor: 'pointer', color: HIGHLIGHT_COLOR }}
+                onMouseEnter={e => (e.currentTarget.style.background = MENU_BORDER)}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 onClick={() => {
+                  if (!graphRef.current) return
                   const result = findWikiPath(pathSourceRef.current!, nodeContextMenu.stem, graphRef.current)
                   setNodeContextMenu(null)
                   if (result) {
@@ -1056,8 +1070,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
             )}
             {pathSource === nodeContextMenu.stem ? (
               <div
-                style={{ padding: '6px 12px', cursor: 'pointer', color: '#6B7A99' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+                style={{ padding: '6px 12px', cursor: 'pointer', color: MUTED_NODE_COLOR }}
+                onMouseEnter={e => (e.currentTarget.style.background = MENU_BORDER)}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 onClick={() => {
                   pathSourceRef.current = null
@@ -1071,8 +1085,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
               </div>
             ) : (
               <div
-                style={{ padding: '6px 12px', cursor: 'pointer', color: pathSource ? '#f59e0b' : '#6B7A99' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#1a2040')}
+                style={{ padding: '6px 12px', cursor: 'pointer', color: pathSource ? '#f59e0b' : MUTED_NODE_COLOR }}
+                onMouseEnter={e => (e.currentTarget.style.background = MENU_BORDER)}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 onClick={() => {
                   pathSourceRef.current = nodeContextMenu.stem
@@ -1096,7 +1110,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, Props>(function GraphCa
           background: 'rgba(6, 8, 18, 0.95)',
           border: '1px solid rgba(255, 215, 0, 0.4)',
           borderRadius: 6, padding: '8px 16px',
-          color: '#FFD700', fontSize: 11,
+          color: HIGHLIGHT_COLOR, fontSize: 11,
           fontFamily: "'JetBrains Mono', monospace",
           maxWidth: '80%', textAlign: 'center',
           boxShadow: '0 4px 20px rgba(0,0,0,0.7)',

@@ -19,13 +19,14 @@ parsidion-cc = { path = "../", editable = true }
 [project.scripts]
 parsidion-mcp = "parsidion_mcp.server:main"
 
+# ARC-017: Dev dependency versions aligned with root pyproject.toml
 [dependency-groups]
 dev = [
-    "pytest>=9.0",
-    "pytest-timeout>=0.5",
-    "pytest-cov>=4.0",
-    "ruff>=0.9",
-    "pyright>=1.1",
+    "pytest>=9.0.2",
+    "pytest-timeout>=2.4.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.15.6",
+    "pyright>=1.1.408",
 ]
 
 [tool.pytest.ini_options]

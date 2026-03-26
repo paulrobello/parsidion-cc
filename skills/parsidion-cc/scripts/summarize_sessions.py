@@ -39,15 +39,8 @@ from typing import cast
 import anyio  # type: ignore[import-untyped]
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query  # type: ignore[import-untyped]
 
-# These scripts are not a proper package — sys.path.insert is intentional so
-# each script can run standalone via ``uv run`` or ``python`` without requiring
-# pip install or editable installs.  See ARC-009 in AUDIT.md.
-# SEC-011: SHADOWING RISK — a ``vault_common.py`` in the process cwd at script
-# invocation time would shadow the real module.  Accepted risk under the
-# stdlib-only constraint; proper packaging would eliminate it.
-sys.path.insert(0, str(Path(__file__).parent))
-import vault_common  # noqa: E402
-import vault_links  # noqa: E402
+import vault_common
+import vault_links
 
 # File locking imported from vault_common (canonical implementation)
 _flock_exclusive = vault_common.flock_exclusive
@@ -64,7 +57,7 @@ _DEFAULT_MODEL: str = vault_common.get_config(
 _STALE = "__STALE__"
 
 # Progress tracking (#13)
-_PROGRESS_FILE = Path("/tmp/parsidion-cc-summarizer-progress.json")
+_PROGRESS_FILE = vault_common.secure_log_dir() / "parsidion-cc-summarizer-progress.json"
 
 
 def _write_progress(
@@ -1204,6 +1197,7 @@ def rebuild_index(
             check=True,
             capture_output=True,
             text=True,
+            env=vault_common.env_without_claudecode(),
         )
         print("Vault index rebuilt.")
     except subprocess.CalledProcessError as e:

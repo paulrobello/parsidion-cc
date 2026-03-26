@@ -190,7 +190,7 @@ app.prepare().then(() => {
   // ── Start listening ────────────────────────────────────────────────────────
 
   server.listen(PORT, () => {
-    console.log(`> Ready on http://localhost:${PORT}`)
+    console.info(`> Ready on http://localhost:${PORT}`)
   })
 }).catch((err: Error) => {
   console.error('Failed to start server:', err)

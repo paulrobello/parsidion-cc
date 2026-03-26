@@ -18,7 +18,7 @@ def vault_search(
     project: str | None = None,
     recent_days: int | None = None,
     top_k: int = 10,
-    min_score: float = 0.35,
+    min_score: float = 0.45,
 ) -> str:
     """Search vault notes using semantic or metadata mode.
 
@@ -35,12 +35,16 @@ def vault_search(
         min_score: Minimum cosine similarity threshold (semantic mode only).
 
     Returns:
-        JSON array of note objects, or an ERROR string on failure.
+        JSON array of note objects.
+
+    Raises:
+        ValueError: If the embeddings DB is missing (semantic mode).
     """
     if query is not None:
         db_path = vault_common.get_embeddings_db_path()
         if not db_path.exists():
-            return "ERROR: embeddings DB not found — run rebuild_index first"
+            # ARC-008: Raise instead of returning a sentinel error string
+            raise ValueError("embeddings DB not found -- run rebuild_index first")
         results = _vault_search_module.search(query, top=top_k, min_score=min_score)
     else:
         results = _vault_search_module.query(
