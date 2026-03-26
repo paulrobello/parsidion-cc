@@ -1045,7 +1045,7 @@ dev = [
 [[package]]
 name = "parsidion-mcp"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "parsidion-cc", extra = ["search"] },
