@@ -1365,7 +1365,7 @@ def _find_tag_duplicates(
     """
     tags = sorted(tag_counts.keys())
     pairs: list[tuple[str, str, str]] = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
 
     for i, t1 in enumerate(tags):
         for t2 in tags[i + 1 :]:

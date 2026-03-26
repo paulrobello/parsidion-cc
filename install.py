@@ -376,12 +376,18 @@ def install_skill(
                 verbose_only=True,
                 verbose=verbose,
             )
-            _maybe_patch_vault_common(dest, vault_root, dry_run=dry_run, verbose=verbose)
+            _maybe_patch_vault_common(
+                dest, vault_root, dry_run=dry_run, verbose=verbose
+            )
             return dest
 
     if (dest.exists() or dest.is_symlink()) and not force and not dry_run:
         _warn(f"Skill already exists at {dest}")
-        action = "Replace with symlink to repo?" if use_symlink else "Overwrite existing skill files?"
+        action = (
+            "Replace with symlink to repo?"
+            if use_symlink
+            else "Overwrite existing skill files?"
+        )
         if not yes and not _confirm(action, default=False):
             print(f"  {dim('Skipping skill installation.')}")
             return dest
@@ -439,7 +445,6 @@ def _maybe_patch_vault_common(
     (acceptable for single-user installs; the patched file can be committed).
     """
     default_vault = Path.home() / "ClaudeVault"
-    default_templates = Path.home() / ".claude" / "skills" / "parsidion-cc" / "templates"
     if vault_root.resolve() == default_vault.resolve():
         _print(
             dim("  vault_common.py: default vault path — skipping patch"),
@@ -1452,7 +1457,12 @@ def configure_vault_gitignore(vault_root: Path, dry_run: bool = False) -> None:
         dry_run: If True, print actions without writing.
     """
     gitignore = vault_root / ".gitignore"
-    entries = ["embeddings.db", "pending_summaries.jsonl", "hook_events.log", "graph.json"]
+    entries = [
+        "embeddings.db",
+        "pending_summaries.jsonl",
+        "hook_events.log",
+        "graph.json",
+    ]
 
     if gitignore.exists():
         content = gitignore.read_text(encoding="utf-8")

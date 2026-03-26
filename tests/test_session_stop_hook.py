@@ -105,6 +105,11 @@ class TestDetectCategories:
 class TestAppendToPending:
     """Tests for vault_common.append_to_pending."""
 
+    @pytest.fixture(autouse=True)
+    def clear_vault_cache(self) -> None:
+        """Clear resolve_vault lru_cache so monkeypatching VAULT_ROOT takes effect."""
+        vault_common.resolve_vault.cache_clear()
+
     def test_writes_jsonl_entry(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

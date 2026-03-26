@@ -82,6 +82,8 @@ extraPaths = [
 ]
 exclude = [
     "parsidion-mcp",
+    ".worktrees",
+    ".venv",
 ]
 
 [tool.ty.environment]
