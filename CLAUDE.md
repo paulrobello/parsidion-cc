@@ -239,9 +239,26 @@ EOF
 
 **Exception**: `summarize_sessions.py` is a PEP 723 script with inline dependency declarations (`claude-agent-sdk`, `anyio`). Run it with `uv run` — deps are installed automatically into an isolated environment.
 
+## Makefile Targets
+
+| Target | Command | Notes |
+|---|---|---|
+| `make install` | `uv run install.py --force --yes` | Sync source → `~/.claude/` |
+| `make fmt` | `uv run ruff format .` | Format Python |
+| `make lint` | `uv run ruff check .` | Lint Python |
+| `make typecheck` | `uv run pyright .` | Type-check Python |
+| `make test` | `uv run pytest tests/` | Run test suite |
+| `make checkall` | fmt + lint + typecheck + test | Full quality gate |
+| `make graph` | `uv run skills/parsidion-cc/scripts/build_graph.py` | Rebuild `graph.json` (excludes Daily notes) |
+| `make graph-with-daily` | same + `--include-daily` | Rebuild `graph.json` including Daily notes |
+| `make visualizer` | `cd visualizer && bun dev` | Start visualizer dev server on port 3999 |
+| `make build-visualizer` | `cd visualizer && bun run build` | Build visualizer for production |
+| `make stop-visualizer` | kills port 3999 | Stop dev server |
+| `make visualizer-setup` | `cd visualizer && bun install` | Install visualizer dependencies |
+
 ## Architecture
 
-The system has four layers:
+The system has ten components:
 
 1. **Hook scripts** — Python scripts fired by Claude Code's lifecycle events, communicating via JSON stdin/stdout:
    - `session_start_hook.py`: Loads relevant vault notes as `additionalContext`. Default mode injects a **compact one-line-per-note index** (title + tags) to minimize token usage; `--verbose` flag or `verbose_mode: true` config switches to full summaries. Optional `--ai [MODEL]` flag uses `claude -p` (haiku by default, `CLAUDECODE` unset) to intelligently select notes — requires bumping hook timeout to 30 s in `settings.json`. Also shows a **pending queue warning** when `pending_summaries.jsonl` has entries and prepends a **"Since last time" delta** of new/modified notes per project (controlled by `track_delta` config key). When `adaptive_context.enabled: true`, notes are ranked by historical usefulness and unused notes are deranked over time.

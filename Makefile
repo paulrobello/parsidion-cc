@@ -34,10 +34,10 @@ install:
 
 ## Vault Visualizer
 graph:
-	uv run scripts/build_graph.py
+	uv run skills/parsidion-cc/scripts/build_graph.py
 
 graph-with-daily:
-	uv run scripts/build_graph.py --include-daily
+	uv run skills/parsidion-cc/scripts/build_graph.py --include-daily
 
 visualizer:
 	cd visualizer && bun dev

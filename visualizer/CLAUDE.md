@@ -1,1 +1,52 @@
 @AGENTS.md
+
+# Visualizer
+
+Next.js + sigma.js knowledge graph visualizer for ClaudeVault. Renders vault notes as an interactive force-directed graph, with node sizing by recency/connections and live search/filter.
+
+## Dev Workflow
+
+```bash
+# Install dependencies (first time)
+bun install                  # or: make visualizer-setup (from repo root)
+
+# Start dev server (port 3999)
+bun dev                      # or: make visualizer (from repo root)
+
+# Build for production
+bun run build                # or: make build-visualizer (from repo root)
+
+# Kill dev server
+bun run kill                 # kills port 3999
+```
+
+## Data Source
+
+The visualizer reads **`public/graph.json`** — a pre-built snapshot of the vault graph. Rebuild it after vault changes:
+
+```bash
+# From the repo root (recommended — also rebuilds the index):
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/update_index.py --rebuild-graph
+
+# Include Daily notes in the graph:
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/update_index.py --rebuild-graph --graph-include-daily
+```
+
+
+## Architecture
+
+- **`server.ts`** — custom Express dev server (`tsx server.ts`) that wraps Next.js and serves `public/` with a file-watcher WebSocket for live graph reload when `graph.json` changes
+- **`app/`** — Next.js App Router pages
+- **`components/`** — React components; sigma.js canvas rendering lives here
+- **`lib/`** — graph layout utilities (graphology + ForceAtlas2)
+- **`public/graph.json`** — vault graph snapshot (nodes = notes, edges = wikilinks)
+
+## Key Dependencies
+
+| Package | Purpose |
+|---|---|
+| `sigma` | WebGL graph rendering |
+| `graphology` | Graph data structure |
+| `graphology-layout-forceatlas2` | Force-directed layout |
+| `next` | React framework (App Router) |
+| `chokidar` | File-watching for live reload |
