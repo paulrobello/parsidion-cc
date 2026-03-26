@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-03-25
+
+### Added
+
+- **Visualizer: `GET /api/graph` route** — serves `graph.json` from the vault root via API instead of static file, enabling correct per-vault graph data in multi-vault setups
+- **Makefile targets documented** in `CLAUDE.md` — full table of all `make` targets including visualizer commands
+
+### Fixed
+
+- **`graph.json` now lives in the vault root** (`{vault}/graph.json`) instead of `visualizer/public/graph.json` — each vault owns its own graph, gitignored and rebuilt locally
+- **`build_graph.py` repo-root detection** — replaced broken hardcoded `parent.parent` depth with `.git`-walk so the script works regardless of where it is installed or run from
+- **`make graph` / `make graph-with-daily`** — fixed broken Makefile targets pointing at deleted `scripts/build_graph.py` (moved to `skills/parsidion-cc/scripts/`)
+- **Visualizer `api/graph/rebuild`** — fixed script path (was `scripts/build_graph.py`, now resolved via `~/.claude/` then repo fallback) and added `--output` flag so rebuild writes to the correct vault
+- **Visualizer vault switching** — graph now reloads when the user switches vaults (new `useEffect` on `selectedVault`)
+- **`datetime.UTC` alias** in `build_graph.py` (replaced deprecated `timezone.utc` usage)
+- **`vault_doctor.py` type annotation** — `seen` set corrected from `set[str]` to `set[tuple[str, str]]`
+- **Pyright config** — excluded `.worktrees` and `.venv` to prevent scanning 50k+ spurious errors in third-party packages
+- **`TestAppendToPending` tests** — cleared `resolve_vault` lru_cache before each test so `VAULT_ROOT` monkeypatching actually takes effect
+- **Windows install** — `install.py` falls back to `shutil.copytree` when symlinks are unavailable
+
+### Changed
+
+- `visualizer/public/graph.json` removed from repo; `public/graph.json` added to `visualizer/.gitignore`
+- `graph.json` added to vault `.gitignore` template in `install.py`
+
 ## [0.4.0] - 2026-03-24
 
 ### Added
