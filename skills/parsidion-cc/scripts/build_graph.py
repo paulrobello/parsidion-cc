@@ -26,7 +26,12 @@ import numpy as np
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     # Default output: visualizer/public/graph.json relative to repo root
-    repo_root = Path(__file__).parent.parent
+    # Walk up from script location to find the git root (works regardless of install depth)
+    _here = Path(__file__).resolve()
+    repo_root = next(
+        (p for p in [_here, *_here.parents] if (p / ".git").exists()),
+        _here.parent.parent.parent,  # fallback: skills/parsidion-cc/scripts -> repo root
+    )
     default_output = repo_root / "visualizer" / "public" / "graph.json"
 
     parser = argparse.ArgumentParser(
