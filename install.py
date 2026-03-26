@@ -335,46 +335,81 @@ def install_skill(
     dry_run: bool = False,
     verbose: bool = False,
 ) -> Path:
-    """Copy skill directory to ~/.claude/skills/parsidion-cc/.
+    """Symlink skill directory to ~/.claude/skills/parsidion-cc/ → repo source.
+
+    Using a symlink means edits to the repo are immediately live without
+    reinstalling. vault_common.py patching is skipped when the symlink is
+    already correct (the source defaults use Path.home() which resolves at
+    runtime; only patch when the vault is in a non-default location).
 
     Returns the installed skill path.
     """
     dest = claude_dir / "skills" / "parsidion-cc"
 
-    if dest.exists() and not force and not dry_run:
-        _warn(f"Skill already exists at {dest}")
-        if not yes and not _confirm("Overwrite existing skill files?", default=False):
-            print(f"  {dim('Skipping skill installation.')}")
-            return dest
-        elif yes:
+    # Check if symlink already points to the right place
+    if dest.is_symlink() and dest.resolve() == SKILL_SRC.resolve():
+        if not force:
             _print(
-                dim("  Overwriting existing skill (--yes)"),
+                dim(f"  Skill symlink already correct: {dest} → {SKILL_SRC}"),
                 verbose_only=True,
                 verbose=verbose,
             )
+            # Still patch vault_common if vault is non-default
+            _maybe_patch_vault_common(dest, vault_root, dry_run=dry_run, verbose=verbose)
+            return dest
 
-    _step(f"Install skill: {SKILL_SRC} → {dest}", dry_run=dry_run)
+    if (dest.exists() or dest.is_symlink()) and not force and not dry_run:
+        _warn(f"Skill already exists at {dest}")
+        if not yes and not _confirm("Replace with symlink to repo?", default=False):
+            print(f"  {dim('Skipping skill installation.')}")
+            return dest
+
+    _step(f"Install skill (symlink): {dest} → {SKILL_SRC}", dry_run=dry_run)
 
     if not dry_run:
-        if dest.exists():
+        if dest.is_symlink() or dest.is_file():
+            dest.unlink()
+        elif dest.exists():
             shutil.rmtree(dest)
-        shutil.copytree(SKILL_SRC, dest)
-        # Remove any compiled cache from source
-        for pycache in dest.rglob("__pycache__"):
-            shutil.rmtree(pycache, ignore_errors=True)
-        # Make hook scripts executable (Unix only; no-op on Windows)
+        dest.symlink_to(SKILL_SRC)
+        # Make hook scripts executable on the source (no-op if already set)
         if sys.platform != "win32":
-            for script in (dest / "scripts").glob("*.py"):
+            for script in SKILL_SRC.glob("scripts/*.py"):
                 script.chmod(script.stat().st_mode | 0o755)
-            for script in (dest / "scripts").glob("*.sh"):
+            for script in SKILL_SRC.glob("scripts/*.sh"):
                 script.chmod(script.stat().st_mode | 0o755)
 
-    templates_dir = claude_dir / "skills" / "parsidion-cc" / "templates"
-    patch_vault_common(
-        dest, vault_root, templates_dir, dry_run=dry_run, verbose=verbose
-    )
+    _maybe_patch_vault_common(dest, vault_root, dry_run=dry_run, verbose=verbose)
 
     return dest
+
+
+def _maybe_patch_vault_common(
+    installed_path: Path,
+    vault_root: Path,
+    dry_run: bool = False,
+    verbose: bool = False,
+) -> None:
+    """Patch vault_common.py only when vault_root is non-default.
+
+    Skips patching when vault_root matches the runtime default (Path.home() /
+    "ClaudeVault") to avoid dirtying the source repo with a trivial no-op.
+    When the vault IS in a non-default location the source is patched in-place
+    (acceptable for single-user installs; the patched file can be committed).
+    """
+    default_vault = Path.home() / "ClaudeVault"
+    default_templates = Path.home() / ".claude" / "skills" / "parsidion-cc" / "templates"
+    if vault_root.resolve() == default_vault.resolve():
+        _print(
+            dim("  vault_common.py: default vault path — skipping patch"),
+            verbose_only=True,
+            verbose=verbose,
+        )
+        return
+    templates_dir = installed_path / "templates"
+    patch_vault_common(
+        installed_path, vault_root, templates_dir, dry_run=dry_run, verbose=verbose
+    )
 
 
 def install_agents(
