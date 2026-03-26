@@ -498,13 +498,13 @@ The `graph.json` file is a pre-computed snapshot of vault relationships. Rebuild
 2. Run the graph builder:
    ```bash
    make graph                        # Include Daily notes (default)
-   uv run scripts/build_graph.py --no-daily  # Exclude Daily folder notes
+   uv run --no-project ~/.claude/skills/parsidion-cc/scripts/build_graph.py --no-daily  # Exclude Daily folder notes
    ```
 
 ### Graph Builder Options
 
 ```bash
-uv run scripts/build_graph.py [OPTIONS]
+uv run --no-project ~/.claude/skills/parsidion-cc/scripts/build_graph.py [OPTIONS]
 
 Options:
   --no-daily             Exclude Daily folder notes (included by default)
@@ -853,8 +853,6 @@ parsidion-cc/
 │   ├── tsconfig.server.json          # TypeScript config for server.ts
 │   └── next.config.ts
 │
-├── scripts/
-│   └── build_graph.py                # Graph data generator
 │
 └── Makefile                          # Build targets
 ```
