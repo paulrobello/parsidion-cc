@@ -449,6 +449,7 @@ All API routes accept an optional `vault` query parameter:
 | `POST /api/note?vault=<name>` | Save note to vault |
 | `GET /api/note/history?vault=<name>&stem=<stem>` | Git history for vault |
 | `GET /api/note/diff?vault=<name>&...` | Git diff in vault |
+| `GET /api/graph?vault=<name>` | Serve graph.json from vault root |
 | `POST /api/graph/rebuild?vault=<name>` | Rebuild vault's graph.json |
 | `GET /api/vaults` | List available vaults |
 
@@ -486,7 +487,7 @@ make stop-visualizer          # Kill the process on port 3999
 
 ## Building Graph Data
 
-The `graph.json` file is a pre-computed snapshot of vault relationships. Rebuild it whenever notes are added, removed, or embeddings are updated.
+The `graph.json` file is a pre-computed snapshot of vault relationships stored in the vault root (e.g. `~/ClaudeVault/graph.json`). Each vault has its own `graph.json`; the file is gitignored and rebuilt locally. Rebuild it whenever notes are added, removed, or embeddings are updated.
 
 ### Prerequisites
 
@@ -509,7 +510,7 @@ uv run --no-project ~/.claude/skills/parsidion-cc/scripts/build_graph.py [OPTION
 Options:
   --no-daily             Exclude Daily folder notes (included by default)
   --min-threshold FLOAT  Minimum cosine similarity for semantic edges (default: 0.70)
-  --output PATH          Output path for graph.json
+  --output PATH          Output path for graph.json (default: {vault}/graph.json)
   --vault PATH           Custom vault root path
 ```
 
@@ -816,6 +817,7 @@ parsidion-cc/
 │   │   ├── api/note/diff/route.ts    # Git diff between two commits (GET)
 │   │   ├── api/files/route.ts        # Vault file tree (GET)
 │   │   ├── api/vaults/route.ts       # List available vaults (GET)
+│   │   ├── api/graph/route.ts          # Serve graph.json from vault (GET)
 │   │   └── api/graph/rebuild/route.ts  # Trigger graph.json rebuild (POST)
 │   ├── components/
 │   │   ├── GraphCanvas.tsx           # Sigma.js WebGL renderer + node right-click menu
@@ -847,7 +849,7 @@ parsidion-cc/
 │   │   ├── frontmatter.ts           # Frontmatter parse/serialize helpers
 │   │   └── useLocalStorage.ts        # localStorage persistence hook
 │   ├── public/
-│   │   └── graph.json                # Pre-computed graph (generated)
+│   │   └── (static assets only — graph.json lives in the vault, not here)
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── tsconfig.server.json          # TypeScript config for server.ts

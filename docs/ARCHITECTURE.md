@@ -916,7 +916,7 @@ uv run --no-project ~/.claude/skills/parsidion-cc/scripts/build_graph.py
 cd visualizer && bun dev
 ```
 
-`skills/parsidion-cc/scripts/build_graph.py` is a PEP 723 script (depends on `numpy`). It reads `embeddings.db`, computes pairwise cosine similarity between note vectors, extracts wikilink edges from `related` frontmatter fields, and writes `visualizer/public/graph.json` for the Next.js frontend to consume.
+`skills/parsidion-cc/scripts/build_graph.py` is a PEP 723 script (depends on `numpy`). It reads `embeddings.db`, computes pairwise cosine similarity between note vectors, extracts wikilink edges from `related` frontmatter fields, and writes `graph.json` into the vault root (e.g. `~/ClaudeVault/graph.json`). Each vault owns its own `graph.json`; the file is gitignored in the vault (rebuilt locally, not synced). The visualizer serves it via the `GET /api/graph?vault=` API route.
 
 The `update_index.py` indexer and `summarize_sessions.py` summarizer both accept a `--rebuild-graph` flag to rebuild `graph.json` after each vault write. The nightly scheduler can also be configured with `--rebuild-graph` to keep the graph current automatically.
 
