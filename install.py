@@ -327,6 +327,25 @@ def patch_vault_common(
         target.write_text(new_content, encoding="utf-8")
 
 
+def _can_symlink(target: Path) -> bool:
+    """Return True if the OS supports directory symlinks at *target*'s location.
+
+    On non-Windows platforms symlinks always work. On Windows, Developer Mode or
+    Administrator privileges are required; probe with a throwaway symlink since
+    privilege checks are unreliable across Windows editions.
+    """
+    if sys.platform != "win32":
+        return True
+    target.parent.mkdir(parents=True, exist_ok=True)
+    probe = target.parent / f"._symlink_probe_{os.getpid()}"
+    try:
+        probe.symlink_to(target.parent, target_is_directory=True)
+        probe.unlink()
+        return True
+    except (OSError, NotImplementedError):
+        return False
+
+
 def install_skill(
     claude_dir: Path,
     vault_root: Path,
@@ -335,49 +354,71 @@ def install_skill(
     dry_run: bool = False,
     verbose: bool = False,
 ) -> Path:
-    """Symlink skill directory to ~/.claude/skills/parsidion-cc/ → repo source.
+    """Install skill to ~/.claude/skills/parsidion-cc/.
 
-    Using a symlink means edits to the repo are immediately live without
-    reinstalling. vault_common.py patching is skipped when the symlink is
-    already correct (the source defaults use Path.home() which resolves at
-    runtime; only patch when the vault is in a non-default location).
+    On Unix/macOS: creates a directory symlink so edits to the repo are
+    immediately live without reinstalling.
+
+    On Windows (or when symlinks are unavailable): falls back to copytree,
+    matching the original behaviour. vault_common.py is patched in both cases
+    when the vault is in a non-default location.
 
     Returns the installed skill path.
     """
     dest = claude_dir / "skills" / "parsidion-cc"
+    use_symlink = sys.platform != "win32" or _can_symlink(dest)
 
-    # Check if symlink already points to the right place
-    if dest.is_symlink() and dest.resolve() == SKILL_SRC.resolve():
+    # ── Fast-path: symlink already correct ────────────────────────────────────
+    if use_symlink and dest.is_symlink() and dest.resolve() == SKILL_SRC.resolve():
         if not force:
             _print(
                 dim(f"  Skill symlink already correct: {dest} → {SKILL_SRC}"),
                 verbose_only=True,
                 verbose=verbose,
             )
-            # Still patch vault_common if vault is non-default
             _maybe_patch_vault_common(dest, vault_root, dry_run=dry_run, verbose=verbose)
             return dest
 
     if (dest.exists() or dest.is_symlink()) and not force and not dry_run:
         _warn(f"Skill already exists at {dest}")
-        if not yes and not _confirm("Replace with symlink to repo?", default=False):
+        action = "Replace with symlink to repo?" if use_symlink else "Overwrite existing skill files?"
+        if not yes and not _confirm(action, default=False):
             print(f"  {dim('Skipping skill installation.')}")
             return dest
-
-    _step(f"Install skill (symlink): {dest} → {SKILL_SRC}", dry_run=dry_run)
+        elif yes:
+            _print(
+                dim("  Overwriting existing skill (--yes)"),
+                verbose_only=True,
+                verbose=verbose,
+            )
 
     if not dry_run:
+        # Remove whatever is currently there
         if dest.is_symlink() or dest.is_file():
             dest.unlink()
         elif dest.exists():
             shutil.rmtree(dest)
-        dest.symlink_to(SKILL_SRC)
-        # Make hook scripts executable on the source (no-op if already set)
-        if sys.platform != "win32":
+
+    if use_symlink:
+        _step(f"Install skill (symlink): {dest} → {SKILL_SRC}", dry_run=dry_run)
+        if not dry_run:
+            dest.symlink_to(SKILL_SRC)
+            # Make scripts executable on the source
             for script in SKILL_SRC.glob("scripts/*.py"):
                 script.chmod(script.stat().st_mode | 0o755)
             for script in SKILL_SRC.glob("scripts/*.sh"):
                 script.chmod(script.stat().st_mode | 0o755)
+    else:
+        _step(f"Install skill (copy): {SKILL_SRC} → {dest}", dry_run=dry_run)
+        if not dry_run:
+            shutil.copytree(SKILL_SRC, dest)
+            for pycache in dest.rglob("__pycache__"):
+                shutil.rmtree(pycache, ignore_errors=True)
+            if sys.platform != "win32":
+                for script in (dest / "scripts").glob("*.py"):
+                    script.chmod(script.stat().st_mode | 0o755)
+                for script in (dest / "scripts").glob("*.sh"):
+                    script.chmod(script.stat().st_mode | 0o755)
 
     _maybe_patch_vault_common(dest, vault_root, dry_run=dry_run, verbose=verbose)
 
