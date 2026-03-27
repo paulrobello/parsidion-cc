@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-03-26
+
+### Added
+
+- **`--enable-embeddings` installer flag** — interactive prompt and CLI flag to enable/disable semantic search embeddings (`embeddings.enabled` in `config.yaml`); defaults to yes in interactive mode
+- **`configure_embeddings()` function** in `install.py` — writes `embeddings.enabled` to vault `config.yaml`
+
+### Changed
+
+- **AI-powered note selection prompt** now defaults to **yes** (was no) — most users benefit from AI-powered context injection
+- **Embeddings status** shown in the installation plan summary
+
 ## [0.5.0] - 2026-03-25
 
 ### Added

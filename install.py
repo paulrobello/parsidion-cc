@@ -1377,6 +1377,97 @@ def configure_vault_username(
         _warn(f"Could not write vault.username to {config_path}: {exc}")
 
 
+def configure_embeddings(
+    vault_root: Path, *, enabled: bool, dry_run: bool = False
+) -> None:
+    """Write ``embeddings.enabled`` to the vault's ``config.yaml``.
+
+    Args:
+        vault_root: Path to the vault root directory.
+        enabled: Whether embeddings should be enabled.
+        dry_run: If True, print actions without writing.
+    """
+    config_path = vault_root / "config.yaml"
+
+    if config_path.exists():
+        try:
+            content = config_path.read_text(encoding="utf-8")
+        except OSError:
+            content = ""
+    else:
+        content = ""
+
+    enabled_str = "true" if enabled else "false"
+
+    # Check if embeddings.enabled already matches the desired value
+    match = re.search(r"(?m)^\s+enabled\s*:\s*(true|false)", content)
+    if match:
+        # Only update if within the embeddings: section
+        # Find the embeddings: section and update the first 'enabled:' key after it
+        emb_match = re.search(r"(?m)^embeddings:", content)
+        if emb_match:
+            # Look for the enabled key within a few lines of the embeddings section
+            section_start = emb_match.start()
+            # Find the next section header (a line starting with a non-space, non-comment char)
+            next_section = re.search(
+                r"(?m)^\S", content[section_start + len("embeddings:") :]
+            )
+            section_end = (
+                section_start + len("embeddings:") + next_section.start()
+                if next_section
+                else len(content)
+            )
+            section = content[section_start:section_end]
+
+            enabled_in_section = re.search(
+                r"(?m)^\s+enabled\s*:\s*(true|false)", section
+            )
+            if enabled_in_section:
+                if enabled_in_section.group(1) == enabled_str:
+                    return  # Already set correctly
+                abs_start = section_start + enabled_in_section.start(1)
+                abs_end = section_start + enabled_in_section.end(1)
+                new_content = content[:abs_start] + enabled_str + content[abs_end:]
+            else:
+                # Section exists but no enabled key — insert it
+                new_content = content.replace(
+                    "embeddings:",
+                    f"embeddings:\n  enabled: {enabled_str}",
+                    1,
+                )
+        else:
+            # No embeddings section — append one
+            emb_section = (
+                "\n# Embeddings / semantic search (build_embeddings.py, vault_search.py)\n"
+                f"embeddings:\n  enabled: {enabled_str}\n"
+            )
+            new_content = content.rstrip("\n") + "\n" + emb_section
+    elif "embeddings:" in content:
+        # Section exists but no enabled key — insert it
+        new_content = content.replace(
+            "embeddings:",
+            f"embeddings:\n  enabled: {enabled_str}",
+            1,
+        )
+    else:
+        # No embeddings section at all — append one
+        emb_section = (
+            "\n# Embeddings / semantic search (build_embeddings.py, vault_search.py)\n"
+            f"embeddings:\n  enabled: {enabled_str}\n"
+        )
+        new_content = content.rstrip("\n") + "\n" + emb_section
+
+    _step(f"Set embeddings.enabled = {enabled_str} in {config_path}", dry_run=dry_run)
+    if dry_run:
+        return
+
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(new_content, encoding="utf-8")
+    except OSError as exc:
+        _warn(f"Could not write embeddings.enabled to {config_path}: {exc}")
+
+
 def create_vaults_config(dry_run: bool = False) -> None:
     """Create vaults.yaml template with example configuration.
 
@@ -1671,7 +1762,21 @@ def install(args: argparse.Namespace) -> int:
                 "  matching. Requires a 30s hook timeout and an Anthropic API key."
             )
         )
-        enable_ai = _confirm("Enable AI-powered note selection?", default=False)
+        enable_ai = _confirm("Enable AI-powered note selection?", default=True)
+
+    # --- Embeddings prompt ---
+    enable_embeddings: bool = args.enable_embeddings
+    if not args.yes and not enable_embeddings:
+        print()
+        print(bold("Semantic Search Embeddings (optional)"))
+        print(
+            dim(
+                "  When enabled, builds a vector index of vault notes for semantic\n"
+                "  search (vault-search, session_start_hook with use_embeddings).\n"
+                "  Requires ~67 MB model download on first run."
+            )
+        )
+        enable_embeddings = _confirm("Enable embeddings?", default=True)
 
     # --- Nightly summarizer scheduler prompt ---
     do_schedule: bool = args.schedule_summarizer
@@ -1725,6 +1830,7 @@ def install(args: argparse.Namespace) -> int:
         )
     if enable_ai:
         print(f"  {dim('AI mode      :')} enabled (SessionStart timeout → 30s)")
+    print(f"  {dim('Embeddings   :')} {'enabled' if enable_embeddings else 'disabled'}")
     print(f"  {dim('Vault username:')} {vault_username or '(auto: $USER)'}")
     print(f"  {dim('Settings     :')} {settings_file}")
     print(f"  {dim('Install skill:')} {claude_dir / 'skills' / 'parsidion-cc'}")
@@ -1805,6 +1911,9 @@ def install(args: argparse.Namespace) -> int:
     # 10d. Write vault.username to config.yaml (for per-user daily note naming)
     configure_vault_username(vault_root, dry_run=dry_run, username=vault_username)
 
+    # 10e. Write embeddings.enabled to config.yaml
+    configure_embeddings(vault_root, enabled=enable_embeddings, dry_run=dry_run)
+
     # 11. Install global CLI tools (vault-search, vault-new, vault-stats) via uv tool
     if install_tools:
         install_cli_tools(REPO_ROOT, dry_run=dry_run)
@@ -1870,9 +1979,9 @@ def parse_args() -> argparse.Namespace:
     Returns:
         Parsed argument namespace. Key attributes: ``vault``, ``claude_dir``,
         ``dry_run``, ``verbose``, ``force``, ``yes``, ``skip_hooks``,
-        ``skip_agent``, ``uninstall``, ``enable_ai``, ``install_tools``,
-        ``schedule_summarizer``, ``summarizer_hour``, ``rebuild_graph``,
-        ``graph_include_daily``.
+        ``skip_agent``, ``uninstall``, ``enable_ai``, ``enable_embeddings``,
+        ``install_tools``, ``schedule_summarizer``, ``summarizer_hour``,
+        ``rebuild_graph``, ``graph_include_daily``.
     """
     parser = argparse.ArgumentParser(
         prog="install.py",
@@ -1942,6 +2051,17 @@ def parse_args() -> argparse.Namespace:
             "Enable AI-powered note selection: writes ai_model to vault config.yaml "
             "and sets the SessionStart hook timeout to 30s so claude-haiku can "
             "intelligently select relevant vault notes. "
+            "The interactive installer prompts for this; use this flag to enable "
+            "it non-interactively (e.g. with --yes)."
+        ),
+    )
+    parser.add_argument(
+        "--enable-embeddings",
+        action="store_true",
+        help=(
+            "Enable semantic search embeddings: writes embeddings.enabled = true "
+            "to vault config.yaml. When enabled, build_embeddings.py generates a "
+            "vector index used by vault-search and session_start_hook. "
             "The interactive installer prompts for this; use this flag to enable "
             "it non-interactively (e.g. with --yes)."
         ),
