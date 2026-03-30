@@ -70,6 +70,7 @@ VALID_TYPES = frozenset(
         "tool",
         "language",
         "framework",
+        "knowledge",
     }
 )
 # Fields required for all notes

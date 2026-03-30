@@ -76,6 +76,7 @@ After solving a non-obvious problem or implementing a reusable pattern, save it:
 | Language-specific knowledge | `~/ClaudeVault/Languages/` |
 | CLI tool or package notes | `~/ClaudeVault/Tools/` |
 | External research findings | `~/ClaudeVault/Research/` |
+| General knowledge, concepts, reference material | `~/ClaudeVault/Knowledge/` |
 | Architectural decision | `~/ClaudeVault/Projects/<project>/` |
 
 Then rebuild the index:

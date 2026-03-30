@@ -93,6 +93,7 @@ Saving after a successful solve is as important as searching before. Every unsav
 ├── Debugging/           # Error patterns, diagnostic steps, fixes
 ├── Tools/               # CLI tools, libraries, packages
 ├── Research/            # Deep-dive research documents
+├── Knowledge/           # General knowledge, concepts, reference material
 ├── History/             # Historical notes
 └── Templates/           # Symlinked to skill templates (read-only)
 ```
@@ -142,6 +143,7 @@ Research/
 | Error patterns, diagnostic steps, bug fixes | `Debugging/` |
 | CLI tools, libraries, package notes | `Tools/` |
 | Long-form research and analysis | `Research/` |
+| General knowledge, concepts, reference material | `Knowledge/` |
 | Per-project decisions, architecture, key paths | `Projects/` |
 | Daily session summaries | `Daily/YYYY-MM/DD.md` (e.g. `Daily/2026-03/13.md`) |
 
@@ -152,7 +154,7 @@ Every note must begin with this YAML block:
 ```yaml
 ---
 date: YYYY-MM-DD
-type: pattern|debugging|research|project|daily|tool|language|framework
+type: pattern|debugging|research|project|daily|tool|language|framework|knowledge
 tags: [tag1, tag2]
 project: project-name        # optional - omit if not project-specific
 confidence: high|medium|low

@@ -540,7 +540,8 @@ A read-only Claude Code agent (runs on Haiku) that searches the vault for releva
    | Feature / pattern / integration | `Patterns/` → `Frameworks/` → `Projects/` |
    | Cross-project / prior art | `Projects/` → `Patterns/` |
    | Library / tool / CLI | `Tools/` → `Frameworks/` |
-   | Research / concepts | `Research/` → all folders |
+   | Research / concepts | `Research/` → `Knowledge/` → all folders |
+   | General knowledge / reference | `Knowledge/` → `Research/` → all folders |
 
 6. **Rank and read** — ranks candidates by semantic score, then folder priority, then signal frequency; reads top 5 files
 7. **Synthesize and return** — returns exactly two sections: `## Answer` (3–7 sentences) and `## Sources` (absolute paths with one-line relevance notes)
@@ -761,7 +762,7 @@ Scaffolds a new vault note from the appropriate template, pre-populating frontma
 
 | Flag | Description |
 |------|-------------|
-| `--type TYPE` | Note type: `pattern`, `debugging`, `research`, `tool`, `language`, `framework`, `project` |
+| `--type TYPE` | Note type: `pattern`, `debugging`, `research`, `tool`, `language`, `framework`, `project`, `knowledge` |
 | `--title TITLE` | Note title (used as H1 heading and to derive the kebab-case filename) |
 | `--project PROJECT` | Optional project tag |
 | `--tags TAGS` | Comma-separated tag list |

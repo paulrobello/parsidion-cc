@@ -5,7 +5,7 @@ import type { FrontmatterFields } from '@/lib/frontmatter'
 import type { NoteNode } from '@/lib/graph'
 import { TYPE_COLORS } from '@/lib/sigma-colors'
 
-const TYPES = ['pattern', 'debugging', 'research', 'project', 'tool', 'language', 'framework', 'daily']
+const TYPES = ['pattern', 'debugging', 'research', 'project', 'tool', 'language', 'framework', 'knowledge', 'daily']
 const CONFIDENCE_LEVELS = ['low', 'medium', 'high'] as const
 const CONFIDENCE_COLORS: Record<string, string> = { low: '#6b7a99', medium: '#f59e0b', high: '#10b981' }
 

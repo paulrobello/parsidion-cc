@@ -281,7 +281,7 @@ Interactive force-directed graph for exploring note relationships:
 
 | Element | Encoding |
 |---------|---------|
-| Node color | Note type (pattern, debugging, research, project, tool, language, framework, daily) |
+| Node color | Note type (pattern, debugging, research, project, tool, language, framework, knowledge, daily) |
 | Node size | Incoming link count (logarithmic scale) |
 | Wiki edge | Solid line — explicit wikilinks |
 | Semantic edge | Solid line — embedding similarity above threshold |
@@ -551,7 +551,7 @@ graph LR
   id: string           // Unique stem identifier
   title: string        // Display title
   type: string         // Note type: pattern | debugging | research | project |
-                       //   tool | language | framework | daily
+                       //   tool | language | framework | knowledge | daily
   folder: string       // Top-level vault folder (e.g., "Patterns", "Daily")
   path: string         // Vault-relative path
   tags: string[]       // Note tags

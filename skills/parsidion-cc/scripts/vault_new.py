@@ -23,6 +23,7 @@ _TYPE_TO_FOLDER: dict[str, str] = {
     "tool": "Tools",
     "language": "Languages",
     "framework": "Frameworks",
+    "knowledge": "Knowledge",
 }
 
 # Maximum recommended slug word count before truncation warning

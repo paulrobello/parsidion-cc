@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-03-30
+
+### Fixed
+
+- **Zombie `session_start_hook.py` processes** on macOS — when the 10 s vault_search semantic-search timeout fired, `subprocess.run` killed the `uv` parent but left the Python grandchild (`vault_search.py`) holding the stdout pipe open. `communicate()` then blocked indefinitely waiting for EOF, causing `session_start_hook.py` to hang past the 30 s hook timeout and accumulate as orphaned processes (reported: 67+ instances on M4 Mac). Fixed by switching to `Popen(..., start_new_session=True)` and killing the entire process group with `os.killpg` on timeout so all descendants are cleaned up immediately.
+
+### Added
+
+- **`knowledge` note type** — new vault category for general knowledge, concepts, and reference material that doesn't fit pattern/research/tool. Added to `vault_path.py` (`VAULT_DIRS`), `install.py`, `vault_new.py` (`_TYPE_TO_FOLDER`), `vault_doctor.py` (`VALID_TYPES`), `SKILL.md` (folder listing and frontmatter docs), visualizer `FrontmatterEditor.tsx`, `NewNoteDialog.tsx`, and `sigma-colors.ts` (pink `#ec4899`).
+
 ## [0.5.1] - 2026-03-26
 
 ### Added

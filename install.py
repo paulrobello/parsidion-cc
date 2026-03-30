@@ -134,6 +134,7 @@ def _extract_vault_dirs() -> list[str]:
         "Debugging",
         "Tools",
         "Research",
+        "Knowledge",
         "Templates",
         "History",
     ]

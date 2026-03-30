@@ -13,6 +13,7 @@ least 30000ms to allow time for the AI call to complete.
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import traceback
@@ -119,7 +120,13 @@ def _run_semantic_search(
         return []
 
     try:
-        result = subprocess.run(
+        # Use Popen + start_new_session so the entire process group (uv + its
+        # Python child) can be killed together on timeout.  subprocess.run with
+        # timeout only kills the direct child (uv), leaving the grandchild
+        # (vault_search.py Python) holding the stdout pipe open, which causes
+        # communicate() to block indefinitely and turns session_start_hook.py
+        # into a zombie process.
+        proc = subprocess.Popen(
             [
                 "uv",
                 "run",
@@ -130,17 +137,28 @@ def _run_semantic_search(
                 str(top),
                 "--json",
             ],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=_SEMANTIC_TIMEOUT,
+            start_new_session=True,  # new process group — enables killpg
             env=vault_common.env_without_claudecode(),
         )
-        if result.returncode != 0:
+        try:
+            stdout, _ = proc.communicate(timeout=_SEMANTIC_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            # Kill the entire process group (uv + vault_search.py Python child)
+            # so the stdout pipe is closed and communicate() returns immediately.
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except OSError:
+                proc.kill()
+            proc.wait()
             return []
-        items: list[dict[str, object]] = _json.loads(result.stdout)
+        if proc.returncode != 0:
+            return []
+        items: list[dict[str, object]] = _json.loads(stdout)
         return [Path(str(item["path"])) for item in items]
     except (
-        subprocess.TimeoutExpired,
         FileNotFoundError,
         OSError,
         _json.JSONDecodeError,

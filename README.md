@@ -158,7 +158,7 @@ A markdown vault-based knowledge management system that replaces Claude Code's b
 | `migrate_research.py` | One-time migration from `~/Repos/research/` |
 | `migrate_memory.py` | One-time migration from `~/.claude/memory/` |
 
-**Templates:** 8 note templates (daily, project, language, framework, pattern, debugging, tool, research)
+**Templates:** 9 note templates (daily, project, language, framework, pattern, debugging, tool, research, knowledge)
 
 **Vault structure:**
 ```
@@ -177,6 +177,7 @@ A markdown vault-based knowledge management system that replaces Claude Code's b
   Debugging/                 # Error patterns, fixes
   Tools/                     # CLI tools, packages
   Research/                  # Deep-dive research
+  Knowledge/                 # General knowledge, concepts, reference material
   History/                   # Historical notes
   Templates/                 # Symlink to skill templates
 ```

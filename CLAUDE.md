@@ -284,7 +284,7 @@ The system has ten components:
 
 9. **`vault_merge.py`** — AI-assisted note merging tool (`vault-merge` global command). Detects near-duplicate notes, merges their content via Claude haiku, and updates all bidirectional backlinks.
 
-10. **`~/ClaudeVault/`** — The Obsidian vault itself. Auto-generated `CLAUDE.md` index at the root. Subfolders: `Daily/`, `Projects/`, `Languages/`, `Frameworks/`, `Patterns/`, `Debugging/`, `Tools/`, `Research/`, `Templates/` (symlink to skill templates). `embeddings.db` contains `note_embeddings` (vectors) and `note_index` (metadata). `hook_events.log` records structured JSON hook execution events.
+10. **`~/ClaudeVault/`** — The Obsidian vault itself. Auto-generated `CLAUDE.md` index at the root. Subfolders: `Daily/`, `Projects/`, `Languages/`, `Frameworks/`, `Patterns/`, `Debugging/`, `Tools/`, `Research/`, `Knowledge/`, `Templates/` (symlink to skill templates). `embeddings.db` contains `note_embeddings` (vectors) and `note_index` (metadata). `hook_events.log` records structured JSON hook execution events.
 
 ## Vault Note Conventions
 
@@ -292,7 +292,7 @@ Every note **must** have YAML frontmatter:
 ```yaml
 ---
 date: YYYY-MM-DD
-type: pattern|debugging|research|project|daily|tool|language|framework
+type: pattern|debugging|research|project|daily|tool|language|framework|knowledge
 tags: [tag1, tag2]
 project: project-name   # optional
 confidence: high|medium|low
