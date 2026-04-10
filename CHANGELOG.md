@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-04-09
+
+### Fixed
+
+- **Daily notes missing YAML frontmatter** — `append_session_to_daily()` in `vault_fs.py` created empty daily note files via `daily_path.touch()` when no daily note existed yet, then appended a `## Sessions` section — producing frontmatter-less notes that tripped `vault_doctor` (`MISSING_FRONTMATTER`). The session_stop hook is frequently the first writer of the day, so this was the common path. Fixed by calling `create_daily_note_if_missing(vault=vault_path)` so the `templates/daily.md` template (with proper frontmatter) is always applied. `create_daily_note_if_missing()` also gained an optional `vault` parameter so callers with a custom vault path are respected.
+
 ### Changed
 
 - **Project explorer agent** model upgraded from Sonnet to Opus for deeper analysis

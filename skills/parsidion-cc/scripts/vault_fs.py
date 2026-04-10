@@ -351,13 +351,16 @@ def today_daily_path(vault: Path | None = None) -> Path:
     return vault / "Daily" / month_dir / day_file
 
 
-def create_daily_note_if_missing() -> Path:
+def create_daily_note_if_missing(vault: Path | None = None) -> Path:
     """Create today's daily note from the template if it doesn't exist.
 
     Replaces ``{{date}}`` in the template with today's date. Returns the
     path to the daily note (whether newly created or already existing).
+
+    Args:
+        vault: Optional vault path. Defaults to resolve_vault().
     """
-    daily_path = today_daily_path()
+    daily_path = today_daily_path(vault=vault)
 
     if daily_path.exists():
         return daily_path
@@ -402,14 +405,10 @@ def append_session_to_daily(
     # Import here to avoid circular dependency at module level
     from vault_hooks import TRANSCRIPT_CATEGORY_LABELS
 
-    daily_path = today_daily_path(vault=vault_path)
-    # Ensure the daily note exists
-    if not daily_path.exists():
-        ensure_vault_dirs(vault=vault_path)
-        _month = f"{date.today().year:04d}-{date.today().month:02d}"
-        daily_dir = vault_path / "Daily" / _month
-        daily_dir.mkdir(parents=True, exist_ok=True)
-        daily_path.touch()
+    # Ensure the daily note exists with proper frontmatter from the template.
+    # Previously used daily_path.touch(), which created an empty file and left
+    # the note without frontmatter if this hook was the first writer of the day.
+    daily_path = create_daily_note_if_missing(vault=vault_path)
 
     now_time = datetime.now().strftime("%H:%M")
 
