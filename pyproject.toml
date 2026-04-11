@@ -95,16 +95,15 @@ extra-paths = [
 
 [tool.uv]
 constraint-dependencies = [
-    # requests 2.32.x has an insecure temp-file reuse vulnerability (CVE-2024-47081); fixed in 2.33.0
     "requests>=2.33.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2",
+    "pytest>=9.0.3",
     "pytest-timeout>=2.4.0",
-    "pytest-cov>=7.0.0",
-    "ruff>=0.15.6",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.10",
     "pyright>=1.1.408",
-    "rich>=14.3.3",
+    "rich>=14.3.4",
 ]
