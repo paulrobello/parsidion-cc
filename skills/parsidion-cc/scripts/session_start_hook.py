@@ -18,6 +18,7 @@ import subprocess
 import sys
 import traceback
 from datetime import date, datetime
+from io import TextIOWrapper
 from pathlib import Path
 
 import vault_common
@@ -31,9 +32,18 @@ _DEBUG_FILE = vault_common.secure_log_dir() / "parsidion-cc-session-start-debug.
 _VAULT_SEARCH_SCRIPT_NAME: str = "vault_search.py"
 _SEMANTIC_TOP_N: int = 5
 _SEMANTIC_TIMEOUT: int = 10  # seconds
+_DEFAULT_AI_SINGLE_FLIGHT = True
+_DEFAULT_AI_COOLDOWN_SECONDS = 30
+_AI_LOCK_FILENAME = ".session_start_ai.lock"
+_AI_STAMP_FILENAME = ".session_start_ai.last_run"
 # Characters reserved for the vault-context header injected before the AI-selected
 # note content.  Ensures the final output never slightly exceeds max_chars.
 _AI_CONTEXT_HEADER_RESERVE: int = 500
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows fallback
+    fcntl = None
 
 
 def _build_candidates(project_name: str, vault_path: Path) -> list[Path]:
@@ -195,53 +205,67 @@ def _select_context_with_ai(
     if vault_path is None:
         vault_path = vault_common.resolve_vault(cwd=cwd)
 
-    # Build the candidate block, capped so the prompt stays manageable
-    candidate_parts: list[str] = []
-    char_budget = 8000
+    lock_handle: TextIOWrapper | None = None
+    if vault_common.get_config(
+        "session_start_hook",
+        "ai_single_flight",
+        _DEFAULT_AI_SINGLE_FLIGHT,
+    ):
+        lock_handle = _try_acquire_ai_lock(vault_path)
+        if lock_handle is None:
+            return ""
 
-    for note_path in candidate_notes:
-        try:
-            rel = note_path.relative_to(vault_path)
-        except ValueError:
-            rel = Path(note_path.parent.name) / note_path.name
-
-        summary = vault_common.read_note_summary(note_path, max_lines=6)
-        if not summary:
-            continue
-
-        entry = f"### {rel}\n{summary}\n\n"
-        if sum(len(p) for p in candidate_parts) + len(entry) > char_budget:
-            break
-        candidate_parts.append(entry)
-
-    if not candidate_parts:
+    if _is_ai_cooldown_active(vault_path):
+        _release_ai_lock(lock_handle)
         return ""
 
-    candidates_text = "".join(candidate_parts)
-    output_limit = (
-        max_chars - _AI_CONTEXT_HEADER_RESERVE
-    )  # reserve headroom for the header
-
-    prompt = (
-        "You are building context for a Claude Code session.\n\n"
-        f"Project: {project_name}\n"
-        f"Working directory: {cwd}\n\n"
-        "Below are vault notes with titles and summaries. Select and format the most "
-        f"relevant ones as session context. Keep total output under {output_limit} characters.\n\n"
-        "Prioritize notes that are:\n"
-        f"- Specific to the '{project_name}' project\n"
-        "- Recent patterns, debugging insights, or architectural decisions\n"
-        "- Likely useful at the start of a work session\n\n"
-        f"Candidate notes:\n{candidates_text}\n"
-        "Format selected notes exactly as:\n"
-        "### Note Title (path/to/note.md)\n"
-        "Key point 1\n"
-        "Key point 2\n\n"
-        "Only include genuinely relevant notes. Output nothing but the formatted context blocks."
-    )
-
     try:
-        result = subprocess.run(
+        # Build the candidate block, capped so the prompt stays manageable.
+        candidate_parts: list[str] = []
+        char_budget = 8000
+
+        for note_path in candidate_notes:
+            try:
+                rel = note_path.relative_to(vault_path)
+            except ValueError:
+                rel = Path(note_path.parent.name) / note_path.name
+
+            summary = vault_common.read_note_summary(note_path, max_lines=6)
+            if not summary:
+                continue
+
+            entry = f"### {rel}\n{summary}\n\n"
+            if sum(len(p) for p in candidate_parts) + len(entry) > char_budget:
+                break
+            candidate_parts.append(entry)
+
+        if not candidate_parts:
+            return ""
+
+        candidates_text = "".join(candidate_parts)
+        output_limit = (
+            max_chars - _AI_CONTEXT_HEADER_RESERVE
+        )  # reserve headroom for the header
+
+        prompt = (
+            "You are building context for a Claude Code session.\n\n"
+            f"Project: {project_name}\n"
+            f"Working directory: {cwd}\n\n"
+            "Below are vault notes with titles and summaries. Select and format the most "
+            f"relevant ones as session context. Keep total output under {output_limit} characters.\n\n"
+            "Prioritize notes that are:\n"
+            f"- Specific to the '{project_name}' project\n"
+            "- Recent patterns, debugging insights, or architectural decisions\n"
+            "- Likely useful at the start of a work session\n\n"
+            f"Candidate notes:\n{candidates_text}\n"
+            "Format selected notes exactly as:\n"
+            "### Note Title (path/to/note.md)\n"
+            "Key point 1\n"
+            "Key point 2\n\n"
+            "Only include genuinely relevant notes. Output nothing but the formatted context blocks."
+        )
+
+        proc = subprocess.Popen(
             [
                 "claude",
                 "-p",
@@ -250,21 +274,106 @@ def _select_context_with_ai(
                 model,
                 "--no-session-persistence",
             ],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=vault_common.get_config(
-                "session_start_hook", "ai_timeout", _DEFAULT_AI_TIMEOUT
-            ),
+            start_new_session=True,
             env=vault_common.env_without_claudecode(),
         )
-        if result.returncode == 0:
-            output = result.stdout.strip()
+        try:
+            stdout, _ = proc.communicate(
+                timeout=vault_common.get_config(
+                    "session_start_hook", "ai_timeout", _DEFAULT_AI_TIMEOUT
+                )
+            )
+        except subprocess.TimeoutExpired:
+            _kill_process_group(proc)
+            return ""
+        if proc.returncode == 0:
+            output = stdout.strip()
             if output:
+                _write_ai_cooldown_stamp(vault_path)
                 return output
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    except (FileNotFoundError, OSError):
         pass
+    finally:
+        _release_ai_lock(lock_handle)
 
     return ""
+
+
+def _ai_lock_path(vault_path: Path) -> Path:
+    """Return the per-vault lock file path for AI SessionStart selection."""
+    return vault_path / _AI_LOCK_FILENAME
+
+
+def _try_acquire_ai_lock(vault_path: Path) -> TextIOWrapper | None:
+    """Acquire the per-vault SessionStart AI lock, or return None if busy."""
+    lock_path = _ai_lock_path(vault_path)
+    lock_file = open(lock_path, "a+", encoding="utf-8")
+    if fcntl is None:  # pragma: no cover - Windows fallback
+        return lock_file
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock_file.close()
+        return None
+    lock_file.seek(0)
+    lock_file.truncate()
+    lock_file.write(f"{os.getpid()}\n")
+    lock_file.flush()
+    return lock_file
+
+
+def _ai_stamp_path(vault_path: Path) -> Path:
+    """Return the per-vault cooldown stamp path for SessionStart AI."""
+    return vault_path / _AI_STAMP_FILENAME
+
+
+def _is_ai_cooldown_active(vault_path: Path) -> bool:
+    """Return True when AI SessionStart ran too recently for this vault."""
+    cooldown_seconds = vault_common.get_config(
+        "session_start_hook",
+        "ai_cooldown_seconds",
+        _DEFAULT_AI_COOLDOWN_SECONDS,
+    )
+    if cooldown_seconds <= 0:
+        return False
+    stamp_path = _ai_stamp_path(vault_path)
+    try:
+        age_seconds = datetime.now().timestamp() - stamp_path.stat().st_mtime
+    except OSError:
+        return False
+    return age_seconds < cooldown_seconds
+
+
+def _write_ai_cooldown_stamp(vault_path: Path) -> None:
+    """Update the per-vault cooldown stamp after a successful AI selection."""
+    stamp_path = _ai_stamp_path(vault_path)
+    try:
+        stamp_path.write_text(f"{datetime.now().isoformat()}\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _release_ai_lock(lock_file: TextIOWrapper | None) -> None:
+    """Release and close a previously-acquired SessionStart AI lock."""
+    if lock_file is None:
+        return
+    try:
+        if fcntl is not None:  # pragma: no branch
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    finally:
+        lock_file.close()
+
+
+def _kill_process_group(proc: subprocess.Popen[str]) -> None:
+    """Terminate a process group and wait for it to fully exit."""
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except OSError:
+        proc.kill()
+    proc.wait()
 
 
 # Canonical implementation lives in vault_common; re-export for backwards compatibility.

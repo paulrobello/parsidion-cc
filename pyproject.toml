@@ -1,6 +1,6 @@
 [project]
 name = "parsidion-cc"
-version = "0.5.4"
+version = "0.5.5"
 requires-python = ">=3.13"
 dependencies = []
 
@@ -100,6 +100,7 @@ constraint-dependencies = [
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.3.0",
     "pytest>=9.0.3",
     "pytest-timeout>=2.4.0",
     "pytest-cov>=7.1.0",

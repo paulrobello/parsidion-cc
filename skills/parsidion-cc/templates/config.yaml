@@ -7,6 +7,8 @@
 # Session start hook (session_start_hook.py)
 session_start_hook:
   ai_model: null           # Model for AI note selection (null = disabled)
+  ai_cooldown_seconds: 30  # Skip nested claude -p if AI SessionStart ran recently for this vault
+  ai_single_flight: true   # Allow only one nested claude -p SessionStart selector per vault at a time
   max_chars: 4000          # Max context injection characters
   ai_timeout: 25           # AI call timeout in seconds
   recent_days: 3           # Days to look back for recent notes

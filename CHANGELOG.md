@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-04-17
+
+### Added
+
+- **SessionStart AI single-flight and cooldown guards** — `session_start_hook.py` now allows only one nested `claude -p` AI selector per vault at a time and skips repeated AI launches for a short configurable cooldown window via `session_start_hook.ai_single_flight` and `session_start_hook.ai_cooldown_seconds`.
+
+### Fixed
+
+- **Repeated nested SessionStart `claude -p` launches** — AI note selection now degrades cleanly to the standard non-AI path under contention or cooldown instead of spawning overlapping startup selectors.
+- **AI SessionStart timeout cleanup** — timed-out nested `claude -p` runs are now launched in their own process group and fully killed on timeout, preventing descendant processes from lingering.
+
 ## [0.5.4] - 2026-04-16
 
 ### Added

@@ -120,7 +120,7 @@ from vault_adaptive import (  # noqa: F401
     update_usefulness_scores,
 )
 
-__version__ = "0.5.4"
+__version__ = "0.5.5"
 
 __all__: list[str] = [
     # Version
