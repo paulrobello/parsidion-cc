@@ -13,6 +13,7 @@ CLAUDE.local.md
 MEMORY_REPORT.md
 *.egg-info/
 .coverage
+.pre-commit-cache/
 .worktrees
 .cc2cc-session-id
 build/

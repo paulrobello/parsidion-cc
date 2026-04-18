@@ -27,17 +27,23 @@ Thank you for your interest in contributing to Parsidion CC. This guide covers t
 
 2. **Install dev dependencies:**
    ```bash
-   uv sync --dev
+   uv sync --group dev
    ```
 
-3. **Install the skill to your local Claude config (optional, for live testing):**
+3. **Install the local git hooks:**
+   ```bash
+   uv run pre-commit install
+   ```
+
+4. **Install the skill to your local Claude config (optional, for live testing):**
    ```bash
    uv run install.py --force --yes
    ```
 
-4. **Run the quality checks:**
+5. **Run the quality checks:**
    ```bash
    make checkall
+   uv run pre-commit run --all-files
    ```
 
 ## Coding Constraints
@@ -79,6 +85,7 @@ Use modern Python type annotations throughout:
 3. **Run quality checks before committing:**
    ```bash
    make checkall
+   uv run pre-commit run --all-files
    ```
 
 ## Testing Hooks Manually
