@@ -1144,7 +1144,9 @@ def remove_installed_hooks(
         command = _hook_command(claude_dir, event)
         event_hooks: list[dict] = hooks_section.get(event, [])
         filtered = [
-            entry for entry in event_hooks if not _hook_already_registered([entry], command)
+            entry
+            for entry in event_hooks
+            if not _hook_already_registered([entry], command)
         ]
         if len(filtered) < len(event_hooks):
             _step(f"Remove hook {bold(event)}", dry_run=dry_run)

@@ -86,9 +86,13 @@ class TestUninstallHooksOnly:
             },
         }
         settings_file.parent.mkdir(parents=True, exist_ok=True)
-        settings_file.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+        settings_file.write_text(
+            json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+        )
 
-        install.uninstall(claude_dir, settings_file, dry_run=False, yes=True, hooks_only=True)
+        install.uninstall(
+            claude_dir, settings_file, dry_run=False, yes=True, hooks_only=True
+        )
 
         updated = json.loads(settings_file.read_text(encoding="utf-8"))
         assert updated["theme"] == "dark"
