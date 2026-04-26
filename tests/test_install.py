@@ -29,7 +29,7 @@ class TestUninstallHooksOnly:
     ) -> None:
         claude_dir = tmp_path / ".claude"
         settings_file = claude_dir / "settings.json"
-        skill_dir = claude_dir / "skills" / "parsidion-cc"
+        skill_dir = claude_dir / "skills" / "parsidion"
         claude_vault_md = claude_dir / "CLAUDE-VAULT.md"
         agent_file = claude_dir / "agents" / install.AGENT_SRCS[0].name
 
