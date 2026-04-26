@@ -10,7 +10,9 @@ import install
 
 
 LEGACY_PROJECT_NAME = "parsidion" + "-cc"
-LEGACY_SKILL_SCRIPT = f"~/.claude/skills/{LEGACY_PROJECT_NAME}/scripts/session_start_hook.py"
+LEGACY_SKILL_SCRIPT = (
+    f"~/.claude/skills/{LEGACY_PROJECT_NAME}/scripts/session_start_hook.py"
+)
 
 
 class TestParseArgs:
@@ -141,7 +143,9 @@ class TestFullUninstall:
         self, tmp_path: Path, monkeypatch
     ) -> None:
         monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setattr(install, "unschedule_summarizer", lambda dry_run=False: None)
+        monkeypatch.setattr(
+            install, "unschedule_summarizer", lambda dry_run=False: None
+        )
 
         claude_dir = tmp_path / ".claude"
         settings_file = claude_dir / "settings.json"
@@ -249,7 +253,9 @@ class TestLegacyCleanup:
             },
         }
         settings_file.parent.mkdir(parents=True, exist_ok=True)
-        settings_file.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+        settings_file.write_text(
+            json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+        )
 
         changed = install.cleanup_legacy_assets(
             claude_dir,
@@ -323,7 +329,9 @@ class TestLegacyCleanup:
             }
         }
         settings_file.parent.mkdir(parents=True, exist_ok=True)
-        settings_file.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+        settings_file.write_text(
+            json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+        )
 
         changed = install.cleanup_legacy_assets(
             claude_dir,
@@ -366,7 +374,9 @@ class TestLegacyCleanup:
         assert changed is True
         assert not legacy_skill.exists()
 
-    def test_cleanup_legacy_assets_dry_run_does_not_delete(self, tmp_path: Path) -> None:
+    def test_cleanup_legacy_assets_dry_run_does_not_delete(
+        self, tmp_path: Path
+    ) -> None:
         claude_dir = tmp_path / ".claude"
         settings_file = claude_dir / "settings.json"
         legacy_skill = claude_dir / "skills" / LEGACY_PROJECT_NAME
@@ -406,4 +416,6 @@ class TestLegacyCleanup:
         assert changed is True
         assert legacy_skill.exists()
         updated = json.loads(settings_file.read_text(encoding="utf-8"))
-        assert "parsidion-cc" in updated["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        assert (
+            "parsidion-cc" in updated["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        )
