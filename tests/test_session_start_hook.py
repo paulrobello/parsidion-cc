@@ -50,7 +50,7 @@ class TestAiSelectionSafety:
         monkeypatch.setattr(session_start_hook.subprocess, "Popen", _fail_popen)
 
         result = session_start_hook._select_context_with_ai(
-            project_name="parsidion-cc",
+            project_name="parsidion",
             cwd=str(tmp_path),
             candidate_notes=[],
             model="claude-haiku-test",
@@ -126,7 +126,7 @@ class TestAiSelectionSafety:
         )
 
         result = session_start_hook._select_context_with_ai(
-            project_name="parsidion-cc",
+            project_name="parsidion",
             cwd=str(tmp_path),
             candidate_notes=[candidate],
             model="claude-haiku-test",
@@ -169,7 +169,7 @@ class TestAiSelectionSafety:
         monkeypatch.setattr(session_start_hook.subprocess, "Popen", _fail_popen)
 
         result = session_start_hook._select_context_with_ai(
-            project_name="parsidion-cc",
+            project_name="parsidion",
             cwd=str(tmp_path),
             candidate_notes=[tmp_path / "note.md"],
             model="claude-haiku-test",
@@ -232,7 +232,7 @@ class TestAiSelectionSafety:
         )
 
         result = session_start_hook._select_context_with_ai(
-            project_name="parsidion-cc",
+            project_name="parsidion",
             cwd=str(tmp_path),
             candidate_notes=[candidate],
             model="claude-haiku-test",
