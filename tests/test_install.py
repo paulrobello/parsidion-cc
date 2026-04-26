@@ -190,6 +190,23 @@ class TestParsidionRenamePaths:
 
         assert dest == claude_dir / "skills" / "parsidion"
 
+    def test_install_skill_creates_missing_skills_parent(self, tmp_path: Path) -> None:
+        claude_dir = tmp_path / ".claude"
+        vault_root = tmp_path / "ClaudeVault"
+        claude_dir.mkdir()
+
+        dest = install.install_skill(
+            claude_dir,
+            vault_root,
+            dry_run=False,
+            force=True,
+            verbose=False,
+        )
+
+        assert dest == claude_dir / "skills" / "parsidion"
+        assert dest.exists()
+        assert (claude_dir / "skills").exists()
+
 
 class TestLegacyCleanup:
     """Tests for automatic cleanup of managed parsidion-cc assets."""

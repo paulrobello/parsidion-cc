@@ -401,6 +401,7 @@ def install_skill(
             )
 
     if not dry_run:
+        dest.parent.mkdir(parents=True, exist_ok=True)
         # Remove whatever is currently there
         if dest.is_symlink() or dest.is_file():
             dest.unlink()
