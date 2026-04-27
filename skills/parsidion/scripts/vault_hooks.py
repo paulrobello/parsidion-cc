@@ -29,7 +29,9 @@ __all__: list[str] = [
     # Transcript helpers
     "extract_text_from_content",
     "allowed_transcript_roots",
+    "codex_home",
     "is_allowed_transcript_path",
+    "is_codex_transcript_path",
     "is_pi_transcript_path",
     # Project detection
     "get_project_name",
@@ -39,6 +41,7 @@ __all__: list[str] = [
     "TRANSCRIPT_CATEGORIES",
     "TRANSCRIPT_CATEGORY_LABELS",
     "parse_transcript_lines",
+    "parse_codex_transcript_lines",
     "detect_categories",
 ]
 
@@ -272,14 +275,20 @@ def extract_text_from_content(content: object) -> str:
     return ""
 
 
+def codex_home() -> Path:
+    """Return the configured Codex home directory."""
+    return Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser().resolve()
+
+
 def allowed_transcript_roots(cwd: str | None = None) -> list[Path]:
     """Return allowed root directories for transcript files.
 
-    Supports both Claude Code and pi transcript locations:
+    Supports Claude Code, pi, and Codex transcript locations:
 
     - ``~/.claude/`` (Claude Code transcripts)
     - ``~/.pi/`` (pi global transcripts, e.g. ``~/.pi/agent/sessions``)
     - ``<cwd>/.pi/`` (project-local pi transcripts, e.g. ``.pi/agent-sessions``)
+    - ``$CODEX_HOME/sessions`` or ``~/.codex/sessions`` (Codex transcripts)
 
     Args:
         cwd: Optional working directory for project-local ``.pi`` roots.
@@ -287,7 +296,11 @@ def allowed_transcript_roots(cwd: str | None = None) -> list[Path]:
     Returns:
         De-duplicated list of resolved root paths.
     """
-    roots: list[Path] = [Path.home() / ".claude", Path.home() / ".pi"]
+    roots: list[Path] = [
+        Path.home() / ".claude",
+        Path.home() / ".pi",
+        codex_home() / "sessions",
+    ]
 
     if cwd:
         try:
@@ -325,6 +338,16 @@ def is_allowed_transcript_path(transcript_path: Path, cwd: str | None = None) ->
             continue
 
     return False
+
+
+def is_codex_transcript_path(transcript_path: Path) -> bool:
+    """Return True when *transcript_path* belongs to the Codex sessions root."""
+    try:
+        resolved = transcript_path.expanduser().resolve()
+        root = (codex_home() / "sessions").resolve()
+        return resolved == root or resolved.is_relative_to(root)
+    except OSError:
+        return False
 
 
 def is_pi_transcript_path(transcript_path: Path, cwd: str | None = None) -> bool:
@@ -509,6 +532,43 @@ def parse_transcript_lines(lines: list[str]) -> list[str]:
             assistant_texts.append(text)
 
     return assistant_texts
+
+
+def parse_codex_transcript_lines(lines: list[str]) -> list[str]:
+    """Parse Codex rollout JSONL lines and extract assistant message text."""
+    texts: list[str] = []
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        item = record.get("item") if isinstance(record, dict) else None
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "message" or item.get("role") != "assistant":
+            continue
+
+        content = item.get("content", [])
+        if isinstance(content, str):
+            if content.strip():
+                texts.append(content.strip())
+            continue
+        if not isinstance(content, list):
+            continue
+
+        chunks: list[str] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") in {"output_text", "text"}:
+                text = block.get("text")
+                if isinstance(text, str) and text.strip():
+                    chunks.append(text.strip())
+        if chunks:
+            texts.append("\n".join(chunks))
+
+    return texts
 
 
 def detect_categories(texts: list[str]) -> dict[str, list[str]]:

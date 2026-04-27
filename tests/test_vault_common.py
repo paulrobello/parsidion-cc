@@ -525,6 +525,47 @@ class TestFileLocking:
 
 
 # ---------------------------------------------------------------------------
+# Codex transcript helpers
+# ---------------------------------------------------------------------------
+
+
+class TestCodexTranscriptHelpers:
+    def test_allowed_transcript_roots_includes_codex_sessions(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        codex_home = tmp_path / ".codex"
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+        roots = vault_common.allowed_transcript_roots(cwd=str(tmp_path))
+
+        assert codex_home.resolve() / "sessions" in roots
+
+    def test_is_codex_transcript_path(self, monkeypatch, tmp_path: Path) -> None:
+        codex_home = tmp_path / ".codex"
+        transcript = (
+            codex_home / "sessions" / "2026" / "04" / "27" / "rollout-test.jsonl"
+        )
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text("", encoding="utf-8")
+        monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+        assert vault_common.is_codex_transcript_path(transcript)
+        assert vault_common.is_allowed_transcript_path(transcript, cwd=str(tmp_path))
+
+    def test_parse_codex_transcript_lines_extracts_assistant_text(self) -> None:
+        lines = [
+            '{"type":"response_item","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Fixed the parser bug"}]}}',
+            '{"type":"response_item","item":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}}',
+            '{"type":"unknown","value":1}',
+            "not json",
+        ]
+
+        assert vault_common.parse_codex_transcript_lines(lines) == [
+            "Fixed the parser bug"
+        ]
+
+
+# ---------------------------------------------------------------------------
 # validate_vault_path (from install.py)
 # ---------------------------------------------------------------------------
 
