@@ -266,6 +266,110 @@ class TestCodexHooks:
         )
 
 
+class TestGeminiHooks:
+    def test_merge_gemini_hooks_creates_settings_json(self, tmp_path: Path) -> None:
+        gemini_home = tmp_path / ".gemini"
+        claude_dir = tmp_path / ".claude"
+
+        install.merge_gemini_hooks(
+            gemini_home, claude_dir, dry_run=False, verbose=False
+        )
+
+        settings = json.loads(
+            (gemini_home / "settings.json").read_text(encoding="utf-8")
+        )
+        assert "SessionStart" in settings["hooks"]
+        assert "SessionEnd" in settings["hooks"]
+        commands = [
+            hook["command"]
+            for group in settings["hooks"].values()
+            for entry in group
+            for hook in entry["hooks"]
+        ]
+        assert any("gemini_session_start_hook.py" in command for command in commands)
+        assert any("gemini_session_end_hook.py" in command for command in commands)
+
+    def test_merge_gemini_hooks_preserves_existing_settings_and_is_idempotent(
+        self, tmp_path: Path
+    ) -> None:
+        gemini_home = tmp_path / ".gemini"
+        claude_dir = tmp_path / ".claude"
+        settings_file = gemini_home / "settings.json"
+        settings_file.parent.mkdir(parents=True)
+        settings_file.write_text(
+            json.dumps(
+                {
+                    "theme": "dark",
+                    "hooks": {
+                        "SessionStart": [
+                            {
+                                "matcher": "startup",
+                                "hooks": [
+                                    {"type": "command", "command": "echo existing"}
+                                ],
+                            }
+                        ]
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        install.merge_gemini_hooks(
+            gemini_home, claude_dir, dry_run=False, verbose=False
+        )
+        install.merge_gemini_hooks(
+            gemini_home, claude_dir, dry_run=False, verbose=False
+        )
+
+        settings = json.loads(settings_file.read_text(encoding="utf-8"))
+        assert settings["theme"] == "dark"
+        commands = [
+            hook["command"]
+            for entry in settings["hooks"]["SessionStart"]
+            if isinstance(entry, dict)
+            for hook in entry.get("hooks", [])
+            if isinstance(hook, dict)
+        ]
+        assert commands.count("echo existing") == 1
+        assert (
+            sum("gemini_session_start_hook.py" in command for command in commands) == 1
+        )
+
+    def test_remove_gemini_hooks_only_removes_managed_commands(
+        self, tmp_path: Path
+    ) -> None:
+        gemini_home = tmp_path / ".gemini"
+        claude_dir = tmp_path / ".claude"
+        install.merge_gemini_hooks(
+            gemini_home, claude_dir, dry_run=False, verbose=False
+        )
+        settings_file = gemini_home / "settings.json"
+        settings = json.loads(settings_file.read_text(encoding="utf-8"))
+        settings["hooks"].setdefault("SessionEnd", []).append(
+            {"matcher": "*", "hooks": [{"type": "command", "command": "echo user"}]}
+        )
+        settings_file.write_text(
+            json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+        )
+
+        changed = install.remove_gemini_hooks(gemini_home, claude_dir, dry_run=False)
+
+        updated = json.loads(settings_file.read_text(encoding="utf-8"))
+        assert changed is True
+        commands = [
+            hook["command"]
+            for entries in updated["hooks"].values()
+            for entry in entries
+            if isinstance(entry, dict)
+            for hook in entry.get("hooks", [])
+            if isinstance(hook, dict)
+        ]
+        assert "echo user" in commands
+        assert not any("gemini_session_" in command for command in commands)
+
+
 class TestRuntimeFlow:
     """Tests for installer runtime selection flow."""
 

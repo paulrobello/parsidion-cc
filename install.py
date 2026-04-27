@@ -124,6 +124,16 @@ _CODEX_HOOK_SCRIPTS: dict[str, str] = {
     "Stop": "codex_stop_hook.py",
 }
 
+_GEMINI_HOOK_SCRIPTS: dict[str, str] = {
+    "SessionStart": "gemini_session_start_hook.py",
+    "SessionEnd": "gemini_session_end_hook.py",
+}
+
+_GEMINI_HOOK_NAMES: dict[str, str] = {
+    "SessionStart": "parsidion-session-start",
+    "SessionEnd": "parsidion-session-end",
+}
+
 _RUNTIME_CHOICES = ("claude", "codex", "gemini", "both", "all", "none")
 
 
@@ -943,9 +953,26 @@ def _managed_codex_hook_command(claude_dir: Path, event: str) -> str:
     return f"uv run --no-project {script_display}"
 
 
+def _managed_gemini_hook_command(claude_dir: Path, event: str) -> str:
+    """Return the managed Gemini hook command string for a Gemini event."""
+    script = _GEMINI_HOOK_SCRIPTS[event]
+    script_path = claude_dir / "skills" / SKILL_NAME / "scripts" / script
+    try:
+        rel = script_path.relative_to(Path.home())
+        script_display = f"~/{rel.as_posix()}"
+    except ValueError:
+        script_display = script_path.as_posix()
+    return f"uv run --no-project {script_display}"
+
+
 def _codex_hooks_file(codex_home: Path) -> Path:
     """Return the Codex hooks.json path."""
     return codex_home / "hooks.json"
+
+
+def _gemini_settings_file(gemini_home: Path) -> Path:
+    """Return the Gemini settings.json path."""
+    return gemini_home / "settings.json"
 
 
 def _read_codex_hooks(hooks_file: Path) -> dict | None:
@@ -965,6 +992,27 @@ def _read_codex_hooks(hooks_file: Path) -> dict | None:
         _warn(f"{hooks_file} has non-object hooks section; skipping Codex hook update")
         return None
     return hooks
+
+
+def _read_gemini_settings(settings_file: Path) -> dict | None:
+    """Read Gemini settings JSON, returning None when existing data is unsafe to edit."""
+    if not settings_file.exists():
+        return {"hooks": {}}
+    try:
+        settings = json.loads(settings_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        _warn(f"Could not read {settings_file}: {exc}; skipping Gemini hook update")
+        return None
+    if not isinstance(settings, dict):
+        _warn(f"{settings_file} is not a JSON object; skipping Gemini hook update")
+        return None
+    hooks_section = settings.setdefault("hooks", {})
+    if not isinstance(hooks_section, dict):
+        _warn(
+            f"{settings_file} has non-object hooks section; skipping Gemini hook update"
+        )
+        return None
+    return settings
 
 
 def merge_codex_hooks(
@@ -1062,6 +1110,116 @@ def remove_codex_hooks(
             _err(f"Could not write {hooks_file}: {exc}")
     elif not changed:
         _warn("No Parsidion Codex hook registrations found.")
+
+    return changed
+
+
+def merge_gemini_hooks(
+    gemini_home: Path,
+    claude_dir: Path,
+    dry_run: bool = False,
+    verbose: bool = False,
+) -> None:
+    """Merge Parsidion-managed Gemini hooks into GEMINI_HOME/settings.json."""
+    settings_file = _gemini_settings_file(gemini_home)
+    settings = _read_gemini_settings(settings_file)
+    if settings is None:
+        return
+
+    hooks_section: dict = settings["hooks"]
+    added: list[str] = []
+    skipped: list[str] = []
+
+    for event in _GEMINI_HOOK_SCRIPTS:
+        command = _managed_gemini_hook_command(claude_dir, event)
+        event_hooks = hooks_section.setdefault(event, [])
+        if not isinstance(event_hooks, list):
+            _warn(f"Gemini hook event {event} is not a list; skipping")
+            continue
+        if _hook_already_registered(event_hooks, command):
+            _print(
+                dim(f"  Gemini hook {event} already registered"),
+                verbose_only=True,
+                verbose=verbose,
+            )
+            skipped.append(event)
+            continue
+
+        new_entry = {
+            "matcher": "*",
+            "hooks": [
+                {
+                    "name": _GEMINI_HOOK_NAMES[event],
+                    "type": "command",
+                    "command": command,
+                    "timeout": 10000,
+                }
+            ],
+        }
+        _step(f"Register Gemini hook {bold(event)}: {dim(command)}", dry_run=dry_run)
+        if not dry_run:
+            event_hooks.append(new_entry)
+        added.append(event)
+
+    if dry_run:
+        return
+
+    if added:
+        try:
+            settings_file.parent.mkdir(parents=True, exist_ok=True)
+            settings_file.write_text(
+                json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+            )
+            _ok(f"Updated {settings_file}")
+        except OSError as exc:
+            _err(f"Could not write {settings_file}: {exc}")
+    elif skipped:
+        _ok("All Gemini hooks already registered")
+
+
+def remove_gemini_hooks(
+    gemini_home: Path,
+    claude_dir: Path,
+    dry_run: bool = False,
+) -> bool:
+    """Remove only Parsidion-managed Gemini hook commands from settings.json."""
+    settings_file = _gemini_settings_file(gemini_home)
+    settings = _read_gemini_settings(settings_file)
+    if settings is None:
+        return False
+    if not settings_file.exists():
+        _warn(f"Gemini settings.json not found: {settings_file}")
+        return False
+
+    hooks_section: dict = settings["hooks"]
+    changed = False
+    for event in _GEMINI_HOOK_SCRIPTS:
+        command = _managed_gemini_hook_command(claude_dir, event)
+        event_hooks = hooks_section.get(event, [])
+        if not isinstance(event_hooks, list):
+            continue
+        filtered, event_changed = _filter_hook_entries(
+            event_hooks,
+            lambda hook, command=command: hook.get("command", "") == command,
+        )
+        if event_changed:
+            _step(f"Remove Gemini hook {bold(event)}", dry_run=dry_run)
+            changed = True
+            if filtered:
+                hooks_section[event] = filtered
+            elif event in hooks_section:
+                del hooks_section[event]
+
+    if changed and not dry_run:
+        try:
+            settings_file.write_text(
+                json.dumps(settings, indent=2) + "\n", encoding="utf-8"
+            )
+            _ok(f"Updated {settings_file}")
+        except OSError as exc:
+            _err(f"Could not write {settings_file}: {exc}")
+    elif not changed:
+        _warn("No Parsidion Gemini hook registrations found.")
 
     return changed
 
