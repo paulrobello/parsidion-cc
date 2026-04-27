@@ -331,17 +331,17 @@ def build_prompt(
     session_id: str,
     similar_notes: list[tuple[str, float, str]] | None = None,
 ) -> str:
-    """Build the Sonnet prompt for generating a vault note.
+    """Build the backend prompt for generating a vault note.
 
     Args:
         project: Project name.
         categories: Detected topic categories.
         cleaned_transcript: Pre-processed transcript text.
         existing_tags: All tags currently in the vault (for reuse preference).
-        session_id: Claude session ID to embed in frontmatter.
+        session_id: Runtime session ID to embed in frontmatter.
         similar_notes: Optional list of (stem, score, summary) tuples for
             near-duplicate notes found by semantic search.  When provided and
-            non-empty, instructs Claude to merge rather than create a new note.
+            non-empty, instructs the backend to merge rather than create a new note.
 
     Returns:
         Complete prompt string.
@@ -780,8 +780,8 @@ def _find_dedup_candidates(
 ) -> list[tuple[str, float, str]]:
     """Search for existing notes semantically similar to *topic_query*.
 
-    Used before the Claude summarization call to detect near-duplicates and
-    prompt Claude to merge rather than create a new note.
+    Used before the final summarization call to detect near-duplicates and
+    prompt the backend to merge rather than create a new note.
 
     Args:
         topic_query: Free-text query derived from project name and categories.
@@ -925,7 +925,7 @@ async def summarize_one(
             )
             return entry, None
 
-        # Semantic dedup: find near-duplicate notes before calling Claude
+        # Semantic dedup: find near-duplicate notes before calling the backend
         dedup_threshold: float = vault_common.get_config(
             "summarizer", "dedup_threshold", 0.80
         )
@@ -961,7 +961,7 @@ async def summarize_one(
             )
             return entry, None
 
-        # Write-gate: check if Claude decided this session is not worth saving or to merge
+        # Write-gate: check if the backend decided this session is not worth saving or should merge
         stripped_result = result_text.strip()
         if stripped_result.startswith("{"):
             try:
@@ -973,7 +973,7 @@ async def summarize_one(
                         print(f"  [write-gate] Skipping session {short_id}: {reason}")
                         return entry, None
                     if decision.get("decision") == "merge":
-                        # Claude chose to merge into an existing note
+                        # The backend chose to merge into an existing note
                         target_wikilink = str(decision.get("target", ""))
                         new_content = str(decision.get("new_content", ""))
                         if new_content and target_wikilink:
