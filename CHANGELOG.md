@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a Codex runtime adapter that registers native `~/.codex/hooks.json` SessionStart and Stop hooks and enables `codex_hooks = true` in `~/.codex/config.toml` when selected. Parsidion does not manage `~/.codex/auth.json`.
+
 ### Changed
+
+- Added installer runtime selection via `--runtime {claude,codex,both,none}` so users can install Claude hooks, Codex hooks, both, or shared vault tooling only.
 
 - Rebranded the project from `parsidion-cc` to `parsidion`. New installs use `~/.claude/skills/parsidion/`, package metadata uses `parsidion`, and docs now describe Parsidion as an agent-agnostic memory/vault layer for coding assistants.
 - Renamed the GitHub repository to `paulrobello/parsidion`; GitHub redirects from `paulrobello/parsidion-cc` remain available for legacy links.

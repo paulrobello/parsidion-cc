@@ -97,13 +97,16 @@ from vault_hooks import (  # noqa: F401
     _SAFE_ENV_KEYS,
     allowed_transcript_roots,
     apply_configured_env_defaults,
+    codex_home,
     detect_categories,
     env_without_claudecode,
     extract_text_from_content,
     get_project_name,
     is_allowed_transcript_path,
+    is_codex_transcript_path,
     is_pi_transcript_path,
     is_process_running,
+    parse_codex_transcript_lines,
     parse_transcript_lines,
     write_hook_event,
 )
@@ -172,13 +175,16 @@ __all__: list[str] = [
     # Transcript helpers
     "extract_text_from_content",
     "allowed_transcript_roots",
+    "codex_home",
     "is_allowed_transcript_path",
+    "is_codex_transcript_path",
     "is_pi_transcript_path",
     "read_last_n_lines",
     # Transcript analysis and queuing (shared by session_stop and subagent_stop hooks)
     "TRANSCRIPT_CATEGORIES",
     "TRANSCRIPT_CATEGORY_LABELS",
     "parse_transcript_lines",
+    "parse_codex_transcript_lines",
     "detect_categories",
     "append_to_pending",
     # Process utilities

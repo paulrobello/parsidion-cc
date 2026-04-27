@@ -26,6 +26,390 @@ class TestParseArgs:
         assert args.uninstall_hooks is True
         assert args.uninstall is False
 
+    def test_parse_args_supports_runtime_and_codex_home(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["install.py", "--runtime", "both", "--codex-home", "~/CustomCodex"],
+        )
+
+        args = install.parse_args()
+
+        assert args.runtime == "both"
+        assert args.codex_home == "~/CustomCodex"
+
+    def test_resolve_runtime_defaults_to_claude_for_yes(self) -> None:
+        assert (
+            install.resolve_runtime_choice(runtime=None, yes=True, interactive=False)
+            == "claude"
+        )
+
+    def test_resolve_runtime_defaults_to_both_for_interactive(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(install, "_ask", lambda prompt, default="": "")
+
+        assert (
+            install.resolve_runtime_choice(runtime=None, yes=False, interactive=True)
+            == "both"
+        )
+
+
+class TestCodexHooks:
+    def test_merge_codex_hooks_creates_hooks_json(self, tmp_path: Path) -> None:
+        codex_home = tmp_path / ".codex"
+        claude_dir = tmp_path / ".claude"
+
+        install.merge_codex_hooks(codex_home, claude_dir, dry_run=False, verbose=False)
+
+        hooks = json.loads((codex_home / "hooks.json").read_text(encoding="utf-8"))
+        assert "SessionStart" in hooks["hooks"]
+        assert "Stop" in hooks["hooks"]
+        commands = [
+            hook["command"]
+            for group in hooks["hooks"].values()
+            for entry in group
+            for hook in entry["hooks"]
+        ]
+        assert any("codex_session_start_hook.py" in command for command in commands)
+        assert any("codex_stop_hook.py" in command for command in commands)
+
+    def test_merge_codex_hooks_preserves_existing_hooks_and_is_idempotent(
+        self, tmp_path: Path
+    ) -> None:
+        codex_home = tmp_path / ".codex"
+        claude_dir = tmp_path / ".claude"
+        hooks_file = codex_home / "hooks.json"
+        hooks_file.parent.mkdir(parents=True)
+        hooks_file.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "SessionStart": [
+                            {
+                                "matcher": "",
+                                "hooks": [
+                                    {"type": "command", "command": "echo existing"}
+                                ],
+                            }
+                        ]
+                    }
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        install.merge_codex_hooks(codex_home, claude_dir, dry_run=False, verbose=False)
+        install.merge_codex_hooks(codex_home, claude_dir, dry_run=False, verbose=False)
+
+        hooks = json.loads(hooks_file.read_text(encoding="utf-8"))
+        handlers = hooks["hooks"]["SessionStart"]
+        commands = [hook["command"] for entry in handlers for hook in entry["hooks"]]
+        assert commands.count("echo existing") == 1
+        assert (
+            sum("codex_session_start_hook.py" in command for command in commands) == 1
+        )
+
+    def test_merge_codex_hooks_preserves_malformed_event_entries(
+        self, tmp_path: Path
+    ) -> None:
+        codex_home = tmp_path / ".codex"
+        claude_dir = tmp_path / ".claude"
+        hooks_file = codex_home / "hooks.json"
+        hooks_file.parent.mkdir(parents=True)
+        hooks_file.write_text(
+            json.dumps({"hooks": {"SessionStart": ["bad"]}}) + "\n",
+            encoding="utf-8",
+        )
+
+        install.merge_codex_hooks(codex_home, claude_dir, dry_run=False, verbose=False)
+
+        hooks = json.loads(hooks_file.read_text(encoding="utf-8"))
+        handlers = hooks["hooks"]["SessionStart"]
+        assert "bad" in handlers
+        commands = [
+            hook["command"]
+            for entry in handlers
+            if isinstance(entry, dict)
+            for hook in entry["hooks"]
+        ]
+        assert any("codex_session_start_hook.py" in command for command in commands)
+
+    def test_remove_codex_hooks_preserves_malformed_mixed_entries(
+        self, tmp_path: Path
+    ) -> None:
+        codex_home = tmp_path / ".codex"
+        claude_dir = tmp_path / ".claude"
+        hooks_file = codex_home / "hooks.json"
+        managed_command = install._managed_codex_hook_command(claude_dir, "Stop")
+        malformed_entry = "bad"
+        non_list_hooks_entry = {"matcher": "keep", "hooks": "bad"}
+        user_entry = {
+            "matcher": "",
+            "hooks": [{"type": "command", "command": "echo user"}],
+        }
+        hooks_file.parent.mkdir(parents=True)
+        hooks_file.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "Stop": [
+                            malformed_entry,
+                            {
+                                "matcher": "",
+                                "hooks": [
+                                    {"type": "command", "command": managed_command},
+                                    {"type": "command", "command": "echo keep"},
+                                ],
+                            },
+                            non_list_hooks_entry,
+                            user_entry,
+                        ]
+                    }
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        changed = install.remove_codex_hooks(codex_home, claude_dir, dry_run=False)
+
+        hooks = json.loads(hooks_file.read_text(encoding="utf-8"))
+        handlers = hooks["hooks"]["Stop"]
+        assert changed is True
+        assert malformed_entry in handlers
+        assert non_list_hooks_entry in handlers
+        assert user_entry in handlers
+        commands = [
+            hook["command"]
+            for entry in handlers
+            if isinstance(entry, dict) and isinstance(entry.get("hooks"), list)
+            for hook in entry["hooks"]
+            if isinstance(hook, dict)
+        ]
+        assert managed_command not in commands
+        assert "echo keep" in commands
+
+    def test_remove_codex_hooks_only_removes_managed_commands(
+        self, tmp_path: Path
+    ) -> None:
+        codex_home = tmp_path / ".codex"
+        claude_dir = tmp_path / ".claude"
+        install.merge_codex_hooks(codex_home, claude_dir, dry_run=False, verbose=False)
+        hooks_file = codex_home / "hooks.json"
+        hooks = json.loads(hooks_file.read_text(encoding="utf-8"))
+        hooks["hooks"].setdefault("Stop", []).append(
+            {"matcher": "", "hooks": [{"type": "command", "command": "echo user"}]}
+        )
+        hooks_file.write_text(json.dumps(hooks, indent=2) + "\n", encoding="utf-8")
+
+        changed = install.remove_codex_hooks(codex_home, claude_dir, dry_run=False)
+
+        updated = json.loads(hooks_file.read_text(encoding="utf-8"))
+        assert changed is True
+        assert updated["hooks"]["Stop"] == [
+            {"matcher": "", "hooks": [{"type": "command", "command": "echo user"}]}
+        ]
+
+    def test_enable_codex_hooks_config_creates_features_section(
+        self, tmp_path: Path
+    ) -> None:
+        codex_home = tmp_path / ".codex"
+
+        install.enable_codex_hooks_config(codex_home, dry_run=False, yes=True)
+
+        assert (codex_home / "config.toml").read_text(encoding="utf-8") == (
+            "[features]\ncodex_hooks = true\n"
+        )
+
+
+class TestRuntimeFlow:
+    """Tests for installer runtime selection flow."""
+
+    def test_runtime_none_dry_run_install_skips_hook_registration(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.setattr(install, "_FORBIDDEN_PREFIXES", ())
+        calls: list[str] = []
+
+        def record(name: str):
+            def _inner(*args, **kwargs) -> None:
+                calls.append(name)
+
+            return _inner
+
+        for name in (
+            "install_skill",
+            "install_agents",
+            "install_scripts",
+            "create_vault_dirs",
+            "create_templates_symlink",
+            "cleanup_legacy_assets",
+            "merge_hooks",
+            "enable_codex_hooks_config",
+            "merge_codex_hooks",
+            "install_claude_vault_md",
+            "rebuild_index",
+            "configure_vault_gitignore",
+            "init_vault_git",
+            "install_vault_post_merge_hook",
+            "configure_vault_username",
+            "configure_embeddings",
+            "install_cli_tools",
+            "schedule_summarizer",
+            "create_vaults_config",
+        ):
+            monkeypatch.setattr(install, name, record(name))
+
+        vault = tmp_path / "ClaudeVault"
+        claude_dir = tmp_path / ".claude"
+        codex_home = tmp_path / ".codex"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "install.py",
+                "--yes",
+                "--runtime",
+                "none",
+                "--dry-run",
+                "--vault",
+                str(vault),
+                "--claude-dir",
+                str(claude_dir),
+                "--codex-home",
+                str(codex_home),
+            ],
+        )
+        args = install.parse_args()
+
+        result = install.install(args)
+
+        output = capsys.readouterr().out
+        assert result == 0
+        assert "Runtime     : none" in output
+        assert "Runtime hooks: skipped (runtime none)" in output
+        assert "Claude dir" not in output
+        assert "Codex home" not in output
+        assert "Claude hooks:" not in output
+        assert "Codex hooks :" not in output
+        assert "merge_hooks" not in calls
+        assert "merge_codex_hooks" not in calls
+        assert "enable_codex_hooks_config" not in calls
+
+    def test_merge_codex_hooks_dry_run_does_not_create_hooks_json(
+        self, tmp_path: Path
+    ) -> None:
+        codex_home = tmp_path / ".codex"
+        claude_dir = tmp_path / ".claude"
+
+        install.merge_codex_hooks(codex_home, claude_dir, dry_run=True, verbose=False)
+
+        assert not (codex_home / "hooks.json").exists()
+
+    def test_runtime_both_dry_run_install_prints_codex_plan(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.setattr(install, "_FORBIDDEN_PREFIXES", ())
+        vault = tmp_path / "ClaudeVault"
+        claude_dir = tmp_path / ".claude"
+        codex_home = tmp_path / ".codex"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "install.py",
+                "--yes",
+                "--runtime",
+                "both",
+                "--dry-run",
+                "--vault",
+                str(vault),
+                "--claude-dir",
+                str(claude_dir),
+                "--codex-home",
+                str(codex_home),
+            ],
+        )
+        args = install.parse_args()
+
+        result = install.install(args)
+
+        output = capsys.readouterr().out
+        assert result == 0
+        assert "Runtime     : both" in output
+        assert f"Codex home  : {codex_home}" in output
+        assert "Codex hooks : SessionStart, Stop" in output
+        assert not (codex_home / "hooks.json").exists()
+
+    def test_uninstall_codex_runtime_removes_codex_hooks_only(
+        self, tmp_path: Path
+    ) -> None:
+        claude_dir = tmp_path / ".claude"
+        settings_file = claude_dir / "settings.json"
+        codex_home = tmp_path / ".codex"
+        install.merge_codex_hooks(codex_home, claude_dir, dry_run=False, verbose=False)
+        settings_file.parent.mkdir(parents=True)
+        settings_file.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "SessionStart": [
+                            {
+                                "matcher": "",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": install._hook_command(
+                                            claude_dir, "SessionStart"
+                                        ),
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        install.uninstall(
+            claude_dir,
+            settings_file,
+            dry_run=False,
+            yes=True,
+            hooks_only=True,
+            runtime="codex",
+            codex_home=codex_home,
+        )
+
+        codex_hooks = json.loads(
+            (codex_home / "hooks.json").read_text(encoding="utf-8")
+        )
+        claude_settings = json.loads(settings_file.read_text(encoding="utf-8"))
+        assert codex_hooks["hooks"] == {}
+        assert "SessionStart" in claude_settings["hooks"]
+
+    def test_uninstall_claude_runtime_leaves_codex_hooks(self, tmp_path: Path) -> None:
+        claude_dir = tmp_path / ".claude"
+        settings_file = claude_dir / "settings.json"
+        codex_home = tmp_path / ".codex"
+        install.merge_codex_hooks(codex_home, claude_dir, dry_run=False, verbose=False)
+        before = (codex_home / "hooks.json").read_text(encoding="utf-8")
+
+        install.uninstall(
+            claude_dir,
+            settings_file,
+            dry_run=False,
+            yes=True,
+            hooks_only=True,
+            runtime="claude",
+            codex_home=codex_home,
+        )
+
+        assert (codex_home / "hooks.json").read_text(encoding="utf-8") == before
+
 
 class TestUninstallHooksOnly:
     """Tests for removing only managed hook registrations."""

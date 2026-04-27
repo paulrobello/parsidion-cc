@@ -39,7 +39,7 @@ Parsidion replaces fragile, tool-specific memory with a richly organized markdow
 - **Python 3.13+**
 - **[uv](https://docs.astral.sh/uv/)** -- Python package runner and manager
 - **[Obsidian](https://obsidian.md/)** (optional) -- for vault browsing and graph view
-- **Claude Code** -- the CLI this toolkit extends
+- **Claude Code and/or Codex CLI** -- runtime integration target(s) selected during install
 - **[jq](https://jqlang.github.io/jq/)** (optional) -- required by the `scripts/show-context` preview script; install via `brew install jq` (macOS) or your system package manager
 - **[mcpl](https://github.com/kenneth-liao/mcp-launchpad)** (optional) -- MCP Launchpad, a unified CLI for discovering and calling tools from any MCP server; used by the research agent as a fallback search gateway (see [docs/MCPL.md](docs/MCPL.md))
 - **[agentchrome](https://github.com/Nunley-Media-Group/AgentChrome)** (optional, recommended) -- native CLI for browser control via Chrome DevTools Protocol; used by the research agent to fetch fully-rendered pages for higher-quality markdown conversion (see [docs/AGENTCHROME.md](docs/AGENTCHROME.md)); falls back to `curl` when unavailable
@@ -58,11 +58,11 @@ Parsidion replaces fragile, tool-specific memory with a richly organized markdow
    ```bash
    uv run install.py
    ```
-   This installs the vault skill, research agent, vault-explorer agent, session hooks, and always-on vault guidance into `~/.claude/`.
+   The installer prompts for runtime integrations. Depending on your selection, it may configure Claude Code assets under `~/.claude/` and Codex CLI hooks under `~/.codex/`.
 
-3. **Restart Claude Code** to activate the hooks.
+3. **Restart the selected runtime(s)** to activate the hooks.
 
-That's it. Claude Code now has persistent memory backed by a markdown vault at `~/ClaudeVault/`. Optionally, open that directory in [Obsidian](https://obsidian.md/) to browse notes and explore the knowledge graph.
+That's it. Your selected runtime integration(s) now have persistent memory backed by a markdown vault at `~/ClaudeVault/`. Optionally, open that directory in [Obsidian](https://obsidian.md/) to browse notes and explore the knowledge graph.
 
 ## Installation
 
@@ -97,11 +97,13 @@ uv run install.py --schedule-summarizer --rebuild-graph --graph-include-daily
 |------|-------------|
 | `--vault PATH` | Vault path (skips interactive prompt) |
 | `--claude-dir PATH` | Target Claude config dir (default: `~/.claude`) |
+| `--codex-home PATH` | Target Codex home for hooks/config (default: `$CODEX_HOME` or `~/.codex`) |
+| `--runtime {claude,codex,both,none}` | Runtime integration target; interactive installs default to `both`, while `--yes` defaults to `claude` for backwards compatibility |
 | `--dry-run / -n` | Preview all actions, no changes made |
 | `--verbose / -v` | Show detailed output |
 | `--force / -f` | Overwrite existing skill files without prompting |
 | `--yes / -y` | Skip all confirmation prompts; uses `~/ClaudeVault` if `--vault` not given |
-| `--skip-hooks` | Do not modify `settings.json` |
+| `--skip-hooks` | Do not modify runtime hook files (`~/.claude/settings.json` or `~/.codex/hooks.json`) |
 | `--skip-agent` | Do not install any agents |
 | `--enable-ai` | Enable AI-powered note selection: writes `ai_model` to `config.yaml` and sets SessionStart timeout to 30 s |
 | `--enable-embeddings` | Enable semantic search embeddings: writes `embeddings.enabled = true` to `config.yaml` |
@@ -112,7 +114,26 @@ uv run install.py --schedule-summarizer --rebuild-graph --graph-include-daily
 | `--graph-include-daily` | Include Daily folder notes in the nightly graph rebuild (use with `--rebuild-graph`) |
 | `--create-vaults-config` | Create `~/.claude/vaults.yaml` for multi-vault support (see [Multi-Vault Support](#multi-vault-support)) |
 | `--uninstall` | Remove installed skill, agents, hook registrations, and launchd plist / cron job |
-| `--uninstall-hooks` | Remove only installed hook registrations from `settings.json` |
+| `--uninstall-hooks` | Remove only installed hook registrations from runtime hook files (`~/.claude/settings.json` or `~/.codex/hooks.json`) |
+
+### Runtime integrations
+
+Interactive installs ask which runtime integrations to configure:
+
+- `claude` — Claude Code skill, agents, and hooks under `~/.claude`
+- `codex` — Codex CLI hooks under `~/.codex`
+- `both` — both Claude Code and Codex CLI integrations
+- `none` — shared vault tooling only; do not register runtime hooks
+
+Non-interactive installs keep the historical Claude-only default unless you pass `--runtime` explicitly:
+
+```bash
+uv run install.py --yes --runtime claude
+uv run install.py --yes --runtime both
+uv run install.py --yes --runtime codex
+```
+
+Codex integration uses native Codex hooks for session lifecycle events and requires `codex_hooks = true` in `~/.codex/config.toml`. Parsidion can enable this during install and registers hooks in `~/.codex/hooks.json`. Parsidion does not manage Codex auth or copy `~/.codex/auth.json`.
 
 During interactive installation, the installer prompts for three optional features:
 
@@ -120,7 +141,7 @@ During interactive installation, the installer prompts for three optional featur
 2. **"Enable AI-powered note selection?"** (default: yes) — writes `ai_model` to `config.yaml` and sets the SessionStart hook timeout to 30 s, enabling claude-haiku to intelligently select relevant vault notes at session start. Use `--enable-ai` to enable this non-interactively (e.g. with `--yes`).
 3. **"Enable embeddings?"** (default: yes) — writes `embeddings.enabled = true` to `config.yaml`, enabling the vector index used by `vault-search` semantic mode and `session_start_hook` with `use_embeddings`. Requires ~67 MB model download on first run. Use `--enable-embeddings` to enable this non-interactively (e.g. with `--yes`).
 
-After installation, restart Claude Code to activate hooks. Optionally, open the vault path in Obsidian for graph visualization and note browsing -- this is not required for the system to work.
+After installation, restart the selected runtime(s) to activate hooks. Optionally, open the vault path in Obsidian for graph visualization and note browsing -- this is not required for the system to work.
 
 ## Components
 
@@ -843,10 +864,10 @@ uv run install.py --uninstall-hooks
 
 ### Hooks not firing
 
-- Verify hooks are registered in `~/.claude/settings.json`. Look for `hooks` entries pointing to the hook scripts.
-- Re-run `uv run install.py --force --yes` to re-register hooks.
-- Check that the script paths in `settings.json` are correct and the files exist at those paths.
-- Restart Claude Code after any settings.json change.
+- Verify hooks are registered in the selected runtime config: `~/.claude/settings.json` for Claude Code or `~/.codex/hooks.json` for Codex CLI. Look for entries pointing to the hook scripts.
+- Re-run `uv run install.py --force --yes --runtime both` (or your selected `--runtime`) to re-register hooks.
+- Check that the script paths in the runtime hook config are correct and the files exist at those paths.
+- Restart the selected runtime after any hook config change.
 
 ### Vault not created
 

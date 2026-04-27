@@ -119,6 +119,13 @@ _HOOK_OPTIONS: dict[str, dict] = {
     "SubagentStop": {"async": True},
 }
 
+_CODEX_HOOK_SCRIPTS: dict[str, str] = {
+    "SessionStart": "codex_session_start_hook.py",
+    "Stop": "codex_stop_hook.py",
+}
+
+_RUNTIME_CHOICES = ("claude", "codex", "both", "none")
+
 
 # ARC-003: Extract VAULT_DIRS from the canonical source (vault_common.py) at
 # import time by parsing its source text with a regex.  This eliminates the
@@ -241,6 +248,41 @@ def _step(label: str, dry_run: bool = False) -> None:
 def _warn(msg: str) -> None:
     """Print a yellow warning message to stdout."""
     print(f"{yellow('  !')} {msg}")
+
+
+def resolve_runtime_choice(
+    runtime: str | None,
+    *,
+    yes: bool,
+    interactive: bool,
+) -> str:
+    """Resolve runtime selection for install/uninstall flows."""
+    if runtime:
+        return runtime
+    if yes or not interactive:
+        return "claude"
+
+    print()
+    print(bold("Runtime Integrations"))
+    print(
+        dim(
+            "  1. Claude only — ~/.claude settings, skills, agents, and hooks.\n"
+            "  2. Codex only — ~/.codex hooks for SessionStart and Stop.\n"
+            "  3. Both Claude + Codex.\n"
+            "  4. Shared tooling only — no runtime hooks."
+        )
+    )
+    answer = _ask("Install runtime integrations", default="both").strip().lower()
+    if answer in ("", "3", "both", "claude+codex", "claude + codex"):
+        return "both"
+    if answer in ("1", "claude", "claude only"):
+        return "claude"
+    if answer in ("2", "codex", "codex only"):
+        return "codex"
+    if answer in ("4", "none", "shared", "shared tooling only"):
+        return "none"
+    _warn(f"Unknown runtime selection {answer!r}; defaulting to both")
+    return "both"
 
 
 def _err(msg: str) -> None:
@@ -868,6 +910,230 @@ def _hook_command(claude_dir: Path, event: str) -> str:
     return _managed_hook_command(claude_dir, SKILL_NAME, event)
 
 
+def _managed_codex_hook_command(claude_dir: Path, event: str) -> str:
+    """Return the managed Codex hook command string for a Codex event."""
+    script = _CODEX_HOOK_SCRIPTS[event]
+    script_path = claude_dir / "skills" / SKILL_NAME / "scripts" / script
+    try:
+        rel = script_path.relative_to(Path.home())
+        script_display = f"~/{rel.as_posix()}"
+    except ValueError:
+        script_display = script_path.as_posix()
+    return f"uv run --no-project {script_display}"
+
+
+def _codex_hooks_file(codex_home: Path) -> Path:
+    """Return the Codex hooks.json path."""
+    return codex_home / "hooks.json"
+
+
+def _read_codex_hooks(hooks_file: Path) -> dict | None:
+    """Read Codex hooks JSON, returning None when existing data is unsafe to edit."""
+    if not hooks_file.exists():
+        return {"hooks": {}}
+    try:
+        hooks = json.loads(hooks_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        _warn(f"Could not read {hooks_file}: {exc}; skipping Codex hook update")
+        return None
+    if not isinstance(hooks, dict):
+        _warn(f"{hooks_file} is not a JSON object; skipping Codex hook update")
+        return None
+    hooks_section = hooks.setdefault("hooks", {})
+    if not isinstance(hooks_section, dict):
+        _warn(f"{hooks_file} has non-object hooks section; skipping Codex hook update")
+        return None
+    return hooks
+
+
+def merge_codex_hooks(
+    codex_home: Path,
+    claude_dir: Path,
+    dry_run: bool = False,
+    verbose: bool = False,
+) -> None:
+    """Merge Parsidion-managed Codex hooks into CODEX_HOME/hooks.json."""
+    hooks_file = _codex_hooks_file(codex_home)
+    hooks = _read_codex_hooks(hooks_file)
+    if hooks is None:
+        return
+
+    hooks_section: dict = hooks["hooks"]
+    added: list[str] = []
+    skipped: list[str] = []
+
+    for event in _CODEX_HOOK_SCRIPTS:
+        command = _managed_codex_hook_command(claude_dir, event)
+        event_hooks = hooks_section.setdefault(event, [])
+        if not isinstance(event_hooks, list):
+            _warn(f"Codex hook event {event} is not a list; skipping")
+            continue
+        if _hook_already_registered(event_hooks, command):
+            _print(
+                dim(f"  Codex hook {event} already registered"),
+                verbose_only=True,
+                verbose=verbose,
+            )
+            skipped.append(event)
+            continue
+
+        new_entry = {
+            "matcher": "",
+            "hooks": [{"type": "command", "command": command, "timeout": 10000}],
+        }
+        _step(f"Register Codex hook {bold(event)}: {dim(command)}", dry_run=dry_run)
+        if not dry_run:
+            event_hooks.append(new_entry)
+        added.append(event)
+
+    if dry_run:
+        return
+
+    if added:
+        try:
+            hooks_file.parent.mkdir(parents=True, exist_ok=True)
+            hooks_file.write_text(json.dumps(hooks, indent=2) + "\n", encoding="utf-8")
+            _ok(f"Updated {hooks_file}")
+        except OSError as exc:
+            _err(f"Could not write {hooks_file}: {exc}")
+    elif skipped:
+        _ok("All Codex hooks already registered")
+
+
+def remove_codex_hooks(
+    codex_home: Path,
+    claude_dir: Path,
+    dry_run: bool = False,
+) -> bool:
+    """Remove only Parsidion-managed Codex hook commands from hooks.json."""
+    hooks_file = _codex_hooks_file(codex_home)
+    hooks = _read_codex_hooks(hooks_file)
+    if hooks is None:
+        return False
+    if not hooks_file.exists():
+        _warn(f"Codex hooks.json not found: {hooks_file}")
+        return False
+
+    hooks_section: dict = hooks["hooks"]
+    changed = False
+    for event in _CODEX_HOOK_SCRIPTS:
+        command = _managed_codex_hook_command(claude_dir, event)
+        event_hooks = hooks_section.get(event, [])
+        if not isinstance(event_hooks, list):
+            continue
+        filtered, event_changed = _filter_hook_entries(
+            event_hooks,
+            lambda hook, command=command: hook.get("command", "") == command,
+        )
+        if event_changed:
+            _step(f"Remove Codex hook {bold(event)}", dry_run=dry_run)
+            changed = True
+            if filtered:
+                hooks_section[event] = filtered
+            elif event in hooks_section:
+                del hooks_section[event]
+
+    if changed and not dry_run:
+        try:
+            hooks_file.write_text(json.dumps(hooks, indent=2) + "\n", encoding="utf-8")
+            _ok(f"Updated {hooks_file}")
+        except OSError as exc:
+            _err(f"Could not write {hooks_file}: {exc}")
+    elif not changed:
+        _warn("No Parsidion Codex hook registrations found.")
+
+    return changed
+
+
+def _set_codex_hooks_in_features_section(content: str, *, yes: bool) -> str | None:
+    """Return updated Codex config text, or None when no safe edit is available."""
+    lines = content.splitlines()
+    if not lines:
+        return "[features]\ncodex_hooks = true\n"
+
+    features_start: int | None = None
+    features_end = len(lines)
+    section_re = re.compile(r"^\s*\[([^\]]+)]\s*(?:#.*)?$")
+    for index, line in enumerate(lines):
+        match = section_re.match(line)
+        if not match:
+            continue
+        section_name = match.group(1).strip()
+        if section_name == "features":
+            features_start = index
+            features_end = len(lines)
+            for end_index in range(index + 1, len(lines)):
+                if section_re.match(lines[end_index]):
+                    features_end = end_index
+                    break
+            break
+
+    if features_start is None:
+        suffix = "" if content.endswith("\n") else "\n"
+        return content + suffix + "\n[features]\ncodex_hooks = true\n"
+
+    codex_hooks_re = re.compile(
+        r"^(\s*codex_hooks\s*=\s*)(true|false)(\s*(?:#.*)?)$", re.IGNORECASE
+    )
+    codex_hooks_key_re = re.compile(r"^\s*codex_hooks\s*=")
+    for index in range(features_start + 1, features_end):
+        match = codex_hooks_re.match(lines[index])
+        if not match:
+            if codex_hooks_key_re.match(lines[index]):
+                _warn("Ambiguous codex_hooks setting; leaving Codex config unchanged")
+                return None
+            continue
+        value = match.group(2).lower()
+        if value == "true":
+            return content
+        if not yes and not _confirm(
+            "Enable codex_hooks in Codex config?", default=True
+        ):
+            _warn("Codex hooks are disabled; add `codex_hooks = true` manually")
+            return None
+        lines[index] = f"{match.group(1)}true{match.group(3)}"
+        return "\n".join(lines) + "\n"
+
+    insert_at = features_end
+    lines.insert(insert_at, "codex_hooks = true")
+    return "\n".join(lines) + "\n"
+
+
+def enable_codex_hooks_config(
+    codex_home: Path,
+    dry_run: bool = False,
+    yes: bool = False,
+) -> None:
+    """Ensure CODEX_HOME/config.toml enables native Codex hooks."""
+    config_file = codex_home / "config.toml"
+    if config_file.exists():
+        try:
+            content = config_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            _warn(f"Could not read {config_file}: {exc}")
+            return
+    else:
+        content = ""
+
+    updated = _set_codex_hooks_in_features_section(content, yes=yes)
+    if updated is None:
+        _warn("Add this manually to Codex config:\n[features]\ncodex_hooks = true")
+        return
+    if updated == content:
+        _ok("Codex hooks already enabled")
+        return
+
+    _step(f"Enable Codex hooks in {config_file}", dry_run=dry_run)
+    if dry_run:
+        return
+    try:
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        config_file.write_text(updated, encoding="utf-8")
+        _ok(f"Updated {config_file}")
+    except OSError as exc:
+        _err(f"Could not write {config_file}: {exc}")
+
+
 def _legacy_hook_command(claude_dir: Path, event: str) -> str:
     """Return the legacy managed hook command string for a given event."""
     return _managed_hook_command(claude_dir, LEGACY_SKILL_NAME, event)
@@ -888,8 +1154,13 @@ def _is_legacy_managed_hook_command(command: str, claude_dir: Path, event: str) 
 def _hook_already_registered(hooks_list: list[dict], command: str) -> bool:
     """Return True if any entry in hooks_list already has this command."""
     for entry in hooks_list:
-        for hook in entry.get("hooks", []):
-            if hook.get("command", "") == command:
+        if not isinstance(entry, dict):
+            continue
+        hooks = entry.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for hook in hooks:
+            if isinstance(hook, dict) and hook.get("command", "") == command:
                 return True
     return False
 
@@ -907,6 +1178,9 @@ def _filter_hook_entries(
     changed = False
 
     for entry in event_hooks:
+        if not isinstance(entry, dict):
+            filtered_entries.append(entry)
+            continue
         hooks = entry.get("hooks", [])
         if not isinstance(hooks, list):
             filtered_entries.append(entry)
@@ -1322,12 +1596,26 @@ def uninstall(
     dry_run: bool = False,
     yes: bool = False,
     hooks_only: bool = False,
+    runtime: str = "claude",
+    codex_home: Path | None = None,
 ) -> None:
     """Remove installed Parsidion assets or only managed hooks."""
+    codex_home = (
+        codex_home
+        or Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser().resolve()
+    )
+    uninstall_claude_runtime = runtime in ("claude", "both")
+    uninstall_codex_runtime = runtime in ("codex", "both")
+
     if hooks_only:
         print(bold("\nRemoving Parsidion hooks..."))
-        remove_installed_hooks(claude_dir, settings_file, dry_run=dry_run)
-        remove_legacy_hooks(claude_dir, settings_file, dry_run=dry_run)
+        if runtime == "none":
+            _warn("Runtime selection is none; no runtime hooks will be removed.")
+        if uninstall_claude_runtime:
+            remove_installed_hooks(claude_dir, settings_file, dry_run=dry_run)
+            remove_legacy_hooks(claude_dir, settings_file, dry_run=dry_run)
+        if uninstall_codex_runtime:
+            remove_codex_hooks(codex_home, claude_dir, dry_run=dry_run)
         if not dry_run:
             print()
             _ok("Hook uninstall complete.")
@@ -1335,77 +1623,86 @@ def uninstall(
 
     print(bold("\nUninstalling Parsidion..."))
 
-    skill_dir = claude_dir / "skills" / SKILL_NAME
+    if uninstall_claude_runtime:
+        skill_dir = claude_dir / "skills" / SKILL_NAME
 
-    if skill_dir.exists() or skill_dir.is_symlink():
-        _step(f"Remove skill directory: {skill_dir}", dry_run=dry_run)
-        if not dry_run:
-            if skill_dir.is_symlink() or skill_dir.is_file():
-                skill_dir.unlink()
-            else:
-                shutil.rmtree(skill_dir)
-    else:
-        _warn(f"Skill directory not found: {skill_dir}")
-
-    legacy_skill_dir = claude_dir / "skills" / LEGACY_SKILL_NAME
-    if legacy_skill_dir.exists() or legacy_skill_dir.is_symlink():
-        _step(f"Remove legacy skill {legacy_skill_dir}", dry_run=dry_run)
-        if not dry_run:
-            try:
-                if legacy_skill_dir.is_symlink() or legacy_skill_dir.is_file():
-                    legacy_skill_dir.unlink()
+        if skill_dir.exists() or skill_dir.is_symlink():
+            _step(f"Remove skill directory: {skill_dir}", dry_run=dry_run)
+            if not dry_run:
+                if skill_dir.is_symlink() or skill_dir.is_file():
+                    skill_dir.unlink()
                 else:
-                    shutil.rmtree(legacy_skill_dir)
-            except OSError as exc:
-                _warn(f"Could not remove legacy skill {legacy_skill_dir}: {exc}")
-
-    for agent_src in AGENT_SRCS:
-        agent_dest = claude_dir / "agents" / agent_src.name
-        if agent_dest.exists():
-            _step(f"Remove agent: {agent_dest}", dry_run=dry_run)
-            if not dry_run:
-                agent_dest.unlink()
+                    shutil.rmtree(skill_dir)
         else:
-            _warn(f"Agent not found: {agent_dest}")
+            _warn(f"Skill directory not found: {skill_dir}")
 
-    scripts_dir = claude_dir / "scripts"
-    if SCRIPTS_SRC.exists() and scripts_dir.exists():
-        for script in SCRIPTS_SRC.iterdir():
-            if script.is_file():
-                script_dest = scripts_dir / script.name
-                if script_dest.exists():
-                    _step(f"Remove script: {script_dest}", dry_run=dry_run)
-                    if not dry_run:
-                        script_dest.unlink()
-
-    # Remove hook registrations
-    remove_installed_hooks(claude_dir, settings_file, dry_run=dry_run)
-    remove_legacy_hooks(claude_dir, settings_file, dry_run=dry_run)
-
-    # Remove CLAUDE-VAULT.md and its @import from CLAUDE.md
-    claude_vault_md = claude_dir / "CLAUDE-VAULT.md"
-    if claude_vault_md.exists():
-        _step(f"Remove {claude_vault_md}", dry_run=dry_run)
-        if not dry_run:
-            claude_vault_md.unlink()
-    else:
-        _warn(f"CLAUDE-VAULT.md not found: {claude_vault_md}")
-
-    claude_md = claude_dir / "CLAUDE.md"
-    if claude_md.exists():
-        content = claude_md.read_text(encoding="utf-8")
-        if _CLAUDE_VAULT_MD_IMPORT in content:
-            _step(f"Remove @CLAUDE-VAULT.md import from {claude_md}", dry_run=dry_run)
+        legacy_skill_dir = claude_dir / "skills" / LEGACY_SKILL_NAME
+        if legacy_skill_dir.exists() or legacy_skill_dir.is_symlink():
+            _step(f"Remove legacy skill {legacy_skill_dir}", dry_run=dry_run)
             if not dry_run:
-                cleaned = "\n".join(
-                    line
-                    for line in content.splitlines()
-                    if line.strip() != _CLAUDE_VAULT_MD_IMPORT
+                try:
+                    if legacy_skill_dir.is_symlink() or legacy_skill_dir.is_file():
+                        legacy_skill_dir.unlink()
+                    else:
+                        shutil.rmtree(legacy_skill_dir)
+                except OSError as exc:
+                    _warn(f"Could not remove legacy skill {legacy_skill_dir}: {exc}")
+
+        for agent_src in AGENT_SRCS:
+            agent_dest = claude_dir / "agents" / agent_src.name
+            if agent_dest.exists():
+                _step(f"Remove agent: {agent_dest}", dry_run=dry_run)
+                if not dry_run:
+                    agent_dest.unlink()
+            else:
+                _warn(f"Agent not found: {agent_dest}")
+
+        scripts_dir = claude_dir / "scripts"
+        if SCRIPTS_SRC.exists() and scripts_dir.exists():
+            for script in SCRIPTS_SRC.iterdir():
+                if script.is_file():
+                    script_dest = scripts_dir / script.name
+                    if script_dest.exists():
+                        _step(f"Remove script: {script_dest}", dry_run=dry_run)
+                        if not dry_run:
+                            script_dest.unlink()
+
+    if uninstall_claude_runtime:
+        # Remove Claude hook registrations
+        remove_installed_hooks(claude_dir, settings_file, dry_run=dry_run)
+        remove_legacy_hooks(claude_dir, settings_file, dry_run=dry_run)
+
+        # Remove CLAUDE-VAULT.md and its @import from CLAUDE.md
+        claude_vault_md = claude_dir / "CLAUDE-VAULT.md"
+        if claude_vault_md.exists():
+            _step(f"Remove {claude_vault_md}", dry_run=dry_run)
+            if not dry_run:
+                claude_vault_md.unlink()
+        else:
+            _warn(f"CLAUDE-VAULT.md not found: {claude_vault_md}")
+
+        claude_md = claude_dir / "CLAUDE.md"
+        if claude_md.exists():
+            content = claude_md.read_text(encoding="utf-8")
+            if _CLAUDE_VAULT_MD_IMPORT in content:
+                _step(
+                    f"Remove @CLAUDE-VAULT.md import from {claude_md}", dry_run=dry_run
                 )
-                # Preserve trailing newline
-                if content.endswith("\n"):
-                    cleaned += "\n"
-                claude_md.write_text(cleaned, encoding="utf-8")
+                if not dry_run:
+                    cleaned = "\n".join(
+                        line
+                        for line in content.splitlines()
+                        if line.strip() != _CLAUDE_VAULT_MD_IMPORT
+                    )
+                    # Preserve trailing newline
+                    if content.endswith("\n"):
+                        cleaned += "\n"
+                    claude_md.write_text(cleaned, encoding="utf-8")
+
+    if uninstall_codex_runtime:
+        remove_codex_hooks(codex_home, claude_dir, dry_run=dry_run)
+    elif runtime == "none":
+        _warn("Runtime selection is none; no runtime hooks will be removed.")
 
     # Remove vault post-merge hook
     vault_root = _resolve_vault_root_for_uninstall()
@@ -1927,6 +2224,14 @@ def install(args: argparse.Namespace) -> int:
         else:
             vault_root = prompt_vault_path(default_vault)
 
+    runtime = resolve_runtime_choice(
+        args.runtime, yes=args.yes, interactive=not args.yes
+    )
+    codex_home: Path = Path(args.codex_home).expanduser().resolve()
+    install_claude_runtime = runtime in ("claude", "both")
+    install_codex_runtime = runtime in ("codex", "both")
+    install_runtime_hooks = runtime != "none" and not args.skip_hooks
+
     # --- CLI tools prompt ---
     install_tools: bool = args.install_tools
     if not args.yes and not install_tools:
@@ -1945,7 +2250,12 @@ def install(args: argparse.Namespace) -> int:
 
     # --- AI mode prompt ---
     enable_ai: bool = args.enable_ai
-    if not args.yes and not enable_ai and not args.skip_hooks:
+    if (
+        not args.yes
+        and not enable_ai
+        and install_claude_runtime
+        and not args.skip_hooks
+    ):
         print()
         print(bold("AI-Powered Note Selection (optional)"))
         print(
@@ -2011,7 +2321,11 @@ def install(args: argparse.Namespace) -> int:
 
     print()
     print(bold("Installation Plan"))
-    print(f"  {dim('Claude dir   :')} {claude_dir}")
+    print(f"  {dim('Runtime     :')} {runtime}")
+    if install_claude_runtime:
+        print(f"  {dim('Claude dir   :')} {claude_dir}")
+    if install_codex_runtime:
+        print(f"  {dim('Codex home  :')} {codex_home}")
     print(f"  {dim('Vault path   :')} {vault_root}")
     if install_tools:
         print(f"  {dim('CLI tools    :')} vault-search, vault-new, vault-stats")
@@ -2025,17 +2339,25 @@ def install(args: argparse.Namespace) -> int:
         print(f"  {dim('AI mode      :')} enabled (SessionStart timeout → 30s)")
     print(f"  {dim('Embeddings   :')} {'enabled' if enable_embeddings else 'disabled'}")
     print(f"  {dim('Vault username:')} {vault_username or '(auto: $USER)'}")
-    print(f"  {dim('Settings     :')} {settings_file}")
+    if install_claude_runtime:
+        print(f"  {dim('Settings     :')} {settings_file}")
     print(f"  {dim('Install skill:')} {claude_dir / 'skills' / SKILL_NAME}")
-    if not args.skip_agent:
+    if install_claude_runtime and not args.skip_agent:
         for agent_src in AGENT_SRCS:
             print(f"  {dim('Install agent:')} {claude_dir / 'agents' / agent_src.name}")
-    if not args.skip_hooks:
-        print(f"  {dim('Register hooks:')} {', '.join(_HOOK_SCRIPTS.keys())}")
+    if install_runtime_hooks:
+        if install_claude_runtime:
+            print(f"  {dim('Claude hooks:')} {', '.join(_HOOK_SCRIPTS.keys())}")
+        if install_codex_runtime:
+            print(f"  {dim('Codex hooks :')} {', '.join(_CODEX_HOOK_SCRIPTS.keys())}")
+    else:
+        reason = "runtime none" if runtime == "none" else "--skip-hooks"
+        print(f"  {dim('Runtime hooks:')} skipped ({reason})")
     print(f"  {dim('Install scripts:')} {claude_dir / 'scripts'}/")
-    print(
-        f"  {dim('Install guidance:')} {claude_dir / 'CLAUDE-VAULT.md'} (@import into CLAUDE.md)"
-    )
+    if install_claude_runtime:
+        print(
+            f"  {dim('Install guidance:')} {claude_dir / 'CLAUDE-VAULT.md'} (@import into CLAUDE.md)"
+        )
     if dry_run:
         print(f"\n  {yellow('[DRY RUN — no changes will be made]')}")
 
@@ -2063,7 +2385,7 @@ def install(args: argparse.Namespace) -> int:
     )
 
     # 2. Install agents
-    if not args.skip_agent:
+    if install_claude_runtime and not args.skip_agent:
         install_agents(claude_dir, dry_run=dry_run)
 
     # 3. Install scripts
@@ -2079,7 +2401,7 @@ def install(args: argparse.Namespace) -> int:
     )
 
     # 7. Clean up legacy managed parsidion-cc hooks/assets, then register hooks
-    if not args.skip_hooks:
+    if install_claude_runtime and not args.skip_hooks:
         cleanup_legacy_assets(
             claude_dir,
             settings_file,
@@ -2088,12 +2410,17 @@ def install(args: argparse.Namespace) -> int:
         )
         merge_hooks(claude_dir, settings_file, dry_run=dry_run, verbose=verbose)
 
+    if install_codex_runtime and not args.skip_hooks:
+        enable_codex_hooks_config(codex_home, dry_run=dry_run, yes=args.yes)
+        merge_codex_hooks(codex_home, claude_dir, dry_run=dry_run, verbose=verbose)
+
     # 7b. Enable AI mode if requested
-    if enable_ai and not args.skip_hooks:
+    if enable_ai and install_claude_runtime and not args.skip_hooks:
         enable_ai_mode(settings_file, vault_root, claude_dir, dry_run=dry_run)
 
     # 8. Install CLAUDE-VAULT.md and wire @import into CLAUDE.md
-    install_claude_vault_md(claude_dir, dry_run=dry_run, verbose=verbose)
+    if install_claude_runtime:
+        install_claude_vault_md(claude_dir, dry_run=dry_run, verbose=verbose)
 
     # 9. Rebuild vault index
     rebuild_index(claude_dir, dry_run=dry_run)
@@ -2198,6 +2525,21 @@ def parse_args() -> argparse.Namespace:
         metavar="PATH",
         default="~/.claude",
         help="Claude config directory (default: ~/.claude)",
+    )
+    parser.add_argument(
+        "--runtime",
+        choices=_RUNTIME_CHOICES,
+        default=None,
+        help=(
+            "Runtime integration target: claude, codex, both, or none. "
+            "Interactive default is both; --yes default is claude for backwards compatibility."
+        ),
+    )
+    parser.add_argument(
+        "--codex-home",
+        metavar="PATH",
+        default=os.environ.get("CODEX_HOME", "~/.codex"),
+        help="Codex home directory for hooks/config (default: $CODEX_HOME or ~/.codex)",
     )
     parser.add_argument(
         "--dry-run",
@@ -2357,6 +2699,12 @@ def main() -> None:
         sys.exit(2)
 
     if args.uninstall or args.uninstall_hooks:
+        runtime = resolve_runtime_choice(
+            args.runtime,
+            yes=args.yes,
+            interactive=not args.yes,
+        )
+        codex_home = Path(args.codex_home).expanduser().resolve()
         if not args.yes and not args.dry_run:
             print()
             print(
@@ -2366,7 +2714,10 @@ def main() -> None:
                     else "Parsidion Uninstaller"
                 )
             )
+            print(f"  {dim('Runtime   :')} {runtime}")
             print(f"  {dim('Claude dir:')} {claude_dir}")
+            if runtime in ("codex", "both"):
+                print(f"  {dim('Codex home:')} {codex_home}")
             prompt = (
                 "Proceed with hook uninstall?"
                 if args.uninstall_hooks
@@ -2381,6 +2732,8 @@ def main() -> None:
             dry_run=args.dry_run,
             yes=args.yes,
             hooks_only=args.uninstall_hooks,
+            runtime=runtime,
+            codex_home=codex_home,
         )
         sys.exit(0)
 
