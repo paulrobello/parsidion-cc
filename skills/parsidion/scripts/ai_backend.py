@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -128,6 +129,43 @@ def _codex_env() -> dict[str, str]:
     return env
 
 
+def _run_prompt_subprocess(
+    cmd: list[str],
+    *,
+    timeout: int | float,
+    cwd: str | Path | None,
+    env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=str(cwd) if cwd is not None else None,
+        env=env,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        raise
+    return subprocess.CompletedProcess(
+        cmd,
+        proc.returncode if proc.returncode is not None else 0,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
 def _run_claude_prompt(
     prompt: str,
     *,
@@ -142,10 +180,8 @@ def _run_claude_prompt(
     cmd.append("--no-session-persistence")
 
     try:
-        result = subprocess.run(
+        result = _run_prompt_subprocess(
             cmd,
-            capture_output=True,
-            text=True,
             timeout=timeout if timeout is not None else _DEFAULT_CLAUDE_TIMEOUT,
             cwd=str(cwd) if cwd is not None else None,
             env=vault_common.env_without_claudecode(vault=vault),
@@ -240,10 +276,8 @@ def _run_codex_prompt(
             cmd.extend(["--model", model])
         cmd.append(prompt)
 
-        result = subprocess.run(
+        result = _run_prompt_subprocess(
             cmd,
-            capture_output=True,
-            text=True,
             timeout=codex_timeout,
             cwd=str(cwd) if cwd is not None else None,
             env=_codex_env(),
