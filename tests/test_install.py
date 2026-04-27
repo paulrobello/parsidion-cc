@@ -88,6 +88,14 @@ class TestParseArgs:
             == "all"
         )
 
+    def test_runtime_predicates_include_all_without_cross_wiring_gemini(self) -> None:
+        assert install._wants_claude_runtime("all") is True
+        assert install._wants_codex_runtime("all") is True
+        assert install._wants_gemini_runtime("all") is True
+        assert install._wants_gemini_runtime("gemini") is True
+        assert install._wants_claude_runtime("gemini") is False
+        assert install._wants_codex_runtime("gemini") is False
+
 
 class TestCodexHooks:
     def test_merge_codex_hooks_creates_hooks_json(self, tmp_path: Path) -> None:
@@ -375,6 +383,85 @@ class TestRuntimeFlow:
         assert "Runtime     : both" in output
         assert f"Codex home  : {codex_home}" in output
         assert "Codex hooks : SessionStart, Stop" in output
+        assert not (codex_home / "hooks.json").exists()
+
+    def test_runtime_all_dry_run_install_prints_claude_and_codex_plan(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.setattr(install, "_FORBIDDEN_PREFIXES", ())
+        vault = tmp_path / "ClaudeVault"
+        claude_dir = tmp_path / ".claude"
+        codex_home = tmp_path / ".codex"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "install.py",
+                "--yes",
+                "--runtime",
+                "all",
+                "--dry-run",
+                "--vault",
+                str(vault),
+                "--claude-dir",
+                str(claude_dir),
+                "--codex-home",
+                str(codex_home),
+            ],
+        )
+        args = install.parse_args()
+
+        result = install.install(args)
+
+        output = capsys.readouterr().out
+        assert result == 0
+        assert "Runtime     : all" in output
+        assert f"Claude dir   : {claude_dir}" in output
+        assert f"Codex home  : {codex_home}" in output
+        assert (
+            "Claude hooks: SessionStart, SessionEnd, PreCompact, PostCompact, SubagentStop"
+            in output
+        )
+        assert "Codex hooks : SessionStart, Stop" in output
+        assert not (codex_home / "hooks.json").exists()
+
+    def test_runtime_gemini_dry_run_warns_hooks_pending_without_registration_claim(
+        self, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        monkeypatch.setattr(install, "_FORBIDDEN_PREFIXES", ())
+        vault = tmp_path / "ClaudeVault"
+        claude_dir = tmp_path / ".claude"
+        codex_home = tmp_path / ".codex"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "install.py",
+                "--yes",
+                "--runtime",
+                "gemini",
+                "--dry-run",
+                "--vault",
+                str(vault),
+                "--claude-dir",
+                str(claude_dir),
+                "--codex-home",
+                str(codex_home),
+            ],
+        )
+        args = install.parse_args()
+
+        result = install.install(args)
+
+        output = capsys.readouterr().out
+        assert result == 0
+        assert "Runtime     : gemini" in output
+        assert (
+            "Gemini runtime selected but hook registration is not wired yet" in output
+        )
+        assert "Gemini hooks:" not in output
+        assert "Claude hooks:" not in output
+        assert "Codex hooks :" not in output
         assert not (codex_home / "hooks.json").exists()
 
     def test_uninstall_codex_runtime_removes_codex_hooks_only(
