@@ -45,6 +45,10 @@ _CODEX_ENV_KEYS: frozenset[str] = frozenset(
 )
 
 
+class AiBackendTimeout(RuntimeError):
+    """Raised when an AI backend prompt times out and timeout raising is enabled."""
+
+
 def _load_config(vault: Path | None = None) -> dict[str, Any]:
     return vault_config.load_config(vault=vault)
 
@@ -187,6 +191,7 @@ def _run_claude_prompt(
     timeout: int | float | None,
     cwd: str | Path | None,
     vault: Path | None,
+    raise_on_timeout: bool,
 ) -> str | None:
     cmd = ["claude", "-p", prompt]
     if model:
@@ -200,7 +205,11 @@ def _run_claude_prompt(
             cwd=str(cwd) if cwd is not None else None,
             env=vault_common.env_without_claudecode(vault=vault),
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired as exc:
+        if raise_on_timeout:
+            raise AiBackendTimeout("AI backend prompt timed out") from exc
+        return None
+    except OSError:
         return None
 
     if result.returncode != 0:
@@ -253,6 +262,7 @@ def _run_codex_prompt(
     timeout: int | float | None,
     cwd: str | Path | None,
     vault: Path | None,
+    raise_on_timeout: bool,
 ) -> str | None:
     command = _config_str("codex_cli", "command", "codex", vault=vault)
     codex_timeout = (
@@ -300,7 +310,11 @@ def _run_codex_prompt(
             return None
         output = output_path.read_text(encoding="utf-8").strip()
         return output or None
-    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
+    except subprocess.TimeoutExpired as exc:
+        if raise_on_timeout:
+            raise AiBackendTimeout("AI backend prompt timed out") from exc
+        return None
+    except (OSError, UnicodeDecodeError):
         return None
     finally:
         if output_path is not None:
@@ -319,6 +333,7 @@ def run_ai_prompt(
     cwd: str | Path | None = None,
     purpose: str = "general",
     vault: Path | None = None,
+    raise_on_timeout: bool = False,
 ) -> str | None:
     """Run a prompt through the configured prompt AI backend.
 
@@ -343,6 +358,7 @@ def run_ai_prompt(
             timeout=timeout,
             cwd=cwd,
             vault=vault,
+            raise_on_timeout=raise_on_timeout,
         )
     return _run_claude_prompt(
         prompt,
@@ -350,4 +366,5 @@ def run_ai_prompt(
         timeout=timeout,
         cwd=cwd,
         vault=vault,
+        raise_on_timeout=raise_on_timeout,
     )

@@ -1196,14 +1196,18 @@ Current note:
 {content}
 ---END---"""
 
-    output = ai_backend.run_ai_prompt(
-        prompt,
-        model=model,
-        model_tier="small",
-        timeout=timeout,
-        purpose="vault-doctor",
-        vault=vault_path,
-    )
+    try:
+        output = ai_backend.run_ai_prompt(
+            prompt,
+            model=model,
+            model_tier="small",
+            timeout=timeout,
+            purpose="vault-doctor",
+            vault=vault_path,
+            raise_on_timeout=True,
+        )
+    except ai_backend.AiBackendTimeout:
+        return None, "timeout"
     if output:
         output = output.strip()
         # Strip accidental markdown fences if the backend added them
