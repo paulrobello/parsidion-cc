@@ -158,6 +158,27 @@ class TestResolveAiModel:
             == "claude-sonnet-4-6"
         )
 
+    def test_configured_claude_models_override_defaults(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        vault = _reset_config(
+            monkeypatch,
+            tmp_path,
+            "ai_models:\n"
+            "  claude:\n"
+            "    small: claude-custom-haiku\n"
+            "    large: claude-custom-sonnet\n",
+        )
+
+        assert (
+            ai_backend.resolve_ai_model("claude-cli", model_tier="small", vault=vault)
+            == "claude-custom-haiku"
+        )
+        assert (
+            ai_backend.resolve_ai_model("claude-cli", model_tier="large", vault=vault)
+            == "claude-custom-sonnet"
+        )
+
     def test_configured_codex_models_override_defaults(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -342,6 +363,40 @@ class TestRunAiPrompt:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         assert ai_backend.run_ai_prompt("hello", vault=vault) is None
+
+    def test_codex_timeout_returns_none_and_deletes_output_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        vault = _reset_config(monkeypatch, tmp_path, "ai:\n  backend: codex-cli\n")
+        output_paths: list[Path] = []
+
+        def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+            output_paths.append(output_path)
+            output_path.write_text("partial", encoding="utf-8")
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs["timeout"])
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        assert ai_backend.run_ai_prompt("hello", vault=vault) is None
+        assert output_paths and not output_paths[0].exists()
+
+    def test_codex_success_with_missing_output_file_returns_none_and_cleans_up(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        vault = _reset_config(monkeypatch, tmp_path, "ai:\n  backend: codex-cli\n")
+        output_paths: list[Path] = []
+
+        def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+            output_paths.append(output_path)
+            output_path.unlink()
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        assert ai_backend.run_ai_prompt("hello", vault=vault) is None
+        assert output_paths and not output_paths[0].exists()
 
     def test_codex_oserror_returns_none_and_deletes_output_file(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
