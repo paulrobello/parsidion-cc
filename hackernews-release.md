@@ -15,7 +15,7 @@ Five stdlib-only Python hooks run at Claude Code lifecycle events:
 - **PreCompact/PostCompact**: snapshots working state (task, files, git branch, dirty files) before context compaction, restores it after. Critical for long sessions.
 - **SubagentStop**: captures subagent transcripts so research/exploration findings get harvested too.
 
-A summarizer processes the queue via the Claude Agent SDK (up to 5 parallel sessions), with hierarchical chunking for long transcripts, embedding-based dedup, and a write-gate so Claude decides per-session if the content is worth persisting.
+A summarizer processes the queue through the configured prompt AI backend (`claude -p` or `codex exec`, up to 5 parallel sessions), with hierarchical chunking for long transcripts, embedding-based dedup, and a write-gate so the backend decides per-session if the content is worth persisting.
 
 ## Search
 
