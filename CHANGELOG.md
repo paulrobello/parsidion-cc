@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No notable changes yet.
+
+## [0.6.0] - 2026-04-27
+
 ### Added
 
 - **Gemini runtime hooks** — Added installer support for Gemini CLI `SessionStart` and `SessionEnd` hooks, Gemini transcript parsing, and `--runtime gemini` / `--runtime all` runtime selection.

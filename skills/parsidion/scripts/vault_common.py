@@ -126,7 +126,7 @@ from vault_adaptive import (  # noqa: F401
     update_usefulness_scores,
 )
 
-__version__ = "0.5.6"
+__version__ = "0.6.0"
 
 __all__: list[str] = [
     # Version
