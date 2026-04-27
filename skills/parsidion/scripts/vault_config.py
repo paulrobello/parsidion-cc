@@ -287,6 +287,7 @@ _CONFIG_SCHEMA: dict[str, dict[str, tuple[type, ...]]] = {
         "sandbox": (str, type(None)),
         "ephemeral": (bool,),
         "skip_git_repo_check": (bool,),
+        "suppress_notify": (bool,),
     },
     "session_start_hook": {
         "ai_model": (str, type(None)),

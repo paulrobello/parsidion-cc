@@ -488,6 +488,7 @@ codex_cli:
   sandbox: read-only
   ephemeral: true
   skip_git_repo_check: true
+  suppress_notify: true
 
 embeddings:
   model: BAAI/bge-small-en-v1.5  # fastembed model ID; ~67 MB ONNX model, cached after first run
@@ -499,7 +500,7 @@ git:
 ```
 
 - `auto` prefers the active runtime when detectable and falls back to Claude CLI when ambiguous.
-- Codex backend uses `codex exec` with default ephemeral/read-only/skip-git-repo-check/output-last-message prompt calls and the normal Codex CLI auth path; Parsidion does not manage Codex auth files such as `~/.codex/auth.json`. This is not OpenAI API-key provider support. Gemini runtime hooks do not imply `ai.backend: gemini`; no Gemini prompt backend is provided yet.
+- Codex backend uses `codex exec` with default ephemeral/read-only/skip-git-repo-check/output-last-message prompt calls and the normal Codex CLI auth path; Parsidion does not manage Codex auth files such as `~/.codex/auth.json`. Internal calls also pass `--config notify=[]` by default so user-configured Codex turn-complete notifications do not fire for vault summarization. This is not OpenAI API-key provider support. Gemini runtime hooks do not imply `ai.backend: gemini`; no Gemini prompt backend is provided yet.
 - `summarize_sessions.py` also uses the configured prompt AI backend. Claude uses `claude -p`, Codex uses `codex exec`, and no Claude Agent SDK or Codex SDK is required for this path.
 
 ### Programmatic Access

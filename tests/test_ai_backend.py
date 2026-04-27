@@ -50,6 +50,7 @@ class TestConfigSchema:
         assert vault_config._CONFIG_SCHEMA["codex_cli"]["skip_git_repo_check"] == (
             bool,
         )
+        assert vault_config._CONFIG_SCHEMA["codex_cli"]["suppress_notify"] == (bool,)
 
 
 class TestResolveAiBackend:
@@ -295,6 +296,7 @@ class TestRunAiPrompt:
         assert calls
         cmd, kwargs = calls[0]
         assert cmd[:2] == ["codex", "exec"]
+        assert cmd[cmd.index("--config") + 1] == "notify=[]"
         assert "--ephemeral" in cmd
         assert cmd[cmd.index("--sandbox") + 1] == "read-only"
         assert "--skip-git-repo-check" in cmd
@@ -323,7 +325,8 @@ class TestRunAiPrompt:
             "  timeout: 45\n"
             "  sandbox: null\n"
             "  ephemeral: false\n"
-            "  skip_git_repo_check: false\n",
+            "  skip_git_repo_check: false\n"
+            "  suppress_notify: false\n",
         )
         calls: list[tuple[list[str], dict[str, Any]]] = []
 
@@ -338,6 +341,7 @@ class TestRunAiPrompt:
         assert ai_backend.run_ai_prompt("hello", vault=vault) == "configured answer"
         cmd, kwargs = calls[0]
         assert cmd[:2] == ["custom-codex", "exec"]
+        assert "--config" not in cmd
         assert "--ephemeral" not in cmd
         assert "--sandbox" not in cmd
         assert "--skip-git-repo-check" not in cmd

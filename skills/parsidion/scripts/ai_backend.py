@@ -277,6 +277,7 @@ def _run_codex_prompt(
     skip_git_repo_check = _config_bool(
         "codex_cli", "skip_git_repo_check", True, vault=vault
     )
+    suppress_notify = _config_bool("codex_cli", "suppress_notify", True, vault=vault)
 
     output_path: Path | None = None
     try:
@@ -289,6 +290,8 @@ def _run_codex_prompt(
             output_path = Path(output_file.name)
 
         cmd = [command, "exec"]
+        if suppress_notify:
+            cmd.extend(["--config", "notify=[]"])
         if ephemeral:
             cmd.append("--ephemeral")
         if sandbox is not None:

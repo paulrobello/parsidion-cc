@@ -554,6 +554,7 @@ codex_cli:
   sandbox: read-only
   ephemeral: true
   skip_git_repo_check: true
+  suppress_notify: true
 
 anthropic_env:
   ANTHROPIC_API_KEY: null
@@ -588,7 +589,7 @@ adaptive_context:
 
 `ai.backend` controls prompt-style AI helpers used by session-start selection, session-stop classification, session summarization, vault doctor repairs, vault merge synthesis, and eval utilities. `auto` prefers the active runtime when Parsidion can detect it: Codex runtime hints use `codex exec`, Claude runtime hints use `claude -p`, and ambiguous environments keep the historical Claude CLI behavior.
 
-Codex mode uses the Codex CLI and its normal authentication path. Parsidion does not read, copy, or manage `~/.codex/auth.json`, and this is not OpenAI API-key provider support. Prompt-style Codex calls default to `codex exec --ephemeral --sandbox read-only --skip-git-repo-check` and write/read the final answer via `--output-last-message`.
+Codex mode uses the Codex CLI and its normal authentication path. Parsidion does not read, copy, or manage `~/.codex/auth.json`, and this is not OpenAI API-key provider support. Prompt-style Codex calls default to `codex exec --ephemeral --sandbox read-only --skip-git-repo-check --config notify=[]` and write/read the final answer via `--output-last-message`. The `notify=[]` override suppresses user-configured Codex turn-complete notifications for internal Parsidion calls.
 
 `summarize_sessions.py` uses the configured prompt AI backend: Claude runs through `claude -p`, Codex runs through `codex exec`, and no Claude Agent SDK or Codex SDK is required for this path. Leave `summarizer.model` and `summarizer.cluster_model` as `null` to use backend-aware large/small defaults from `ai_models.<backend>`.
 

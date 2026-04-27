@@ -24,6 +24,7 @@ codex_cli:
   sandbox: read-only       # Sandbox mode for codex exec (null to omit)
   ephemeral: true          # Pass --ephemeral to avoid session persistence
   skip_git_repo_check: true # Pass --skip-git-repo-check for vault/project paths
+  suppress_notify: true    # Pass -c notify=[] so internal Codex calls do not trigger turn-complete notifications
 
 # Session start hook (session_start_hook.py)
 session_start_hook:
