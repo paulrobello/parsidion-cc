@@ -1,19 +1,18 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["claude-agent-sdk>=0.0.10,<1.0", "anyio>=4.0.0,<5.0"]
+# dependencies = ["anyio>=4.0.0,<5.0"]
 # ///
 """On-demand AI-powered session summarizer for Parsidion vault.
 
-Reads pending_summaries.jsonl, processes transcripts via Claude Agent SDK,
+Reads pending_summaries.jsonl, processes transcripts via the configured AI backend,
 and writes structured vault notes to the appropriate vault folders.
 
 Usage:
     uv run summarize_sessions.py [--sessions FILE] [--dry-run] [--model MODEL] [--persist]
 
 ARC-015: Concurrency model rationale
-This script uses ``anyio`` + ``anyio.create_task_group`` for async concurrency
-because it already depends on ``claude-agent-sdk`` (which is built on anyio).
+This script uses ``anyio`` + ``anyio.create_task_group`` for async concurrency.
 Structured concurrency guarantees from task groups (exception propagation,
 automatic cancellation) are more robust than ``ThreadPoolExecutor`` futures.
 
@@ -33,12 +32,13 @@ import re
 import subprocess
 import sys
 from datetime import date, datetime
+from functools import partial
 from pathlib import Path
 from typing import cast
 
 import anyio  # type: ignore[import-untyped]
-from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query  # type: ignore[import-untyped]
 
+import ai_backend
 import vault_common
 import vault_links
 
@@ -48,9 +48,30 @@ _flock_shared = vault_common.flock_shared
 _funlock = vault_common.funlock
 
 
-_DEFAULT_MODEL: str = vault_common.get_config(
-    "defaults", "sonnet_model", "claude-sonnet-4-6"
-)
+async def _run_summarizer_prompt(
+    prompt: str,
+    *,
+    model: str | None,
+    model_tier: ai_backend.ModelTier,
+    purpose: str,
+    timeout: int | float | None,
+    vault: Path,
+) -> str | None:
+    """Run a summarizer prompt through the configured AI backend."""
+
+    result = await anyio.to_thread.run_sync(
+        partial(
+            ai_backend.run_ai_prompt,
+            prompt,
+            model=model,
+            model_tier=model_tier,
+            purpose=purpose,
+            timeout=timeout,
+            vault=vault,
+        )
+    )
+    return cast(str | None, result)
+
 
 # Sentinel: returned as written_path when the transcript file no longer exists.
 # Stale entries are purged from the pending queue (they can never succeed).
@@ -106,9 +127,6 @@ def _clear_progress() -> None:
         pass
 
 
-_DEFAULT_CLUSTER_MODEL: str = vault_common.get_config(
-    "defaults", "haiku_model", "claude-haiku-4-5-20251001"
-)
 _DEFAULT_MAX_PARALLEL = 5
 _DEFAULT_TRANSCRIPT_TAIL_LINES = 400
 _DEFAULT_MAX_CLEANED_CHARS = 12_000
@@ -163,20 +181,20 @@ def read_pending(pending_path: Path) -> list[dict[str, object]]:
 def preprocess_transcript(
     transcript_path_str: str,
     tail_lines: int = _DEFAULT_TRANSCRIPT_TAIL_LINES,
-    max_chars: int = _DEFAULT_MAX_CLEANED_CHARS,
+    max_chars: int | None = _DEFAULT_MAX_CLEANED_CHARS,
 ) -> str:
     """Pre-process a transcript JSONL file into a cleaned human/assistant dialogue.
 
     Reads last N lines, keeps only human and assistant text blocks,
-    strips tool calls and tool results, and truncates to a character limit.
+    strips tool calls and tool results, and optionally truncates to a character limit.
 
     Args:
         transcript_path_str: String path to the transcript JSONL file.
         tail_lines: Number of trailing transcript lines to read.
-        max_chars: Maximum output characters.
+        max_chars: Maximum output characters, or ``None`` to return all cleaned text.
 
     Returns:
-        Cleaned dialogue string, truncated to *max_chars*.
+        Cleaned dialogue string, truncated to *max_chars* when provided.
     """
     transcript_path = Path(transcript_path_str)
     if not transcript_path.is_file():
@@ -247,6 +265,8 @@ def preprocess_transcript(
         pairs.append(f"{label}: {text}")
 
     cleaned = "\n\n".join(pairs)
+    if max_chars is None:
+        return cleaned
     return cleaned[:max_chars]
 
 
@@ -313,17 +333,17 @@ def build_prompt(
     session_id: str,
     similar_notes: list[tuple[str, float, str]] | None = None,
 ) -> str:
-    """Build the Sonnet prompt for generating a vault note.
+    """Build the backend prompt for generating a vault note.
 
     Args:
         project: Project name.
         categories: Detected topic categories.
         cleaned_transcript: Pre-processed transcript text.
         existing_tags: All tags currently in the vault (for reuse preference).
-        session_id: Claude session ID to embed in frontmatter.
+        session_id: Runtime session ID to embed in frontmatter.
         similar_notes: Optional list of (stem, score, summary) tuples for
             near-duplicate notes found by semantic search.  When provided and
-            non-empty, instructs Claude to merge rather than create a new note.
+            non-empty, instructs the backend to merge rather than create a new note.
 
     Returns:
         Complete prompt string.
@@ -622,8 +642,8 @@ async def _summarize_chunk(
     chunk_text: str,
     chunk_num: int,
     total_chunks: int,
-    model: str,
-    extra: dict[str, str | None],
+    model: str | None,
+    vault: Path,
 ) -> str:
     """Summarize one chunk of a long transcript using a cheaper model.
 
@@ -632,7 +652,7 @@ async def _summarize_chunk(
         chunk_num: 1-based index of this chunk.
         total_chunks: Total number of chunks.
         model: Model ID to use for summarization.
-        extra: Extra args to pass to ClaudeAgentOptions (e.g. no-session-persistence).
+        vault: Vault path used for backend configuration and execution context.
 
     Returns:
         A summary string (3-5 sentences). Falls back to a truncated version of
@@ -644,21 +664,17 @@ async def _summarize_chunk(
         "and solutions found. Focus on what would be useful to remember in future "
         f"sessions.\n\nTranscript:\n{chunk_text}"
     )
-    result_text = ""
     try:
-        async for message in query(
-            prompt=prompt,
-            options=ClaudeAgentOptions(
-                allowed_tools=[],
-                permission_mode="default",
-                model=model,
-                extra_args=extra,
-            ),
-        ):
-            if isinstance(message, ResultMessage):
-                result_text = message.result
+        result_text = await _run_summarizer_prompt(
+            prompt,
+            model=model,
+            model_tier="small",
+            purpose="summarizer-chunk",
+            timeout=vault_common.get_config("summarizer", "ai_timeout", None),
+            vault=vault,
+        )
     except Exception:  # noqa: BLE001
-        pass
+        result_text = None
 
     if result_text:
         return result_text
@@ -670,8 +686,8 @@ async def preprocess_transcript_hierarchical(
     transcript_path_str: str,
     tail_lines: int,
     max_cleaned_chars: int,
-    cluster_model: str,
-    extra: dict[str, str | None],
+    cluster_model: str | None,
+    vault: Path,
 ) -> str:
     """Pre-process a transcript, using hierarchical summarization for long ones.
 
@@ -685,12 +701,12 @@ async def preprocess_transcript_hierarchical(
         tail_lines: Number of trailing transcript lines to read.
         max_cleaned_chars: Maximum characters threshold.
         cluster_model: Model ID to use for chunk summarization.
-        extra: Extra args forwarded to the Agent SDK.
+        vault: Vault path used for chunk summarization backend calls.
 
     Returns:
         Cleaned dialogue string, or hierarchical summary string for long sessions.
     """
-    cleaned = preprocess_transcript(transcript_path_str, tail_lines, max_cleaned_chars)
+    cleaned = preprocess_transcript(transcript_path_str, tail_lines, None)
     if len(cleaned) <= max_cleaned_chars:
         return cleaned
 
@@ -717,7 +733,7 @@ async def preprocess_transcript_hierarchical(
 
     summaries: list[str] = []
     for i, chunk in enumerate(chunks):
-        summary = await _summarize_chunk(chunk, i + 1, total, cluster_model, extra)
+        summary = await _summarize_chunk(chunk, i + 1, total, cluster_model, vault)
         summaries.append(summary)
 
     header = f"[Hierarchical summary from {total} transcript segments]"
@@ -766,8 +782,8 @@ def _find_dedup_candidates(
 ) -> list[tuple[str, float, str]]:
     """Search for existing notes semantically similar to *topic_query*.
 
-    Used before the Claude summarization call to detect near-duplicates and
-    prompt Claude to merge rather than create a new note.
+    Used before the final summarization call to detect near-duplicates and
+    prompt the backend to merge rather than create a new note.
 
     Args:
         topic_query: Free-text query derived from project name and categories.
@@ -846,7 +862,7 @@ def _find_dedup_candidates(
 
 async def summarize_one(
     entry: dict[str, object],
-    model: str,
+    model: str | None,
     dry_run: bool,
     semaphore: anyio.Semaphore,
     existing_tags: list[str],
@@ -854,22 +870,23 @@ async def summarize_one(
     vault: Path,
     tail_lines: int = _DEFAULT_TRANSCRIPT_TAIL_LINES,
     max_cleaned_chars: int = _DEFAULT_MAX_CLEANED_CHARS,
-    cluster_model: str = _DEFAULT_CLUSTER_MODEL,
+    cluster_model: str | None = None,
     vault_notes: list[Path] | None = None,
 ) -> tuple[dict[str, object], Path | str | None]:
     """Summarize one pending session entry.
 
     Args:
         entry: Pending entry dict with transcript_path, project, categories.
-        model: Model ID to use.
+        model: Model ID to use, or ``None`` for the backend large-model default.
         dry_run: If True, print without writing.
         semaphore: Concurrency limiter.
         existing_tags: All tags currently in the vault.
-        persist: If True, allow the SDK to persist the session to disk.
+        persist: Backwards-compatible no-op accepted from legacy CLI usage.
         vault: Path to the vault directory.
         tail_lines: Number of transcript lines to read.
         max_cleaned_chars: Maximum characters after cleaning.
-        cluster_model: Model ID for hierarchical chunk summarization.
+        cluster_model: Model ID for hierarchical chunk summarization, or ``None``
+            for the backend small-model default.
         vault_notes: Pre-collected list of all vault note paths.  Passed
             through to backlink helpers to avoid redundant vault walks.
             When ``None``, each helper calls ``all_vault_notes()`` on its
@@ -880,16 +897,14 @@ async def summarize_one(
         skip decision, or error.  written_path is ``_STALE`` when the
         transcript file no longer exists (entry should be purged).
     """
+    del persist
+
     async with semaphore:
         transcript_path_str = str(entry.get("transcript_path", ""))
         project = str(entry.get("project", "unknown"))
         raw_cats = entry.get("categories") or []
         categories = [str(c) for c in (raw_cats if isinstance(raw_cats, list) else [])]
         session_id = str(entry.get("session_id") or Path(transcript_path_str).stem)
-
-        extra: dict[str, str | None] = (
-            {} if persist else {"no-session-persistence": None}
-        )
 
         # Check for missing transcript before expensive preprocessing.
         # Subagent transcripts are ephemeral — Claude Code may rename or
@@ -903,7 +918,7 @@ async def summarize_one(
             return entry, _STALE
 
         cleaned = await preprocess_transcript_hierarchical(
-            transcript_path_str, tail_lines, max_cleaned_chars, cluster_model, extra
+            transcript_path_str, tail_lines, max_cleaned_chars, cluster_model, vault
         )
         if not cleaned:
             print(
@@ -912,7 +927,7 @@ async def summarize_one(
             )
             return entry, None
 
-        # Semantic dedup: find near-duplicate notes before calling Claude
+        # Semantic dedup: find near-duplicate notes before calling the backend
         dedup_threshold: float = vault_common.get_config(
             "summarizer", "dedup_threshold", 0.80
         )
@@ -925,31 +940,30 @@ async def summarize_one(
             project, categories, cleaned, existing_tags, session_id, similar_notes
         )
 
-        result_text = ""
         try:
-            async for message in query(
-                prompt=prompt,
-                options=ClaudeAgentOptions(
-                    allowed_tools=[],
-                    permission_mode="default",
-                    model=model,
-                    extra_args=extra,
-                ),
-            ):
-                if isinstance(message, ResultMessage):
-                    result_text = message.result
+            result_text = await _run_summarizer_prompt(
+                prompt,
+                model=model,
+                model_tier="large",
+                purpose="summarizer-note",
+                timeout=vault_common.get_config("summarizer", "ai_timeout", None),
+                vault=vault,
+            )
         except Exception as e:  # noqa: BLE001
             print(
-                f"  Error querying Claude for {transcript_path_str}: {e}",
+                f"  Error querying AI backend for {transcript_path_str}: {e}",
                 file=sys.stderr,
             )
             return entry, None
 
         if not result_text:
-            print(f"  No result from Claude for {transcript_path_str}", file=sys.stderr)
+            print(
+                f"  No result from AI backend for {transcript_path_str}",
+                file=sys.stderr,
+            )
             return entry, None
 
-        # Write-gate: check if Claude decided this session is not worth saving or to merge
+        # Write-gate: check if the backend decided this session is not worth saving or should merge
         stripped_result = result_text.strip()
         if stripped_result.startswith("{"):
             try:
@@ -961,7 +975,7 @@ async def summarize_one(
                         print(f"  [write-gate] Skipping session {short_id}: {reason}")
                         return entry, None
                     if decision.get("decision") == "merge":
-                        # Claude chose to merge into an existing note
+                        # The backend chose to merge into an existing note
                         target_wikilink = str(decision.get("target", ""))
                         new_content = str(decision.get("new_content", ""))
                         if new_content and target_wikilink:
@@ -1018,27 +1032,28 @@ async def summarize_one(
 
 async def run_all(
     entries: list[dict[str, object]],
-    model: str,
+    model: str | None,
     dry_run: bool,
     persist: bool,
     vault: Path,
     max_parallel: int = _DEFAULT_MAX_PARALLEL,
     tail_lines: int = _DEFAULT_TRANSCRIPT_TAIL_LINES,
     max_cleaned_chars: int = _DEFAULT_MAX_CLEANED_CHARS,
-    cluster_model: str = _DEFAULT_CLUSTER_MODEL,
+    cluster_model: str | None = None,
 ) -> list[tuple[dict[str, object], Path | str | None]]:
     """Run all summarization tasks in parallel.
 
     Args:
         entries: List of pending entries.
-        model: Model ID.
+        model: Model ID, or ``None`` for the backend large-model default.
         dry_run: If True, print without writing.
-        persist: If True, allow SDK session persistence.
+        persist: Backwards-compatible no-op accepted from legacy CLI usage.
         vault: Path to the vault directory.
         max_parallel: Maximum concurrent summarization tasks.
         tail_lines: Transcript tail lines per entry.
         max_cleaned_chars: Max cleaned chars per entry.
-        cluster_model: Model ID for hierarchical chunk summarization.
+        cluster_model: Model ID for hierarchical chunk summarization, or ``None``
+            for the backend small-model default.
 
     Returns:
         List of (entry, written_path) tuples.
@@ -1236,13 +1251,13 @@ def main() -> None:
     parser.add_argument(
         "--model",
         default=None,
-        help=f"Override model (default: {_DEFAULT_MODEL})",
+        help="Override large model (default: backend large default)",
     )
     parser.add_argument(
         "--persist",
         action="store_true",
         default=None,
-        help="Enable SDK session persistence (default: off). Use when debugging to inspect saved sessions.",
+        help="Accepted for backwards compatibility; currently unused.",
     )
     parser.add_argument(
         "--run-doctor",
@@ -1272,11 +1287,13 @@ def main() -> None:
     args = parser.parse_args()
 
     # Resolve options: defaults → config → CLI args
-    model: str = (
-        args.model
-        if args.model is not None
-        else vault_common.get_config("summarizer", "model", _DEFAULT_MODEL)
-    )
+    configured_model = vault_common.get_config("summarizer", "model", None)
+    if args.model is not None:
+        model: str | None = args.model
+    elif isinstance(configured_model, str) and configured_model.strip():
+        model = configured_model
+    else:
+        model = None
     persist: bool = (
         args.persist
         if args.persist is not None
@@ -1297,10 +1314,16 @@ def main() -> None:
         "max_cleaned_chars",
         _DEFAULT_MAX_CLEANED_CHARS,
     )
-    cluster_model: str = vault_common.get_config(
+    configured_cluster_model = vault_common.get_config(
         "summarizer",
         "cluster_model",
-        _DEFAULT_CLUSTER_MODEL,
+        None,
+    )
+    cluster_model: str | None = (
+        configured_cluster_model
+        if isinstance(configured_cluster_model, str)
+        and configured_cluster_model.strip()
+        else None
     )
 
     rebuild_graph: bool = args.rebuild_graph or vault_common.get_config(
@@ -1335,7 +1358,8 @@ def main() -> None:
         print(f"No pending sessions in {source_path}")
         return
 
-    print(f"Processing {len(entries)} session(s) with model {model}...")
+    model_label = model or "backend large default"
+    print(f"Processing {len(entries)} session(s) with model {model_label}...")
     if args.dry_run:
         print("[dry-run mode — nothing will be written]")
 

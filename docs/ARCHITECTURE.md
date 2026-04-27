@@ -399,7 +399,7 @@ Fires (asynchronously, with `async: true`) when any subagent spawned via the `Ag
 
 **Location:** `skills/parsidion/scripts/summarize_sessions.py`
 
-An on-demand PEP 723 script (requires `claude-agent-sdk`, `anyio`) that processes the `pending_summaries.jsonl` queue and generates structured vault notes using Claude AI.
+An on-demand PEP 723 script (requires `anyio`) that processes the `pending_summaries.jsonl` queue and generates structured vault notes using the configured prompt AI backend. Claude-backed runs use `claude -p`; Codex-backed runs use `codex exec`. No Claude Agent SDK or Codex SDK is required for this path.
 
 **CLI flags:** `--sessions FILE`, `--dry-run`, `--model MODEL`, `--persist`
 
@@ -407,25 +407,25 @@ An on-demand PEP 723 script (requires `claude-agent-sdk`, `anyio`) that processe
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `model` | `claude-sonnet-4-6` | Model for note generation |
+| `model` | `null` | Explicit large-model override; `null` uses `ai_models.<backend>.large` |
 | `max_parallel` | `5` | Concurrent summarization tasks |
 | `transcript_tail_lines` | `400` | Transcript lines to read per entry |
 | `max_cleaned_chars` | `12000` | Maximum characters after cleaning |
-| `persist` | `false` | SDK session persistence (for debugging) |
-| `cluster_model` | `claude-haiku-4-5-20251001` | Model for hierarchical chunk summarization |
+| `persist` | `false` | Accepted for backwards compatibility; CLI backends control persistence via backend config |
+| `cluster_model` | `null` | Explicit chunk-model override; `null` uses `ai_models.<backend>.small` |
 | `dedup_threshold` | `0.80` | Cosine similarity above which a note is considered a near-duplicate and skipped |
 
 **Behavior:**
 1. Reads entries from `pending_summaries.jsonl`
-2. Pre-processes each transcript via `preprocess_transcript_hierarchical()`: if the cleaned dialogue fits within `max_cleaned_chars`, it is used as-is; if it exceeds the limit, it is split into chunks, each chunk is summarized by `cluster_model` (haiku by default), and the chunk summaries are concatenated for the final note prompt
-3. **Write-gate filter:** before generating a note, Claude evaluates whether the session contains reusable insight. Transient sessions (dead-ends, routine builds, session-specific context) return `{"decision": "skip"}` and are not saved to the vault
+2. Pre-processes each transcript via `preprocess_transcript_hierarchical()`: if the cleaned dialogue fits within `max_cleaned_chars`, it is used as-is; if it exceeds the limit, it is split into chunks, each chunk is summarized by the backend small model (or explicit `cluster_model`), and the chunk summaries are concatenated for the final note prompt
+3. **Write-gate filter:** before generating a note, the configured backend evaluates whether the session contains reusable insight. Transient sessions (dead-ends, routine builds, session-specific context) return `{"decision": "skip"}` and are not saved to the vault
 4. **Semantic dedup:** before writing a note, runs `vault_search.py` to check for near-duplicate existing notes (cosine similarity ≥ `dedup_threshold`); skips writing if a near-duplicate is found
-5. Calls Claude (Sonnet by default) via the Agent SDK (up to `max_parallel` parallel sessions) to generate structured notes
+5. Calls the configured prompt AI backend (Claude CLI or Codex CLI; up to `max_parallel` parallel tasks) to generate structured notes
 6. **Automated backlinks:** after writing a new note, delegates to `vault_links.add_backlinks_to_existing()` to inject bidirectional `[[wikilinks]]` — updating both the new note's `related` field and matching existing notes
 7. Saves notes to the appropriate vault subfolder (`Debugging/`, `Patterns/`, `Research/`, etc.) with YAML frontmatter
 8. Removes processed entries from the queue, rebuilds the vault index, and commits via `git_commit_vault`
 
-**Must be run from a separate terminal** (or with `env -u CLAUDECODE`) because the Agent SDK cannot be nested inside an active Claude Code session.
+**When using `ai.backend: claude-cli`, run from a separate terminal** (or with `env -u CLAUDECODE`) because nested Claude CLI invocations are blocked inside Claude Code. Codex-backed summarization uses `codex exec` and does not require the Claude Agent SDK.
 
 ### Vault Doctor
 
@@ -1010,12 +1010,12 @@ pre_compact_hook:    # pre_compact_hook.py
   lines: 200         # Transcript lines to analyse
 
 summarizer:          # summarize_sessions.py
-  model: claude-sonnet-4-6
+  model: null          # null = ai_models.<backend>.large
   max_parallel: 5
   transcript_tail_lines: 400
   max_cleaned_chars: 12000
-  persist: false     # SDK session persistence (for debugging)
-  cluster_model: claude-haiku-4-5-20251001  # Model for hierarchical chunk summarization
+  persist: false     # accepted for backwards compatibility
+  cluster_model: null  # null = ai_models.<backend>.small
   dedup_threshold: 0.80  # Cosine similarity above which a near-duplicate note is detected and skipped
 
 defaults:            # Centralized model IDs; all scripts fall back to these
@@ -1043,7 +1043,7 @@ vault:               # Vault identity — used for per-user daily note filenames
   username: ""       # Username suffix for daily notes (DD-{username}.md). Defaults to $USER if blank.
 ```
 
-**Model defaults:** Hook scripts (`session_start_hook.py`, `session_stop_hook.py`) default to `claude-haiku-4-5-20251001` when AI mode is enabled. The summarizer defaults to `claude-sonnet-4-6`. Override any model via the corresponding config key or CLI flag. Setting `ai_model` to a model ID in config enables AI mode without needing the `--ai` CLI flag. The `defaults.haiku_model` and `defaults.sonnet_model` keys provide a centralized place to change model IDs across all scripts at once.
+**Model defaults:** Prompt-style AI scripts use backend-aware defaults from `ai_models.<backend>`. Hook scripts (`session_start_hook.py`, `session_stop_hook.py`) use the backend small tier when AI mode is enabled unless `ai_model` is explicitly set. The summarizer uses the backend large tier for final notes and the backend small tier for chunk summaries unless `summarizer.model`, `summarizer.cluster_model`, or `--model` explicitly override them.
 
 **`git.auto_commit`:** When `false`, `git_commit_vault()` returns immediately without staging or committing. This disables all automatic vault git commits across hooks and the summarizer.
 

@@ -16,7 +16,7 @@ I built **Parsidion** to fix that. It replaces Claude Code's auto memory with a 
 - **PreCompact / PostCompact** -- snapshots your working state (current task, touched files, git branch, uncommitted changes) before context compaction and restores it after, so Claude doesn't lose track of what it was doing.
 - **SubagentStop** -- captures subagent transcripts too, so knowledge from research agents and explorers gets harvested automatically.
 
-**AI summarizer** (`summarize_sessions.py`) processes the queue and generates structured vault notes. It uses the Claude Agent SDK with up to 5 parallel sessions, does hierarchical summarization for long transcripts, and checks for near-duplicates via embedding similarity before writing anything. Notes get automatic bidirectional wikilinks.
+**AI summarizer** (`summarize_sessions.py`) processes the queue and generates structured vault notes through the configured prompt AI backend (`claude -p` or `codex exec`) with up to 5 parallel sessions. It does hierarchical summarization for long transcripts and checks for near-duplicates via embedding similarity before writing anything. Notes get automatic bidirectional wikilinks.
 
 **Vault search** has four modes: semantic (fastembed + sqlite-vec), metadata filtering (tag/folder/type/project/recency), full-text grep, and an interactive curses TUI. All available as a global `vault-search` CLI command.
 
@@ -90,7 +90,7 @@ uv run install.py --schedule-summarizer
 
 ## Design decisions worth mentioning
 
-- **stdlib-only hooks** -- all hook scripts and the installer use Python stdlib exclusively. No pip install, no third-party deps. The summarizer is the one exception (it needs `claude-agent-sdk`), and it uses PEP 723 inline deps so `uv run` handles it.
+- **stdlib-only hooks** -- all hook scripts and the installer use Python stdlib exclusively. No pip install, no third-party deps. The summarizer is the one exception (it needs `anyio` for concurrency), and it uses PEP 723 inline deps so `uv run` handles it. AI calls go through the configured CLI backend, not a Claude or Codex SDK.
 - **No Obsidian lock-in** -- the vault is plain markdown. Obsidian is a nice viewer but the system doesn't depend on it.
 - **Git integration** -- if `~/ClaudeVault/.git` exists, scripts auto-commit after writes. Optional but useful for history.
 - **Config via YAML** -- all hook and summarizer behavior is configurable in `~/ClaudeVault/config.yaml`. Sensible defaults, override what you want.
