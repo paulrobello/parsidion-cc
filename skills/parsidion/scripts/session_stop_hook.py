@@ -7,8 +7,8 @@ configurable transcript tail (default 200 lines; optional deeper pi fallback)
 to detect learnable content (error fixes, research findings, patterns,
 config/setup), and queues session transcripts for AI-powered summarization.
 
-Optional --ai flag uses claude haiku to intelligently classify session content
-and decide whether it is worth queuing, replacing the keyword heuristics with
+Optional --ai flag uses the configured AI backend to intelligently classify
+session content and decide whether it is worth queuing, replacing the keyword heuristics with
 semantic understanding. Falls back to keyword detection on failure.
 Note: when --ai is used, increase the hook timeout in settings.json to at
 least 30000ms to allow time for the AI call to complete.
@@ -31,6 +31,7 @@ _DEFAULT_AI_MODEL: str = vault_common.get_config(
     "defaults", "haiku_model", "claude-haiku-4-5-20251001"
 )
 _DEFAULT_AI_TIMEOUT = 25  # seconds; hook timeout in settings.json should be >= 30000ms
+_BACKEND_DEFAULT_AI_MODEL = "__parsidion_backend_default__"
 _DEFAULT_TRANSCRIPT_TAIL_LINES = 200
 _DEFAULT_PI_TRANSCRIPT_TAIL_LINES = 1000
 
@@ -51,15 +52,16 @@ def _classify_session_with_ai(
     project: str,
     model: str | None,
 ) -> dict[str, object] | None:
-    """Use claude haiku to classify session content and decide if it's worth queuing.
+    """Use the configured AI backend to classify whether a session should be queued.
 
-    Runs ``claude -p`` with CLAUDECODE unset to avoid the nesting guard.
-    Falls back to keyword heuristics (returns None) on any failure.
+    Backend execution is delegated to ai_backend.run_ai_prompt so Claude and
+    Codex model defaults are resolved consistently. Falls back to keyword
+    heuristics (returns None) on any failure.
 
     Args:
         assistant_texts: List of assistant message texts from the transcript.
         project: The current project name.
-        model: The claude model ID to use.
+        model: Explicit model ID to use, or None for the backend default.
 
     Returns:
         Dict with keys ``should_queue`` (bool), ``categories`` (list[str]),
@@ -279,11 +281,11 @@ def main() -> None:
         "--ai",
         metavar="MODEL",
         nargs="?",
-        const=_DEFAULT_AI_MODEL,
+        const=_BACKEND_DEFAULT_AI_MODEL,
         default=None,
         help=(
-            "Use the specified claude model to intelligently classify session content "
-            f"(default model: {_DEFAULT_AI_MODEL}). Falls back to keyword heuristics on failure. "
+            "Use the specified model to intelligently classify session content "
+            "(no MODEL = configured backend default). Falls back to keyword heuristics on failure. "
             "Requires increasing the hook timeout in settings.json to >= 30000ms."
         ),
     )
@@ -408,14 +410,23 @@ def main() -> None:
         )
 
         # Resolve AI model: CLI → config → None (disabled)
-        ai_model: str | None = args.ai
-        if ai_model is None:
+        ai_model: str | None
+        ai_enabled: bool
+        if args.ai == _BACKEND_DEFAULT_AI_MODEL:
+            ai_model = None
+            ai_enabled = True
+        elif args.ai is not None:
+            ai_model = args.ai
+            ai_enabled = True
+        else:
             ai_model = vault_common.get_config("session_stop_hook", "ai_model")
+            ai_enabled = ai_model is not None
 
         # --- AI classification path ---
-        if ai_model:
+        if ai_enabled:
+            model_label = ai_model if ai_model is not None else "backend default"
             print(
-                f"[session_stop_hook] classifying with AI model: {ai_model}",
+                f"[session_stop_hook] classifying with AI model: {model_label}",
                 file=sys.stderr,
             )
             ai_result = _classify_session_with_ai(assistant_texts, project, ai_model)

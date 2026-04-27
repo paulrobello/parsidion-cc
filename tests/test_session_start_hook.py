@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import importlib
+import io
+import json
+import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -14,6 +18,65 @@ _SCRIPTS_DIR = (
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 session_start_hook = importlib.import_module("session_start_hook")
+
+
+def _write_codex_config(vault: Path) -> None:
+    vault.mkdir(parents=True, exist_ok=True)
+    (vault / "config.yaml").write_text(
+        "ai:\n"
+        "  backend: codex-cli\n"
+        "session_start_hook:\n"
+        "  ai_model: null\n"
+        "  ai_single_flight: false\n"
+        "  ai_cooldown_seconds: 0\n"
+        "  ai_timeout: 5\n"
+        "  track_delta: false\n"
+        "  use_embeddings: false\n",
+        encoding="utf-8",
+    )
+
+
+def _run_session_start_main_for_codex(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    argv: list[str],
+) -> list[list[str]]:
+    vault = tmp_path / "vault"
+    project = tmp_path / "project"
+    note = vault / "Projects" / "codex-note.md"
+    project.mkdir(parents=True)
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.write_text("# Codex Note\nUse Codex backend defaults.\n", encoding="utf-8")
+    _write_codex_config(vault)
+
+    session_start_hook.vault_common.resolve_vault.cache_clear()  # type: ignore[attr-defined]
+    session_start_hook.vault_common._clear_config_cache()
+    monkeypatch.setenv("CLAUDE_VAULT", str(vault))
+    monkeypatch.setattr(session_start_hook, "_build_candidates", lambda *_args: [note])
+    monkeypatch.setattr(
+        session_start_hook.vault_common, "write_hook_event", lambda **_kwargs: None
+    )
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+        output_path.write_text(
+            "### Codex Note\nUse Codex backend defaults.", encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        session_start_hook.ai_backend, "_run_prompt_subprocess", fake_run
+    )
+    monkeypatch.setattr(sys, "argv", ["session_start_hook.py", *argv])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"cwd": str(project)})))
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+
+    session_start_hook.main()
+    assert calls
+    return calls
 
 
 class TestAiSelectionSafety:
@@ -214,6 +277,29 @@ class TestAiSelectionSafety:
         assert calls[0]["cwd"] == str(tmp_path)
         assert calls[0]["vault"] == tmp_path
         assert (tmp_path / session_start_hook._AI_STAMP_FILENAME).exists()
+
+    def test_main_no_arg_ai_uses_codex_backend_default_model(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        calls = _run_session_start_main_for_codex(monkeypatch, tmp_path, ["--ai"])
+
+        cmd = calls[0]
+        assert cmd[cmd.index("--model") + 1] == "gpt-5.5"
+        assert "claude-haiku-4-5-20251001" not in cmd
+
+    def test_main_explicit_ai_model_overrides_codex_backend_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        calls = _run_session_start_main_for_codex(
+            monkeypatch, tmp_path, ["--ai", "custom-codex-model"]
+        )
+
+        cmd = calls[0]
+        assert cmd[cmd.index("--model") + 1] == "custom-codex-model"
 
     def test_writes_cooldown_stamp_after_success(
         self,

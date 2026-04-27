@@ -4,8 +4,8 @@
 Reads JSON from stdin with session info, searches the vault for project-specific
 and recent notes, and outputs additionalContext as JSON to stdout.
 
-Optional --ai flag uses claude haiku to intelligently select the most
-relevant notes rather than relying on recency and project tags alone.
+Optional --ai flag uses the configured AI backend to intelligently select the
+most relevant notes rather than relying on recency and project tags alone.
 Note: when --ai is used, increase the hook timeout in settings.json to at
 least 30000ms to allow time for the AI call to complete.
 """
@@ -28,6 +28,7 @@ _DEFAULT_AI_MODEL: str = vault_common.get_config(
     "defaults", "haiku_model", "claude-haiku-4-5-20251001"
 )
 _DEFAULT_AI_TIMEOUT = 25  # seconds; hook timeout in settings.json should be >= 30000ms
+_BACKEND_DEFAULT_AI_MODEL = "__parsidion_backend_default__"
 _DEFAULT_MAX_CHARS = 4000
 _DEBUG_FILE = vault_common.secure_log_dir() / "parsidion-session-start-debug.log"
 _VAULT_SEARCH_SCRIPT_NAME: str = "vault_search.py"
@@ -187,16 +188,16 @@ def _select_context_with_ai(
     max_chars: int = _DEFAULT_MAX_CHARS,
     vault_path: Path | None = None,
 ) -> str:
-    """Use claude haiku to select the most relevant notes for session context.
+    """Use the configured AI backend to select relevant notes for session context.
 
-    Runs ``claude -p`` with CLAUDECODE unset so it can be called from within
-    an active Claude Code session without triggering the nesting guard.
+    Backend execution is delegated to ai_backend.run_ai_prompt so Claude and
+    Codex model defaults are resolved consistently.
 
     Args:
         project_name: The current project name.
         cwd: The current working directory.
         candidate_notes: Ordered list of candidate note paths (project-first).
-        model: The claude model ID to use.
+        model: Explicit model ID to use, or None for the backend default.
         max_chars: Maximum characters for the output context block.
         vault_path: The vault root path.
 
@@ -484,17 +485,21 @@ def build_session_context(
     ai_model: str | None = None,
     max_chars: int = _DEFAULT_MAX_CHARS,
     verbose_mode: bool = False,
+    ai_enabled: bool = False,
 ) -> tuple[str, int]:
     """Build a context string from vault notes relevant to the current session.
 
     Args:
         cwd: The current working directory from the session info.
-        ai_model: When set, use this claude model to select the most relevant
-            notes. Falls back to standard behaviour on failure.
+        ai_model: Explicit model override for AI note selection. When None and
+            ai_enabled is true, the configured backend resolves its default.
+            Falls back to standard behaviour on failure.
         max_chars: Maximum total characters for the context output (default: 4000).
         verbose_mode: When True, inject full note summaries instead of the default
-            compact one-line-per-note index. Ignored when *ai_model* is set (AI
+            compact one-line-per-note index. Ignored when AI mode is enabled (AI
             mode always uses full summaries). Defaults to False.
+        ai_enabled: Enables AI selection even when ai_model is None, allowing the
+            backend to resolve its tier default model.
 
     Returns:
         Tuple of (formatted context string, number of notes injected).
@@ -524,7 +529,7 @@ def build_session_context(
 
     notes_injected = 0
 
-    if ai_model:
+    if ai_enabled or ai_model is not None:
         candidates = _build_candidates(project_name, vault_path)
         ai_context = _select_context_with_ai(
             project_name, cwd, candidates, ai_model, max_chars, vault_path=vault_path
@@ -765,11 +770,11 @@ def main() -> None:
         "--ai",
         metavar="MODEL",
         nargs="?",
-        const=_DEFAULT_AI_MODEL,
+        const=_BACKEND_DEFAULT_AI_MODEL,
         default=None,
         help=(
-            "Use the specified claude model to intelligently select the most relevant "
-            f"vault notes (default model: {_DEFAULT_AI_MODEL}). "
+            "Use the specified model to intelligently select the most relevant "
+            "vault notes (no MODEL = configured backend default). "
             "Requires increasing the hook timeout in settings.json to >= 30000ms."
         ),
     )
@@ -812,9 +817,17 @@ def main() -> None:
         vault_path: Path = vault_common.resolve_vault(cwd=cwd)
 
         # Resolve options: defaults → config → CLI args
-        ai_model: str | None = args.ai
-        if ai_model is None:
+        ai_model: str | None
+        ai_enabled: bool
+        if args.ai == _BACKEND_DEFAULT_AI_MODEL:
+            ai_model = None
+            ai_enabled = True
+        elif args.ai is not None:
+            ai_model = args.ai
+            ai_enabled = True
+        else:
             ai_model = vault_common.get_config("session_start_hook", "ai_model")
+            ai_enabled = ai_model is not None
         max_chars: int = (
             args.max_chars
             if args.max_chars is not None
@@ -839,7 +852,11 @@ def main() -> None:
 
         start_time = datetime.now()
         context, notes_injected = build_session_context(
-            cwd, ai_model=ai_model, max_chars=max_chars, verbose_mode=verbose_mode
+            cwd,
+            ai_model=ai_model,
+            max_chars=max_chars,
+            verbose_mode=verbose_mode,
+            ai_enabled=ai_enabled,
         )
         elapsed_ms = (datetime.now() - start_time).total_seconds() * 1000
 
