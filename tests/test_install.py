@@ -26,6 +26,32 @@ class TestParseArgs:
         assert args.uninstall_hooks is True
         assert args.uninstall is False
 
+    def test_parse_args_supports_runtime_and_codex_home(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["install.py", "--runtime", "both", "--codex-home", "~/CustomCodex"],
+        )
+
+        args = install.parse_args()
+
+        assert args.runtime == "both"
+        assert args.codex_home == "~/CustomCodex"
+
+    def test_resolve_runtime_defaults_to_claude_for_yes(self) -> None:
+        assert (
+            install.resolve_runtime_choice(runtime=None, yes=True, interactive=False)
+            == "claude"
+        )
+
+    def test_resolve_runtime_defaults_to_both_for_interactive(self, monkeypatch) -> None:
+        monkeypatch.setattr(install, "_ask", lambda prompt, default="": "")
+
+        assert (
+            install.resolve_runtime_choice(runtime=None, yes=False, interactive=True)
+            == "both"
+        )
+
 
 class TestUninstallHooksOnly:
     """Tests for removing only managed hook registrations."""

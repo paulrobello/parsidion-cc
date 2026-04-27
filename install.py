@@ -119,6 +119,8 @@ _HOOK_OPTIONS: dict[str, dict] = {
     "SubagentStop": {"async": True},
 }
 
+_RUNTIME_CHOICES = ("claude", "codex", "both", "none")
+
 
 # ARC-003: Extract VAULT_DIRS from the canonical source (vault_common.py) at
 # import time by parsing its source text with a regex.  This eliminates the
@@ -241,6 +243,41 @@ def _step(label: str, dry_run: bool = False) -> None:
 def _warn(msg: str) -> None:
     """Print a yellow warning message to stdout."""
     print(f"{yellow('  !')} {msg}")
+
+
+def resolve_runtime_choice(
+    runtime: str | None,
+    *,
+    yes: bool,
+    interactive: bool,
+) -> str:
+    """Resolve runtime selection for install/uninstall flows."""
+    if runtime:
+        return runtime
+    if yes or not interactive:
+        return "claude"
+
+    print()
+    print(bold("Runtime Integrations"))
+    print(
+        dim(
+            "  1. Claude only — ~/.claude settings, skills, agents, and hooks.\n"
+            "  2. Codex only — ~/.codex hooks for SessionStart and Stop.\n"
+            "  3. Both Claude + Codex.\n"
+            "  4. Shared tooling only — no runtime hooks."
+        )
+    )
+    answer = _ask("Install runtime integrations", default="both").strip().lower()
+    if answer in ("", "3", "both", "claude+codex", "claude + codex"):
+        return "both"
+    if answer in ("1", "claude", "claude only"):
+        return "claude"
+    if answer in ("2", "codex", "codex only"):
+        return "codex"
+    if answer in ("4", "none", "shared", "shared tooling only"):
+        return "none"
+    _warn(f"Unknown runtime selection {answer!r}; defaulting to both")
+    return "both"
 
 
 def _err(msg: str) -> None:
@@ -2198,6 +2235,21 @@ def parse_args() -> argparse.Namespace:
         metavar="PATH",
         default="~/.claude",
         help="Claude config directory (default: ~/.claude)",
+    )
+    parser.add_argument(
+        "--runtime",
+        choices=_RUNTIME_CHOICES,
+        default=None,
+        help=(
+            "Runtime integration target: claude, codex, both, or none. "
+            "Interactive default is both; --yes default is claude for backwards compatibility."
+        ),
+    )
+    parser.add_argument(
+        "--codex-home",
+        metavar="PATH",
+        default=os.environ.get("CODEX_HOME", "~/.codex"),
+        help="Codex home directory for hooks/config (default: $CODEX_HOME or ~/.codex)",
     )
     parser.add_argument(
         "--dry-run",
