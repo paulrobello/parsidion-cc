@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Rebranded the project from `parsidion-cc` to `parsidion`. New installs use `~/.claude/skills/parsidion/`, package metadata uses `parsidion`, and docs now describe Parsidion as an agent-agnostic memory/vault layer for coding assistants.
+- Renamed the GitHub repository to `paulrobello/parsidion`; GitHub redirects from `paulrobello/parsidion-cc` remain available for legacy links.
 
 ### Migration
 
