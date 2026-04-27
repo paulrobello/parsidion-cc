@@ -38,9 +38,28 @@ class TestParseArgs:
         assert args.runtime == "both"
         assert args.codex_home == "~/CustomCodex"
 
+    def test_parse_args_supports_gemini_and_all_runtime(self, monkeypatch) -> None:
+        monkeypatch.setattr(sys, "argv", ["install.py", "--runtime", "gemini"])
+        args = install.parse_args()
+        assert args.runtime == "gemini"
+
+        monkeypatch.setattr(sys, "argv", ["install.py", "--runtime", "all"])
+        args = install.parse_args()
+        assert args.runtime == "all"
+
     def test_resolve_runtime_defaults_to_claude_for_yes(self) -> None:
         assert (
             install.resolve_runtime_choice(runtime=None, yes=True, interactive=False)
+            == "claude"
+        )
+
+    def test_resolve_runtime_keeps_yes_and_noninteractive_default_claude(self) -> None:
+        assert (
+            install.resolve_runtime_choice(runtime=None, yes=True, interactive=True)
+            == "claude"
+        )
+        assert (
+            install.resolve_runtime_choice(runtime=None, yes=False, interactive=False)
             == "claude"
         )
 
@@ -52,6 +71,21 @@ class TestParseArgs:
         assert (
             install.resolve_runtime_choice(runtime=None, yes=False, interactive=True)
             == "both"
+        )
+
+    def test_resolve_runtime_interactive_accepts_gemini_and_all(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(install, "_ask", lambda prompt, default="": "3")
+        assert (
+            install.resolve_runtime_choice(runtime=None, yes=False, interactive=True)
+            == "gemini"
+        )
+
+        monkeypatch.setattr(install, "_ask", lambda prompt, default="": "5")
+        assert (
+            install.resolve_runtime_choice(runtime=None, yes=False, interactive=True)
+            == "all"
         )
 
 

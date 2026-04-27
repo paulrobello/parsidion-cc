@@ -124,7 +124,7 @@ _CODEX_HOOK_SCRIPTS: dict[str, str] = {
     "Stop": "codex_stop_hook.py",
 }
 
-_RUNTIME_CHOICES = ("claude", "codex", "both", "none")
+_RUNTIME_CHOICES = ("claude", "codex", "gemini", "both", "all", "none")
 
 
 # ARC-003: Extract VAULT_DIRS from the canonical source (vault_common.py) at
@@ -268,18 +268,24 @@ def resolve_runtime_choice(
         dim(
             "  1. Claude only — ~/.claude settings, skills, agents, and hooks.\n"
             "  2. Codex only — ~/.codex hooks for SessionStart and Stop.\n"
-            "  3. Both Claude + Codex.\n"
-            "  4. Shared tooling only — no runtime hooks."
+            "  3. Gemini only — ~/.gemini settings hooks for SessionStart and SessionEnd.\n"
+            "  4. Claude + Codex.\n"
+            "  5. All runtimes — Claude + Codex + Gemini.\n"
+            "  6. Shared tooling only — no runtime hooks."
         )
     )
     answer = _ask("Install runtime integrations", default="both").strip().lower()
-    if answer in ("", "3", "both", "claude+codex", "claude + codex"):
+    if answer in ("", "4", "both", "claude+codex", "claude + codex"):
         return "both"
     if answer in ("1", "claude", "claude only"):
         return "claude"
     if answer in ("2", "codex", "codex only"):
         return "codex"
-    if answer in ("4", "none", "shared", "shared tooling only"):
+    if answer in ("3", "gemini", "gemini only"):
+        return "gemini"
+    if answer in ("5", "all", "all runtimes", "claude+codex+gemini"):
+        return "all"
+    if answer in ("6", "none", "shared", "shared tooling only"):
         return "none"
     _warn(f"Unknown runtime selection {answer!r}; defaulting to both")
     return "both"
@@ -2531,7 +2537,7 @@ def parse_args() -> argparse.Namespace:
         choices=_RUNTIME_CHOICES,
         default=None,
         help=(
-            "Runtime integration target: claude, codex, both, or none. "
+            "Runtime integration target: claude, codex, gemini, both, all, or none. "
             "Interactive default is both; --yes default is claude for backwards compatibility."
         ),
     )
