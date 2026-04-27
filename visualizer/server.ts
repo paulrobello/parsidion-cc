@@ -3,7 +3,7 @@ import { createServer } from 'http'
 import { parse } from 'url'
 import next from 'next'
 import { WebSocketServer, WebSocket } from 'ws'
-import chokidar from 'chokidar'
+import type { FSWatcher } from 'chokidar' with { "resolution-mode": "import" }
 import fs from 'fs'
 import path from 'path'
 import { vaultBroadcast } from './lib/vaultBroadcast.server'
@@ -29,7 +29,8 @@ function parseFrontmatterType(filePath: string): string | undefined {
 const app = next({ dev, hostname: 'localhost', port: PORT })
 const handle = app.getRequestHandler()
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
+  const { watch } = await import('chokidar')
   // ── HTTP server ────────────────────────────────────────────────────────────
 
   const server = createServer((req, res) => {
@@ -46,10 +47,10 @@ app.prepare().then(() => {
   const clients = new Set<AliveWS>()
 
   // Track watchers by vault path (lazy creation)
-  const watchers = new Map<string, ReturnType<typeof chokidar.watch>>()
+  const watchers = new Map<string, FSWatcher>()
 
-  function createVaultWatcher(vaultRoot: string): ReturnType<typeof chokidar.watch> {
-    const watcher = chokidar.watch(vaultRoot, {
+  function createVaultWatcher(vaultRoot: string): FSWatcher {
+    const watcher = watch(vaultRoot, {
       ignored: (filePath: string) => {
         const rel = path.relative(vaultRoot, filePath)
         const parts = rel.split(path.sep)
@@ -91,7 +92,7 @@ app.prepare().then(() => {
     return watcher
   }
 
-  function getOrCreateWatcher(vaultPath: string): ReturnType<typeof chokidar.watch> {
+  function getOrCreateWatcher(vaultPath: string): FSWatcher {
     let watcher = watchers.get(vaultPath)
     if (!watcher) {
       watcher = createVaultWatcher(vaultPath)

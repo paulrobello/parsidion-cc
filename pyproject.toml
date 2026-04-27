@@ -6,19 +6,19 @@ dependencies = []
 
 [project.optional-dependencies]
 search = [
-    "fastembed>=0.6.0,<1.0",
-    "sqlite-vec>=0.1.6,<1.0",
+    "fastembed>=0.8.0,<1.0",
+    "sqlite-vec>=0.1.9,<1.0",
     "pillow>=12.2.0",
 ]
 tools = [
     "parsidion[search]",
-    "rich>=13.0",
+    "rich>=15.0.0",
 ]
 eval = [
-    "rich>=13.0",
-    "pyyaml>=6.0",
-    "fastembed>=0.6.0,<1.0",
-    "sqlite-vec>=0.1.6,<1.0",
+    "rich>=15.0.0",
+    "pyyaml>=6.0.3",
+    "fastembed>=0.8.0,<1.0",
+    "sqlite-vec>=0.1.9,<1.0",
     "pillow>=12.2.0",
 ]
 
@@ -95,16 +95,16 @@ extra-paths = [
 
 [tool.uv]
 constraint-dependencies = [
-    "requests>=2.33.0",
+    "requests>=2.33.1",
 ]
 
 [dependency-groups]
 dev = [
-    "pre-commit>=4.3.0",
+    "pre-commit>=4.6.0",
     "pytest>=9.0.3",
     "pytest-timeout>=2.4.0",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.10",
-    "pyright>=1.1.408",
-    "rich>=14.3.4",
+    "ruff>=0.15.12",
+    "pyright>=1.1.409",
+    "rich>=15.0.0",
 ]

@@ -3,14 +3,14 @@ name = "parsidion-mcp"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp>=2.0",
+    "fastmcp>=3.2.4",
     "parsidion[search]",
 ]
 
 [tool.uv]
 constraint-dependencies = [
     # requests 2.32.x has an insecure temp-file reuse vulnerability (CVE-2024-47081); fixed in 2.33.0
-    "requests>=2.33.0",
+    "requests>=2.33.1",
     # GHSA-mj87-hwqh-73pj / CVE-2026-40347
     "python-multipart>=0.0.26",
     # GHSA-whj4-6x5x-4v2j / CVE-2026-40192
@@ -32,9 +32,9 @@ parsidion-mcp = "parsidion_mcp.server:main"
 dev = [
     "pytest>=9.0.3",
     "pytest-timeout>=2.4.0",
-    "pytest-cov>=7.0.0",
-    "ruff>=0.15.6",
-    "pyright>=1.1.408",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.12",
+    "pyright>=1.1.409",
 ]
 
 [tool.pytest.ini_options]
