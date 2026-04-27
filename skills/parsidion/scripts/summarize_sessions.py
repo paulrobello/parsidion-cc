@@ -31,7 +31,6 @@ import os
 import re
 import subprocess
 import sys
-from collections.abc import AsyncIterator
 from datetime import date, datetime
 from functools import partial
 from pathlib import Path
@@ -47,27 +46,6 @@ import vault_links
 _flock_exclusive = vault_common.flock_exclusive
 _flock_shared = vault_common.flock_shared
 _funlock = vault_common.funlock
-
-
-class ClaudeAgentOptions:
-    """Temporary compatibility stub for unmigrated summarizer call sites."""
-
-    def __init__(self, **_: object) -> None:
-        raise RuntimeError("summarizer prompt call site has not been migrated")
-
-
-class ResultMessage:
-    """Temporary compatibility stub for unmigrated summarizer call sites."""
-
-    result: str
-
-
-async def query(*, prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[object]:
-    """Temporary compatibility stub for unmigrated summarizer call sites."""
-
-    del prompt, options
-    raise RuntimeError("summarizer prompt call site has not been migrated")
-    yield ResultMessage()
 
 
 async def _run_summarizer_prompt(
@@ -679,7 +657,7 @@ async def _summarize_chunk(
         chunk_num: 1-based index of this chunk.
         total_chunks: Total number of chunks.
         model: Model ID to use for summarization.
-        extra: Extra args to pass to ClaudeAgentOptions (e.g. no-session-persistence).
+        extra: Legacy prompt options retained for call-site compatibility.
 
     Returns:
         A summary string (3-5 sentences). Falls back to a truncated version of
@@ -691,21 +669,18 @@ async def _summarize_chunk(
         "and solutions found. Focus on what would be useful to remember in future "
         f"sessions.\n\nTranscript:\n{chunk_text}"
     )
-    result_text = ""
+    del extra
     try:
-        async for message in query(
-            prompt=prompt,
-            options=ClaudeAgentOptions(
-                allowed_tools=[],
-                permission_mode="default",
-                model=model,
-                extra_args=extra,
-            ),
-        ):
-            if isinstance(message, ResultMessage):
-                result_text = message.result
+        result_text = await _run_summarizer_prompt(
+            prompt,
+            model=model,
+            model_tier="small",
+            purpose="session-summary-chunk",
+            timeout=None,
+            vault=None,
+        )
     except Exception:  # noqa: BLE001
-        pass
+        result_text = None
 
     if result_text:
         return result_text
@@ -972,28 +947,27 @@ async def summarize_one(
             project, categories, cleaned, existing_tags, session_id, similar_notes
         )
 
-        result_text = ""
         try:
-            async for message in query(
-                prompt=prompt,
-                options=ClaudeAgentOptions(
-                    allowed_tools=[],
-                    permission_mode="default",
-                    model=model,
-                    extra_args=extra,
-                ),
-            ):
-                if isinstance(message, ResultMessage):
-                    result_text = message.result
+            result_text = await _run_summarizer_prompt(
+                prompt,
+                model=model,
+                model_tier="large",
+                purpose="session-summary",
+                timeout=None,
+                vault=vault,
+            )
         except Exception as e:  # noqa: BLE001
             print(
-                f"  Error querying Claude for {transcript_path_str}: {e}",
+                f"  Error querying AI backend for {transcript_path_str}: {e}",
                 file=sys.stderr,
             )
             return entry, None
 
         if not result_text:
-            print(f"  No result from Claude for {transcript_path_str}", file=sys.stderr)
+            print(
+                f"  No result from AI backend for {transcript_path_str}",
+                file=sys.stderr,
+            )
             return entry, None
 
         # Write-gate: check if Claude decided this session is not worth saving or to merge
