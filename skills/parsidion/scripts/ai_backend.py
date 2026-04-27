@@ -149,14 +149,28 @@ def _run_prompt_subprocess(
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         try:
-            os.killpg(proc.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+            pgid = os.getpgid(proc.pid)
+        except (ProcessLookupError, OSError):
+            pgid = proc.pid
+
+        def kill_process_group(sig: int) -> None:
+            try:
+                os.killpg(pgid, sig)
+            except (ProcessLookupError, OSError):
+                pass
+
+        kill_process_group(signal.SIGTERM)
+        wait_timed_out = False
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
+            wait_timed_out = True
+        kill_process_group(signal.SIGKILL)
+        if wait_timed_out:
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
         raise
     return subprocess.CompletedProcess(
         cmd,

@@ -388,12 +388,13 @@ class TestRunAiPrompt:
         assert ai_backend.run_ai_prompt("hello", vault=vault) is None
         assert output_paths and not output_paths[0].exists()
 
-    def test_codex_timeout_kills_process_group(
+    def test_codex_timeout_escalates_process_group_kill(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         vault = _reset_config(monkeypatch, tmp_path, "ai:\n  backend: codex-cli\n")
         popen_calls: list[tuple[list[str], dict[str, Any]]] = []
         killpg_calls: list[tuple[int, int]] = []
+        direct_kill_calls = 0
 
         class FakeProcess:
             pid = 12345
@@ -410,30 +411,41 @@ class TestRunAiPrompt:
                 raise subprocess.TimeoutExpired(cmd=popen_calls[0][0], timeout=timeout)
 
             def wait(self, timeout: int | float | None = None) -> int:
-                self.returncode = -15
+                if timeout is not None:
+                    raise subprocess.TimeoutExpired(
+                        cmd=popen_calls[0][0], timeout=timeout
+                    )
+                self.returncode = -9
                 return self.returncode
 
             def kill(self) -> None:
+                nonlocal direct_kill_calls
+                direct_kill_calls += 1
                 self.returncode = -9
 
         def fake_popen(cmd: list[str], **kwargs: Any) -> FakeProcess:
             return FakeProcess(cmd, **kwargs)
 
-        def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-            raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs["timeout"])
+        def fake_getpgid(pid: int) -> int:
+            assert pid == 12345
+            return 54321
 
         def fake_killpg(pid: int, sig: int) -> None:
             killpg_calls.append((pid, sig))
 
         monkeypatch.setattr(subprocess, "Popen", fake_popen)
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(ai_backend.os, "getpgid", fake_getpgid)
         monkeypatch.setattr(ai_backend.os, "killpg", fake_killpg)
 
         assert ai_backend.run_ai_prompt("hello", vault=vault) is None
 
         assert popen_calls
         assert popen_calls[0][1]["start_new_session"] is True
-        assert killpg_calls == [(12345, ai_backend.signal.SIGTERM)]
+        assert killpg_calls == [
+            (54321, ai_backend.signal.SIGTERM),
+            (54321, ai_backend.signal.SIGKILL),
+        ]
+        assert direct_kill_calls == 0
 
     def test_codex_success_with_missing_output_file_returns_none_and_cleans_up(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
