@@ -211,6 +211,8 @@ Do not create notes for:
 
 All hooks read `~/ClaudeVault/config.yaml` for settings. CLI args override config values.
 
+Claude Code installs the full hook set below. Codex runtime hooks are session lifecycle only: native Codex `SessionStart` and `Stop` hooks registered in `~/.codex/hooks.json` when `codex_hooks = true` is enabled in `~/.codex/config.toml`. Codex integration does not provide full Claude hook parity (no PreCompact, PostCompact, SubagentStop, or tool hooks in this phase).
+
 | Hook | Behavior | Config section |
 |---|---|---|
 | **SessionStart** | Loads relevant vault notes as a **compact one-line-per-note index** (title + tags) by default — minimal token usage. `--verbose` flag or `verbose_mode: true` config switches to full note summaries. Optional AI selection via `--ai [MODEL]` or `session_start_hook.ai_model` config. | `session_start_hook` |
@@ -242,6 +244,7 @@ Run the summarizer on demand to generate structured vault notes.
 
 Supported transcript locations:
 - Claude Code: `~/.claude/projects/**/*.jsonl`
+- Codex CLI: `~/.codex/sessions/**/*.jsonl`
 - pi (global): `~/.pi/agent/sessions/**/*.jsonl`
 - pi (project-local): `<project>/.pi/agent-sessions/**/*.jsonl`
 

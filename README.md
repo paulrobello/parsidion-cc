@@ -97,11 +97,13 @@ uv run install.py --schedule-summarizer --rebuild-graph --graph-include-daily
 |------|-------------|
 | `--vault PATH` | Vault path (skips interactive prompt) |
 | `--claude-dir PATH` | Target Claude config dir (default: `~/.claude`) |
+| `--codex-home PATH` | Target Codex home for hooks/config (default: `$CODEX_HOME` or `~/.codex`) |
+| `--runtime {claude,codex,both,none}` | Runtime integration target; interactive installs default to `both`, while `--yes` defaults to `claude` for backwards compatibility |
 | `--dry-run / -n` | Preview all actions, no changes made |
 | `--verbose / -v` | Show detailed output |
 | `--force / -f` | Overwrite existing skill files without prompting |
 | `--yes / -y` | Skip all confirmation prompts; uses `~/ClaudeVault` if `--vault` not given |
-| `--skip-hooks` | Do not modify `settings.json` |
+| `--skip-hooks` | Do not modify runtime hook files (`~/.claude/settings.json` or `~/.codex/hooks.json`) |
 | `--skip-agent` | Do not install any agents |
 | `--enable-ai` | Enable AI-powered note selection: writes `ai_model` to `config.yaml` and sets SessionStart timeout to 30 s |
 | `--enable-embeddings` | Enable semantic search embeddings: writes `embeddings.enabled = true` to `config.yaml` |
@@ -112,7 +114,26 @@ uv run install.py --schedule-summarizer --rebuild-graph --graph-include-daily
 | `--graph-include-daily` | Include Daily folder notes in the nightly graph rebuild (use with `--rebuild-graph`) |
 | `--create-vaults-config` | Create `~/.claude/vaults.yaml` for multi-vault support (see [Multi-Vault Support](#multi-vault-support)) |
 | `--uninstall` | Remove installed skill, agents, hook registrations, and launchd plist / cron job |
-| `--uninstall-hooks` | Remove only installed hook registrations from `settings.json` |
+| `--uninstall-hooks` | Remove only installed hook registrations from runtime hook files (`~/.claude/settings.json` or `~/.codex/hooks.json`) |
+
+### Runtime integrations
+
+Interactive installs ask which runtime integrations to configure:
+
+- `claude` — Claude Code skill, agents, and hooks under `~/.claude`
+- `codex` — Codex CLI hooks under `~/.codex`
+- `both` — both Claude Code and Codex CLI integrations
+- `none` — shared vault tooling only; do not register runtime hooks
+
+Non-interactive installs keep the historical Claude-only default unless you pass `--runtime` explicitly:
+
+```bash
+uv run install.py --yes --runtime claude
+uv run install.py --yes --runtime both
+uv run install.py --yes --runtime codex
+```
+
+Codex integration uses native Codex hooks for session lifecycle events and requires `codex_hooks = true` in `~/.codex/config.toml`. Parsidion can enable this during install and registers hooks in `~/.codex/hooks.json`. Parsidion does not manage Codex auth or copy `~/.codex/auth.json`.
 
 During interactive installation, the installer prompts for three optional features:
 
