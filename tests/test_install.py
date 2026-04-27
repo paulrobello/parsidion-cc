@@ -227,10 +227,44 @@ class TestCodexHooks:
 class TestRuntimeFlow:
     """Tests for installer runtime selection flow."""
 
-    def test_runtime_none_skips_hook_registration(
-        self, tmp_path: Path, monkeypatch
+    def test_runtime_none_dry_run_install_skips_hook_registration(
+        self, tmp_path: Path, monkeypatch, capsys
     ) -> None:
+        monkeypatch.setattr(install, "_FORBIDDEN_PREFIXES", ())
+        calls: list[str] = []
+
+        def record(name: str):
+            def _inner(*args, **kwargs) -> None:
+                calls.append(name)
+
+            return _inner
+
+        for name in (
+            "install_skill",
+            "install_agents",
+            "install_scripts",
+            "create_vault_dirs",
+            "create_templates_symlink",
+            "cleanup_legacy_assets",
+            "merge_hooks",
+            "enable_codex_hooks_config",
+            "merge_codex_hooks",
+            "install_claude_vault_md",
+            "rebuild_index",
+            "configure_vault_gitignore",
+            "init_vault_git",
+            "install_vault_post_merge_hook",
+            "configure_vault_username",
+            "configure_embeddings",
+            "install_cli_tools",
+            "schedule_summarizer",
+            "create_vaults_config",
+        ):
+            monkeypatch.setattr(install, name, record(name))
+
         vault = tmp_path / "ClaudeVault"
+        claude_dir = tmp_path / ".claude"
+        codex_home = tmp_path / ".codex"
         monkeypatch.setattr(
             sys,
             "argv",
@@ -239,20 +273,30 @@ class TestRuntimeFlow:
                 "--yes",
                 "--runtime",
                 "none",
+                "--dry-run",
                 "--vault",
                 str(vault),
                 "--claude-dir",
-                str(tmp_path / ".claude"),
+                str(claude_dir),
+                "--codex-home",
+                str(codex_home),
             ],
         )
         args = install.parse_args()
 
-        assert (
-            install.resolve_runtime_choice(
-                args.runtime, yes=args.yes, interactive=False
-            )
-            == "none"
-        )
+        result = install.install(args)
+
+        output = capsys.readouterr().out
+        assert result == 0
+        assert "Runtime     : none" in output
+        assert "Runtime hooks: skipped (runtime none)" in output
+        assert "Claude dir" not in output
+        assert "Codex home" not in output
+        assert "Claude hooks:" not in output
+        assert "Codex hooks :" not in output
+        assert "merge_hooks" not in calls
+        assert "merge_codex_hooks" not in calls
+        assert "enable_codex_hooks_config" not in calls
 
     def test_merge_codex_hooks_dry_run_does_not_create_hooks_json(
         self, tmp_path: Path

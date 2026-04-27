@@ -2322,7 +2322,8 @@ def install(args: argparse.Namespace) -> int:
     print()
     print(bold("Installation Plan"))
     print(f"  {dim('Runtime     :')} {runtime}")
-    print(f"  {dim('Claude dir   :')} {claude_dir}")
+    if install_claude_runtime:
+        print(f"  {dim('Claude dir   :')} {claude_dir}")
     if install_codex_runtime:
         print(f"  {dim('Codex home  :')} {codex_home}")
     print(f"  {dim('Vault path   :')} {vault_root}")
