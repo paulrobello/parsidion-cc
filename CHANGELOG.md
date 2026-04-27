@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Default vault path** — new installs now default to `~/ParsidionVault`; existing `~/ClaudeVault` installs are detected and continue to be used unless `~/ParsidionVault` also exists or `--vault` is provided.
+- **Vault migration command** — `install.py --migrate-vault` safely renames legacy `~/ClaudeVault` to `~/ParsidionVault` and leaves a compatibility symlink by default; `--dry-run` previews the migration and `--no-legacy-vault-symlink` skips the symlink.
 
 ### Fixed
 

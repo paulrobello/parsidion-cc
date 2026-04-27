@@ -79,6 +79,9 @@ uv run install.py --vault ~/MyVault --yes
 # Preview without making changes
 uv run install.py --dry-run
 
+# Migrate a legacy default vault from ~/ClaudeVault to ~/ParsidionVault
+uv run install.py --migrate-vault --yes
+
 # Also install vault-search as a global CLI command
 uv run install.py --force --yes --install-tools
 
@@ -113,7 +116,9 @@ uv run install.py --schedule-summarizer --rebuild-graph --graph-include-daily
 | `--summarizer-hour N` | Hour (0-23) for the scheduled summarizer job (default: 2) |
 | `--rebuild-graph` | Add `--rebuild-graph` to the scheduled command so `graph.json` is regenerated each night (use with `--schedule-summarizer`) |
 | `--graph-include-daily` | Include Daily folder notes in the nightly graph rebuild (use with `--rebuild-graph`) |
-| `--create-vaults-config` | Create `~/.claude/vaults.yaml` for multi-vault support (see [Multi-Vault Support](#multi-vault-support)) |
+| `--create-vaults-config` | Create `~/.config/parsidion/vaults.yaml` for multi-vault support (see [Multi-Vault Support](#multi-vault-support)) |
+| `--migrate-vault` | Rename legacy `~/ClaudeVault` to `~/ParsidionVault` and leave `~/ClaudeVault` as a compatibility symlink |
+| `--no-legacy-vault-symlink` | With `--migrate-vault`, skip creating the compatibility symlink |
 | `--uninstall` | Remove installed skill, agents, hook registrations, and launchd plist / cron job |
 | `--uninstall-hooks` | Remove only installed hook registrations from runtime hook files (`~/.claude/settings.json`, `~/.codex/hooks.json`, or `~/.gemini/settings.json`) |
 
@@ -149,6 +154,16 @@ During interactive installation, the installer prompts for three optional featur
 3. **"Enable embeddings?"** (default: yes) — writes `embeddings.enabled = true` to `config.yaml`, enabling the vector index used by `vault-search` semantic mode and `session_start_hook` with `use_embeddings`. Requires ~67 MB model download on first run. Use `--enable-embeddings` to enable this non-interactively (e.g. with `--yes`).
 
 After installation, restart the selected runtime(s) to activate hooks. Optionally, open the vault path in Obsidian for graph visualization and note browsing -- this is not required for the system to work.
+
+### Migrating a legacy default vault
+
+If you have an older default vault at `~/ClaudeVault`, you can rename it to the new default `~/ParsidionVault`:
+
+```bash
+uv run install.py --migrate-vault --yes
+```
+
+The migration refuses unsafe states, such as both paths existing as separate real directories. By default it leaves `~/ClaudeVault` as a symlink to `~/ParsidionVault` so older scripts or editor bookmarks keep working. Add `--no-legacy-vault-symlink` if you do not want that compatibility symlink. Use `--dry-run` to preview without moving anything.
 
 ## Components
 

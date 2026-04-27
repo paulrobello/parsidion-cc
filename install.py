@@ -21,6 +21,9 @@ Options:
                            --vault PATH is also supplied
     --skip-hooks           Do not modify settings.json
     --skip-agent           Do not install any agents
+    --migrate-vault        Rename legacy ~/ClaudeVault to ~/ParsidionVault
+    --no-legacy-vault-symlink
+                           Do not leave ~/ClaudeVault as a compatibility symlink
     --uninstall            Remove installed skill, agent, hooks, and related assets
     --uninstall-hooks      Remove only installed hook registrations from settings.json
     --enable-ai            Enable AI-powered note selection (writes ai_model to config.yaml, sets 30s timeout)
@@ -342,6 +345,78 @@ def _default_vault_path(home: Path | None = None) -> Path:
     if legacy.exists() and not current.exists():
         return legacy
     return current
+
+
+def migrate_default_vault(
+    *,
+    dry_run: bool = False,
+    create_legacy_symlink: bool = True,
+    home: Path | None = None,
+) -> int:
+    """Rename legacy ``~/ClaudeVault`` to ``~/ParsidionVault`` safely.
+
+    Returns:
+        Process-style status code: 0 on success/no-op, 2 for unsafe states.
+    """
+    root = home or Path.home()
+    legacy = root / LEGACY_DEFAULT_VAULT_NAME
+    current = root / DEFAULT_VAULT_NAME
+
+    print()
+    print(bold("Parsidion Vault Migration"))
+    print(f"  {dim('Legacy:')} {legacy}")
+    print(f"  {dim('Target:')} {current}")
+    print()
+
+    if current.exists():
+        if legacy.is_symlink() and legacy.resolve() == current.resolve():
+            _ok("Vault is already migrated; legacy path is a compatibility symlink.")
+            return 0
+        if not legacy.exists():
+            _ok("Vault is already migrated.")
+            return 0
+        _err(
+            f"Both {legacy} and {current} exist. Refusing to guess which vault to keep."
+        )
+        return 2
+
+    if legacy.is_symlink():
+        _err(f"Legacy path is a symlink but target vault does not exist: {legacy}")
+        return 2
+
+    if not legacy.exists():
+        _err(f"No legacy vault found at {legacy}")
+        return 2
+
+    if not legacy.is_dir():
+        _err(f"Legacy vault path is not a directory: {legacy}")
+        return 2
+
+    _step(f"Move {legacy} -> {current}", dry_run=dry_run)
+    if create_legacy_symlink:
+        _step(f"Create compatibility symlink {legacy} -> {current}", dry_run=dry_run)
+
+    if dry_run:
+        _ok("Dry run complete — no changes were made.")
+        return 0
+
+    try:
+        legacy.rename(current)
+    except OSError as exc:
+        _err(f"Could not move vault: {exc}")
+        return 2
+
+    if create_legacy_symlink:
+        try:
+            legacy.symlink_to(current, target_is_directory=True)
+        except OSError as exc:
+            _warn(f"Vault moved, but compatibility symlink could not be created: {exc}")
+
+    _ok(f"Migrated vault to {current}")
+    if create_legacy_symlink and legacy.is_symlink():
+        print(dim(f"  Legacy compatibility path: {legacy} -> {current}"))
+    print(dim("  Run update_index.py after migration to refresh generated indexes."))
+    return 0
 
 
 _FORBIDDEN_PREFIXES: tuple[str, ...] = (
@@ -2809,6 +2884,16 @@ def parse_args() -> argparse.Namespace:
         help="Do not install any agents",
     )
     parser.add_argument(
+        "--migrate-vault",
+        action="store_true",
+        help="Rename legacy ~/ClaudeVault to ~/ParsidionVault and leave a compatibility symlink",
+    )
+    parser.add_argument(
+        "--no-legacy-vault-symlink",
+        action="store_true",
+        help="Do not create ~/ClaudeVault -> ~/ParsidionVault when using --migrate-vault",
+    )
+    parser.add_argument(
         "--uninstall",
         action="store_true",
         help="Remove installed skill, agents, hooks, and related assets",
@@ -2925,6 +3010,33 @@ def main() -> None:
     if args.uninstall and args.uninstall_hooks:
         _err("Choose only one uninstall mode: --uninstall or --uninstall-hooks")
         sys.exit(2)
+
+    if args.migrate_vault:
+        if args.uninstall or args.uninstall_hooks:
+            _err(
+                "Choose only one mode: --migrate-vault, --uninstall, or --uninstall-hooks"
+            )
+            sys.exit(2)
+        if args.vault:
+            _err(
+                "--migrate-vault migrates the default legacy vault; do not combine it with --vault"
+            )
+            sys.exit(2)
+        if not args.yes and not args.dry_run:
+            print()
+            print(bold("Parsidion Vault Migration"))
+            print("This will move ~/ClaudeVault to ~/ParsidionVault.")
+            if not args.no_legacy_vault_symlink:
+                print("It will also leave ~/ClaudeVault as a compatibility symlink.")
+            if not _confirm("Proceed with vault migration?", default=False):
+                print(dim("Aborted."))
+                sys.exit(0)
+        sys.exit(
+            migrate_default_vault(
+                dry_run=args.dry_run,
+                create_legacy_symlink=not args.no_legacy_vault_symlink,
+            )
+        )
 
     if args.uninstall or args.uninstall_hooks:
         runtime = resolve_runtime_choice(

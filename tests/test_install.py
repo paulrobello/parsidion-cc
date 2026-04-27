@@ -26,6 +26,18 @@ class TestParseArgs:
         assert args.uninstall_hooks is True
         assert args.uninstall is False
 
+    def test_parse_args_supports_migrate_vault(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["install.py", "--migrate-vault", "--no-legacy-vault-symlink"],
+        )
+
+        args = install.parse_args()
+
+        assert args.migrate_vault is True
+        assert args.no_legacy_vault_symlink is True
+
     def test_parse_args_supports_runtime_and_codex_home(self, monkeypatch) -> None:
         monkeypatch.setattr(
             sys,
@@ -400,6 +412,79 @@ class TestDefaultVaultPath:
         legacy.mkdir()
 
         assert install._default_vault_path(home) == current
+
+
+class TestDefaultVaultMigration:
+    """Tests for installer vault migration flow."""
+
+    def test_migrate_default_vault_moves_legacy_and_creates_symlink(
+        self, tmp_path: Path
+    ) -> None:
+        home = tmp_path / "home"
+        legacy = home / "ClaudeVault"
+        legacy.mkdir(parents=True)
+        (legacy / "config.yaml").write_text("ai:\n  backend: codex-cli\n")
+
+        result = install.migrate_default_vault(home=home)
+
+        current = home / "ParsidionVault"
+        assert result == 0
+        assert current.is_dir()
+        assert (current / "config.yaml").exists()
+        assert legacy.is_symlink()
+        assert legacy.resolve() == current.resolve()
+
+    def test_migrate_default_vault_dry_run_does_not_move(self, tmp_path: Path) -> None:
+        home = tmp_path / "home"
+        legacy = home / "ClaudeVault"
+        legacy.mkdir(parents=True)
+
+        result = install.migrate_default_vault(home=home, dry_run=True)
+
+        assert result == 0
+        assert legacy.is_dir()
+        assert not legacy.is_symlink()
+        assert not (home / "ParsidionVault").exists()
+
+    def test_migrate_default_vault_accepts_already_migrated_symlink(
+        self, tmp_path: Path
+    ) -> None:
+        home = tmp_path / "home"
+        current = home / "ParsidionVault"
+        current.mkdir(parents=True)
+        legacy = home / "ClaudeVault"
+        legacy.symlink_to(current, target_is_directory=True)
+
+        result = install.migrate_default_vault(home=home)
+
+        assert result == 0
+        assert legacy.resolve() == current.resolve()
+
+    def test_migrate_default_vault_refuses_two_real_vaults(
+        self, tmp_path: Path
+    ) -> None:
+        home = tmp_path / "home"
+        (home / "ClaudeVault").mkdir(parents=True)
+        (home / "ParsidionVault").mkdir()
+
+        result = install.migrate_default_vault(home=home)
+
+        assert result == 2
+        assert (home / "ClaudeVault").is_dir()
+        assert (home / "ParsidionVault").is_dir()
+
+    def test_migrate_default_vault_can_skip_legacy_symlink(
+        self, tmp_path: Path
+    ) -> None:
+        home = tmp_path / "home"
+        legacy = home / "ClaudeVault"
+        legacy.mkdir(parents=True)
+
+        result = install.migrate_default_vault(home=home, create_legacy_symlink=False)
+
+        assert result == 0
+        assert not legacy.exists()
+        assert (home / "ParsidionVault").is_dir()
 
 
 class TestRuntimeFlow:
