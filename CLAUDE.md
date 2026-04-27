@@ -127,8 +127,8 @@ uv run --no-project ~/.claude/skills/parsidion/scripts/vault_doctor.py --fix-all
 bash ~/.claude/skills/parsidion/scripts/run_trigger_eval.sh
 ```
 
-The trigger eval and summarizer cannot run nested inside a Claude Code session because they
-invoke `claude` internally. Use `env -u CLAUDECODE` as a workaround for the summarizer.
+The trigger eval and Claude CLI-backed summarizer cannot run nested inside a Claude Code session because they
+invoke `claude` internally. Use `env -u CLAUDECODE` as a workaround when the summarizer backend is `claude-cli`; Codex-backed summarization uses `codex exec`.
 
 ## Vault Git Integration
 
@@ -238,7 +238,7 @@ EOF
 
 **stdlib-only rule**: `install.py` and all hook scripts (`session_start_hook.py`, `session_stop_hook.py`, `subagent_stop_hook.py`, `pre_compact_hook.py`, `post_compact_hook.py`, `vault_common.py`, `vault_links.py`, `vault_new.py`, `vault_stats.py`, `vault_review.py`, `vault_export.py`, `vault_merge.py`, `update_index.py`, `session_stop_wrapper.sh`) must use Python stdlib exclusively (or POSIX shell builtins) — no `pip install`, no `uv add`. The `pyproject.toml` intentionally has no dependencies.
 
-**Exception**: `summarize_sessions.py` is a PEP 723 script with inline dependency declarations (`claude-agent-sdk`, `anyio`). Run it with `uv run` — deps are installed automatically into an isolated environment.
+**Exception**: `summarize_sessions.py` is a PEP 723 script with an inline `anyio` dependency. Run it with `uv run` — deps are installed automatically into an isolated environment. It uses Parsidion's configured prompt AI backend (`claude -p` or `codex exec`), not the Claude Agent SDK.
 
 ## Makefile Targets
 
@@ -269,7 +269,7 @@ The system has ten components:
    - `subagent_stop_hook.py`: Registered under the `SubagentStop` hook with `async: true` (non-blocking). Reads the subagent's own `agent_transcript_path`, skips agents listed in `excluded_agents` (default: `vault-explorer`, `research-agent`), and queues the transcript to `pending_summaries.jsonl` with `source: "subagent"` and `agent_type` metadata. Uses `agent_id` as the dedup key. Configurable via `subagent_stop_hook` section in `config.yaml`.
    - All hooks append a structured JSON line to `~/ClaudeVault/hook_events.log` via `vault_common.write_hook_event()`. The log is rotated when it exceeds `event_log.max_lines` (default 10,000). Viewable with `vault-stats --hooks N`.
 
-2. **`summarize_sessions.py`** — On-demand PEP 723 script (requires `claude-agent-sdk`, `anyio`). Reads `pending_summaries.jsonl`, pre-processes transcripts, and calls Claude via the Agent SDK (up to 5 parallel sessions) to generate structured vault notes. Features: **write-gate filter** (Claude decides per-session if insights are reusable before generating a note), **hierarchical summarization** (transcripts exceeding `max_cleaned_chars` are chunked and summarized by haiku first), **semantic dedup** (before writing a note, checks for near-duplicates using `vault_search.py`; controlled by `summarizer.dedup_threshold` in config, default `0.80`), **automated backlinks** (via `vault_links.py` — injects bidirectional wikilinks after each note write). Cleans processed entries from the queue and rebuilds the index when done.
+2. **`summarize_sessions.py`** — On-demand PEP 723 script (requires `anyio`). Reads `pending_summaries.jsonl`, pre-processes transcripts, and calls the configured prompt AI backend (`claude -p` or `codex exec`, up to 5 parallel sessions) to generate structured vault notes. Features: **write-gate filter** (the backend decides per-session if insights are reusable before generating a note), **hierarchical summarization** (transcripts exceeding `max_cleaned_chars` are chunked and summarized by the backend small model first), **semantic dedup** (before writing a note, checks for near-duplicates using `vault_search.py`; controlled by `summarizer.dedup_threshold` in config, default `0.80`), **automated backlinks** (via `vault_links.py` — injects bidirectional wikilinks after each note write). Cleans processed entries from the queue and rebuilds the index when done.
 
 3. **`vault_common.py`** — Shared library imported by all hooks. Contains frontmatter parsing (regex-based, no pyyaml), vault traversal, note search functions (`find_notes_by_tag` etc. — DB-first, file-walk fallback), `ensure_note_index_schema()`, `query_note_index()`, `build_compact_index()` (moved here from `session_start_hook.py`; also used by `parsidion-mcp`), and path utilities. `_SAFE_ENV_KEYS` controls which env vars are forwarded to `claude -p` subprocess calls; includes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS`, `ANTHROPIC_DEFAULT_{HAIKU,SONNET,OPUS}_MODEL`, `API_TIMEOUT_MS`, and `HTTPS_PROXY`/`HTTP_PROXY` so non-default API configurations (proxy, org key, Bedrock, corporate network) work correctly. All vault operations go through this module.
 

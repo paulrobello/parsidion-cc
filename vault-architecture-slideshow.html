@@ -558,7 +558,7 @@ body {
                 </div>
                 <div class="col-box">
                     <h3 class="purple">Layer 2: AI Summarizer</h3>
-                    <p>PEP 723 script using Claude Agent SDK. Processes pending sessions into structured vault notes.</p>
+                    <p>PEP 723 script using the configured CLI AI backend. Processes pending sessions into structured vault notes.</p>
                     <ul class="bullet-list" style="margin-top: 6px;">
                         <li class="purple" style="font-size: 11px;">Up to 5 parallel sessions</li>
                         <li class="purple" style="font-size: 11px;">Reads <span class="hl-yellow">pending_summaries.jsonl</span></li>
@@ -778,7 +778,7 @@ body {
                 <span class="flow-arrow">&rarr;</span>
                 <div class="flow-box cyan">Pre-process</div>
                 <span class="flow-arrow">&rarr;</span>
-                <div class="flow-box purple">Agent SDK (5x)</div>
+                <div class="flow-box purple">CLI AI backend (5x)</div>
                 <span class="flow-arrow">&rarr;</span>
                 <div class="flow-box green">Save Notes</div>
                 <span class="flow-arrow">&rarr;</span>
@@ -789,9 +789,9 @@ body {
                 <div class="col-box">
                     <h3 class="purple">How It Works</h3>
                     <ul class="bullet-list">
-                        <li class="purple" style="font-size: 11px;">PEP 723 script with inline deps (<span class="hl">claude-agent-sdk</span>, <span class="hl">anyio</span>)</li>
+                        <li class="purple" style="font-size: 11px;">PEP 723 script with inline deps (<span class="hl">anyio</span>)</li>
                         <li class="purple" style="font-size: 11px;">Pre-processes transcripts: extract human/assistant dialogue</li>
-                        <li class="purple" style="font-size: 11px;">Up to <span class="hl-yellow">5 parallel</span> Agent SDK sessions</li>
+                        <li class="purple" style="font-size: 11px;">Up to <span class="hl-yellow">5 parallel</span> CLI backend calls</li>
                         <li class="purple" style="font-size: 11px;">Generates notes with YAML frontmatter + wikilinks</li>
                         <li class="purple" style="font-size: 11px;">Cleans queue, rebuilds index, git commits</li>
                     </ul>
@@ -810,7 +810,7 @@ body {
 
             <div class="output warning" style="margin-top: auto; font-size: 11px;">
 <span class="hl-yellow">Note:</span> Must be run from a separate terminal (or with env -u CLAUDECODE)
-because the Agent SDK cannot be nested inside an active Claude Code session.</div>
+when using the Claude CLI backend because nested Claude CLI invocations are blocked inside Claude Code.</div>
         </div>
 
         <!-- Slide 8: vault_common.py -->
@@ -1066,7 +1066,7 @@ vault-search --project parsidion
                 <div class="lifecycle-connector"></div>
                 <div class="lifecycle-step">
                     <div class="lifecycle-num purple">8</div>
-                    <span><span class="bold hl-purple">Summarize</span> &mdash; Background process generates structured notes via Agent SDK</span>
+                    <span><span class="bold hl-purple">Summarize</span> &mdash; Background process generates structured notes via the CLI AI backend</span>
                 </div>
                 <div class="lifecycle-connector"></div>
                 <div class="lifecycle-step">

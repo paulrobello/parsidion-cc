@@ -54,7 +54,7 @@ Any script under `skills/parsidion/scripts/` **must use Python stdlib exclusivel
 
 **Why:** Hook scripts run inside Claude Code's lifecycle events. Adding third-party dependencies would break the zero-dependency guarantee and complicate installation.
 
-**Exception:** The four PEP 723 scripts listed above have inline dependency declarations (e.g. `claude-agent-sdk`, `anyio`, `fastembed`). Their dependencies are installed automatically by `uv run` into an isolated environment.
+**Exception:** The four PEP 723 scripts listed above have inline dependency declarations (e.g. `anyio`, `fastembed`). Their dependencies are installed automatically by `uv run` into an isolated environment.
 
 ### Type annotations
 
