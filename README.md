@@ -998,7 +998,7 @@ See [docs/VAULT_SYNC.md](docs/VAULT_SYNC.md) for the full setup guide and troubl
 
 ## Changelog
 
-Latest release: **0.6.0** (multi-runtime Claude, Codex, and Gemini integration). See [CHANGELOG.md](CHANGELOG.md) for a detailed list of changes in each release.
+Latest release: **0.7.0** (session diagnostics, smart re-indexing, and default vault migration). See [CHANGELOG.md](CHANGELOG.md) for a detailed list of changes in each release.
 
 ## Contributing
 
