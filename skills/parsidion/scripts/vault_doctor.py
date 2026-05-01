@@ -1753,7 +1753,7 @@ def _run_reindex(vault_path: Path | None = None) -> None:
             text=True,
         )
         print("Index rebuilt successfully.")
-    except Exception as exc:
+    except OSError as exc:
         print(f"Warning: update_index.py failed: {exc}", file=sys.stderr)
 
 

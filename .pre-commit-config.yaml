@@ -1,5 +1,47 @@
+default_stages: [pre-commit, pre-push]
+default_language_version:
+    python: python3.13
+fail_fast: false
 repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.24.2
     hooks:
       - id: gitleaks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: check-docstring-first
+      - id: check-toml
+      - id: check-yaml
+      - id: check-json
+      - id: pretty-format-json
+        args: [--autofix, --no-sort-keys]
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: make
+        language: system
+        pass_filenames: false
+        args:
+          [typecheck]
+      - id: format
+        name: format
+        entry: make
+        language: system
+        pass_filenames: false
+        args:
+          [fmt]
+      - id: lint
+        name: lint
+        entry: make
+        language: system
+        pass_filenames: false
+        args:
+          [lint]

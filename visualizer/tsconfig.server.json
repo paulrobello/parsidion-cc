@@ -9,5 +9,8 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["server.ts", "lib/vaultBroadcast.server.ts"]
+  "include": [
+    "server.ts",
+    "lib/vaultBroadcast.server.ts"
+  ]
 }
