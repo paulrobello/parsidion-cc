@@ -21,3 +21,4 @@ ideas.md
 .DS_Store
 .pi/extensions/discord-relay/state.json
 docs/superpowers/
+graphify-out/
